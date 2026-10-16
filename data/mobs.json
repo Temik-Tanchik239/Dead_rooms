@@ -1,0 +1,281 @@
+{
+  "rotling": {
+    "name": "marionetka",
+    "hp": 100,
+    "w": 30,
+    "h": 40,
+    "speed": 150,
+    "color": [
+      110,
+      160,
+      90
+    ],
+    "weight": 4,
+    "draw": [
+      80,
+      80
+    ],
+    "skin": "mobs/mariotenka_m.png",
+    "mass": 4,
+    "contact": 6,
+    "move": {
+      "type": "chase",
+      "speed": 70,
+      "sight": 420,
+      "jump": 0
+    },
+    "attacks": [
+      {
+        "type": "melee",
+        "windup": 0.35,
+        "active": 0.12,
+        "recovery": 0.35,
+        "cooldown": 1.2,
+        "damage": 12,
+        "reach": [
+          36,
+          28
+        ],
+        "lunge": 140,
+        "knockback": 240
+      }
+    ]
+  },
+ "bone_caster": {
+  "name": "Костяной стрелок",
+  "hp": 28,
+  "w": 22,
+  "h": 34,
+  "speed": 60,
+  "color": [
+   170,
+   120,
+   200
+  ],
+  "weight": 3,
+  "draw": [
+   36,
+   54
+  ],
+  "skin": "mobs/bone_caster.png",
+  "mass": 3,
+  "contact": 8,
+  "move": {
+   "type": "keep_distance",
+   "distance": 240,
+   "band": 50
+  },
+  "attacks": [
+    {
+      "type": "shoot",
+      "projectile": "bolt",
+      "windup": 0.5,
+      "cooldown": 2.0,
+      "damage": 10,
+      "range": 360
+    }
+  ]
+ },
+ "wisp": {
+  "name": "Болотный огонёк",
+  "hp": 20,
+  "w": 20,
+  "h": 20,
+  "speed": 110,
+  "color": [
+   120,
+   220,
+   230
+  ],
+  "weight": 2,
+  "draw": [
+   48,
+   48
+  ],
+  "skin": "mobs/wisp.png",
+  "flies": true,
+  "mass": 2,
+  "contact": 10,
+  "move": {
+   "type": "loop",
+   "shape": "eight",
+   "radius": [
+    120,
+    50
+   ],
+   "period": 5,
+   "speed": 170
+  },
+  "attacks": [
+   {
+    "type": "shoot",
+    "projectile": "wave_bolt",
+    "aim": "ring",
+    "count": 6,
+    "windup": 0.6,
+    "cooldown": 3.5,
+    "damage": 8,
+    "range": 380,
+    "range_y": 380
+   }
+  ]
+ },
+ "grave_brute": {
+  "name": "Могильный громила",
+  "hp": 90,
+  "w": 34,
+  "h": 42,
+  "speed": 45,
+  "color": [
+   150,
+   110,
+   90
+  ],
+  "weight": 2,
+  "mass": 6,
+  "contact": 10,
+  "draw": [
+   52,
+   52
+  ],
+  "move": {
+   "type": "chase",
+   "speed": 45,
+   "sight": 500
+  },
+  "attacks": [
+   {
+    "type": "circle",
+    "radius": 78,
+    "windup": 0.75,
+    "active": 0.15,
+    "recovery": 0.7,
+    "cooldown": 2.2,
+    "damage": 18,
+    "knockback": 380,
+    "interrupt": false
+   }
+  ]
+ },
+ "leaper": {
+  "name": "Скакун",
+  "hp": 36,
+  "w": 22,
+  "h": 28,
+  "speed": 80,
+  "color": [
+   200,
+   150,
+   70
+  ],
+  "weight": 2,
+  "mass": 2,
+  "contact": 6,
+  "draw": [
+   36,
+   36
+  ],
+  "move": {
+   "type": "keep_distance",
+   "distance": 190,
+   "band": 40
+  },
+  "attacks": [
+   {
+    "id": "leap",
+    "type": "leap",
+    "range": 320,
+    "min_range": 90,
+    "windup": 0.45,
+    "air_time": 0.6,
+    "land_offset": 40,
+    "radius": 55,
+    "damage": 14,
+    "knockback": 300,
+    "recovery": 0.25,
+    "cooldown": 2.8,
+    "next": "swipe"
+   },
+   {
+    "id": "swipe",
+    "type": "melee",
+    "windup": 0.12,
+    "active": 0.1,
+    "recovery": 0.45,
+    "cooldown": 1.4,
+    "damage": 8,
+    "reach": [
+     34,
+     28
+    ],
+    "lunge": 100
+   }
+  ]
+ },
+ "bat": {
+  "name": "Трупная мышь",
+  "hp": 14,
+  "w": 20,
+  "h": 16,
+  "speed": 125,
+  "color": [
+   110,
+   90,
+   140
+  ],
+  "flies": true,
+  "weight": 2,
+  "mass": 1,
+  "contact": 8,
+  "draw": [
+   30,
+   24
+  ],
+  "move": {
+   "type": "chase",
+   "speed": 125,
+   "offset_y": -6,
+   "sight": 380
+  },
+  "attacks": []
+ },
+ "hexer": {
+  "name": "Ведьмин глаз",
+  "hp": 26,
+  "w": 24,
+  "h": 24,
+  "speed": 90,
+  "color": [
+   90,
+   200,
+   160
+  ],
+  "flies": true,
+  "weight": 1,
+  "mass": 2,
+  "contact": 6,
+  "draw": [
+   36,
+   36
+  ],
+  "move": {
+   "type": "keep_distance",
+   "distance": 230,
+   "height": -90
+  },
+  "attacks": [
+   {
+    "type": "shoot",
+    "projectile": "homing_orb",
+    "burst": 3,
+    "burst_gap": 0.25,
+    "windup": 0.6,
+    "cooldown": 3.5,
+    "damage": 8,
+    "mobile": true,
+    "range": 420,
+    "range_y": 400
+   }
+  ]
+ }
+}

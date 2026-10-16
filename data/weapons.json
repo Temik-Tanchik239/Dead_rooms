@@ -1,0 +1,181 @@
+{
+ "rusty_sword": {
+  "name": "Ржавый клинок",
+  "slot": 1,
+  "combo": [
+   {
+    "windup": 0.07,
+    "active": 0.08,
+    "recovery": 0.12,
+    "damage": 14,
+    "reach": [
+     46,
+     34
+    ],
+    "knockback": 180,
+    "lunge": 110
+   },
+   {
+    "windup": 0.06,
+    "active": 0.08,
+    "recovery": 0.12,
+    "damage": 14,
+    "reach": [
+     48,
+     34
+    ],
+    "knockback": 200,
+    "lunge": 130
+   },
+   {
+    "windup": 0.1,
+    "active": 0.1,
+    "recovery": 0.26,
+    "damage": 26,
+    "reach": [
+     56,
+     44
+    ],
+    "knockback": 380,
+    "lunge": 220
+   }
+  ]
+ },
+ "iron_pike": {
+  "name": "Железная пика",
+  "slot": 1,
+  "combo": [
+   {
+    "windup": 0.16,
+    "active": 0.09,
+    "recovery": 0.26,
+    "damage": 24,
+    "reach": [
+     84,
+     18
+    ],
+    "knockback": 260,
+    "lunge": 60
+   }
+  ]
+ },
+ "twin_daggers": {
+  "name": "Парные кинжалы",
+  "slot": 1,
+  "combo": [
+   {
+    "windup": 0.04,
+    "active": 0.05,
+    "recovery": 0.07,
+    "damage": 7,
+    "reach": [
+     34,
+     30
+    ],
+    "knockback": 90,
+    "lunge": 90
+   },
+   {
+    "windup": 0.04,
+    "active": 0.05,
+    "recovery": 0.07,
+    "damage": 7,
+    "reach": [
+     34,
+     30
+    ],
+    "knockback": 90,
+    "lunge": 90
+   },
+   {
+    "windup": 0.04,
+    "active": 0.05,
+    "recovery": 0.07,
+    "damage": 7,
+    "reach": [
+     34,
+     30
+    ],
+    "knockback": 90,
+    "lunge": 90
+   },
+   {
+    "windup": 0.06,
+    "active": 0.07,
+    "recovery": 0.16,
+    "damage": 14,
+    "reach": [
+     40,
+     34
+    ],
+    "knockback": 200,
+    "lunge": 160
+   }
+  ]
+ },
+ "short_bow": {
+  "name": "Короткий лук",
+  "slot": 2,
+  "combo": [
+   {
+    "windup": 0.18,
+    "active": 0.02,
+    "recovery": 0.3,
+    "damage": 16,
+    "reach": [
+     0,
+     0
+    ],
+    "knockback": 0,
+    "lunge": 0,
+    "projectile": "arrow"
+   }
+  ]
+ },
+ "fire_flask": {
+  "name": "Склянка огня",
+  "slot": 2,
+  "combo": [
+   {
+    "windup": 0.15,
+    "active": 0.02,
+    "recovery": 0.5,
+    "damage": 30,
+    "reach": [
+     0,
+     0
+    ],
+    "knockback": 0,
+    "lunge": 0,
+    "projectile": "flask_fire"
+   }
+  ]
+ },
+ "seeker_staff": {
+  "name": "Посох-искатель",
+  "slot": 2,
+  "combo": [
+   {
+    "windup": 0.2,
+    "active": 0.02,
+    "recovery": 0.45,
+    "damage": 12,
+    "reach": [
+     0,
+     0
+    ],
+    "knockback": 0,
+    "lunge": 0,
+    "projectile": {
+     "type": "homing_orb",
+     "speed": 260,
+     "color": [
+      150,
+      255,
+      220
+     ]
+    }
+   }
+  ]
+ }
+}

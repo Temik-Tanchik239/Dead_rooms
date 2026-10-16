@@ -214,34 +214,34 @@
    }
   ]
  },
- "bat": {
-  "name": "Трупная мышь",
-  "hp": 14,
-  "w": 20,
-  "h": 16,
-  "speed": 125,
-  "color": [
-   110,
-   90,
-   140
-  ],
-  "flies": true,
-  "weight": 2,
-  "mass": 1,
-  "contact": 8,
-  "draw": [
-   30,
-   24
-  ],
-  "skin": "mobs/bat.png",
-  "move": {
-   "type": "chase",
-   "speed": 125,
-   "offset_y": -6,
-   "sight": 380
+  "bat": {
+    "name": "Трупная мышь",
+    "hp": 14,
+    "w": 20,
+    "h": 16,
+    "speed": 200,
+    "color": [
+      110,
+      90,
+      140
+    ],
+    "flies": true,
+    "weight": 2,
+    "mass": 1,
+    "contact": 8,
+    "draw": [
+      60,
+      50
+    ],
+    "skin": "mobs/bat.png",
+    "move": {
+      "type": "chase",
+      "speed": 125,
+      "offset_y": -6,
+      "sight": 380
+    },
+    "attacks": []
   },
-  "attacks": []
- },
  "hexer": {
   "name": "Ведьмин глаз",
   "hp": 26,

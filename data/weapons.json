@@ -9,8 +9,8 @@
     "recovery": 0.12,
     "damage": 14,
     "reach": [
-     46,
-     34
+     80,
+     80
     ],
     "knockback": 180,
     "lunge": 110
@@ -21,8 +21,8 @@
     "recovery": 0.12,
     "damage": 14,
     "reach": [
-     48,
-     34
+     80,
+     80
     ],
     "knockback": 200,
     "lunge": 130
@@ -33,8 +33,8 @@
     "recovery": 0.26,
     "damage": 26,
     "reach": [
-     56,
-     44
+     80,
+     80
     ],
     "knockback": 380,
     "lunge": 220

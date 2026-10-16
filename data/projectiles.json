@@ -9,7 +9,11 @@
       255
     ],
     "life": 2.5,
-    "knockback": 120
+    "knockback": 120,
+    "draw": [
+      48,
+      48
+    ]
   },
   "arrow": {
     "speed": 620,
@@ -20,7 +24,12 @@
       150
     ],
     "life": 1.2,
-    "knockback": 140
+    "knockback": 140,
+    "skin": "projectiles/arrow.png",
+    "draw": [
+      32,
+      8
+    ]
   },
   "flask_fire": {
     "speed": 320,
@@ -34,7 +43,12 @@
       40
     ],
     "life": 2,
-    "knockback": 260
+    "knockback": 260,
+    "skin": "projectiles/flask_fire.png",
+    "draw": [
+      26,
+      21
+    ]
   },
   "homing_orb": {
     "speed": 170,
@@ -48,7 +62,12 @@
     "homing": {
       "rate": 2.2,
       "delay": 0.25
-    }
+    },
+    "skin": "projectiles/homing_orb.png",
+    "draw": [
+      30,
+      25
+    ]
   },
   "wave_bolt": {
     "speed": 210,
@@ -62,7 +81,12 @@
     "wave": {
       "amp": 18,
       "freq": 2.5
-    }
+    },
+    "skin": "projectiles/wave_bolt.png",
+    "draw": [
+      34,
+      20
+    ]
   },
   "ember": {
     "speed": 80,
@@ -74,7 +98,12 @@
       110,
       60
     ],
-    "life": 2.5
+    "life": 2.5,
+    "skin": "projectiles/ember.png",
+    "draw": [
+      38,
+      18
+    ]
   },
   "bouncy_bomb": {
     "speed": 280,
@@ -89,7 +118,13 @@
       200,
       90
     ],
-    "life": 3
+    "life": 3,
+    "skin": "projectiles/bouncy_bomb.png",
+    "draw": [
+      22,
+      24
+    ],
+    "rotate": false
   },
   "splitter": {
     "speed": 200,
@@ -104,7 +139,12 @@
       "into": "shard",
       "count": 6,
       "ring": true
-    }
+    },
+    "skin": "projectiles/splitter.png",
+    "draw": [
+      26,
+      26
+    ]
   },
   "shard": {
     "speed": 240,
@@ -115,7 +155,12 @@
       200
     ],
     "life": 1.2,
-    "knockback": 60
+    "knockback": 60,
+    "skin": "projectiles/shard.png",
+    "draw": [
+      20,
+      10
+    ]
   },
   "spear": {
     "speed": 520,
@@ -127,6 +172,11 @@
     ],
     "life": 1.0,
     "pierce": 3,
-    "knockback": 200
+    "knockback": 200,
+    "skin": "projectiles/spear.png",
+    "draw": [
+      58,
+      8
+    ]
   }
 }

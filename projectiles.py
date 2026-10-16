@@ -5,7 +5,7 @@
 
 Базовые поля: speed, vy (добавка к вертикальной скорости), gravity, life, size, color, knockback, damage (если урон не задан
 атакой), aoe (радиус взрыва), pierce (сквозь сколько целей пролетает), bounces + bounce_damp (отскоки от стен),
-sprite / frames + fps (картинка или серия PNG, нарисованы носом вправо), draw [w, h], rotate (поворачивать по полёту).
+skin (или sprite) / frames + fps (картинка или серия PNG, носом вправо; без skin ищется assets/projectiles/<имя типа>.png), draw [w, h], rotate (поворачивать по полёту).
 Поведения: homing, accel, wave, split — описаны ниже.
 
 Новое поведение = функция с декоратором @behavior("ключ") (каждый кадр) или @on_death("ключ") (при исчезновении).
@@ -27,7 +27,7 @@ def resolve(spec):
     """Имя типа | {"type": имя, ...правки} | полное описание -> словарь параметров пули."""
     if isinstance(spec, str):
         if spec not in CFG["projectiles"]: raise KeyError(f"нет пули '{spec}' в data/projectiles.json")
-        return dict(CFG["projectiles"][spec])
+        d = dict(CFG["projectiles"][spec]); d["_id"] = spec; return d
     if "type" in spec:
         d = resolve(spec["type"]); d.update({k: v for k, v in spec.items() if k != "type"}); return d
     return dict(spec)
@@ -96,7 +96,8 @@ class Proj:
         if "frames" in d:
             fr = frames(d["frames"])
             if fr: path = fr[int(s.t * d.get("fps", 12)) % len(fr)]
-        elif "sprite" in d: path = d["sprite"]
+        elif d.get("skin") or d.get("sprite"): path = d.get("skin") or d["sprite"]
+        elif "_id" in d: path = f"projectiles/{d['_id']}.png"
         if path:
             dw, dh = d.get("draw", [s.r * 2, s.r * 2])
             ang = round(-math.degrees(s.angle) / 6) * 6 if d.get("rotate", True) else 0   # шаг 6°, чтобы не плодить кэш

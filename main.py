@@ -4,7 +4,7 @@ import math, random, sys
 from types import SimpleNamespace
 import pygame as pg
 from core import CFG, SETTINGS, T, COLS, ROWS, W, H, reload_data, sign, approach, tile, free, FX, Body
-from anim import clear_cache
+from anim import clear_cache, sprite, mob_frame
 from projectiles import volley
 from mob import Mob, Corpse
 
@@ -16,7 +16,31 @@ class Player(Body):
         s.inv = s.coy = s.st = s.lock = s.drop_t = s.stun = 0
         s.atk, s.combo, s.hitbox = None, (None, 0, 0), None
         s.buf = dict(jump=0, roll=0, a1=0, a2=0); s.slots = ["rusty_sword", "short_bow"]
+        s.anim, s.anim_t, s.anim_p = "idle", 0.0, None
     def press(s, what): s.buf[what] = CFG["player"]["buffer"]
+    def anim_states(s):
+        p = CFG["player"]
+        if s.state == "roll": return ["roll"], 1 - max(0, s.st) / p["roll_time"]
+        if s.state == "attack" and s.atk:
+            a = s.atk; prog = min(1, a["t"] / (a["wu"] + a["ac"] + a["rec"]))
+            return (["shoot", "attack"] if "projectile" in a["step"] else ["attack"]), prog
+        if s.state == "ladder": return ["ladder"], None
+        if s.stun > 0: return ["hurt"], None
+        if not s.ground: return ["jump"], None
+        return (["move"] if abs(s.vx) > 25 else ["idle"]), None
+    def update_anim(s, dt):
+        st, p = s.anim_states(); key = "|".join(st)
+        if key != s.anim: s.anim, s.anim_t = key, 0.0
+        else: s.anim_t += dt
+        s.anim_p = p
+    def draw(s, v):
+        p = CFG["player"]; r = s.rect; st = s.anim.split("|")
+        dw, dh = p.get("draws", {}).get(st[0], p.get("draw", [s.w, s.H0]))
+        img = sprite(mob_frame("player", p, st, s.anim_t, s.anim_p, folder="player"), dw, dh, s.face < 0)
+        if img: v.blit(img, (r.centerx - dw // 2, r.bottom - dh))
+        else:
+            pg.draw.rect(v, (200, 160, 70) if s.state == "roll" else (240, 200, 90), r, border_radius=4)
+            ex = r.right - 6 if s.face > 0 else r.left + 3; pg.draw.rect(v, (30, 20, 20), (ex, r.top + 6, 3, 5))
     def can_stand(s, g): return free(g, pg.Rect(int(s.x), int(s.y) - (s.H0 - s.h), s.w, s.H0))
     def hit(s, dmg, fx_x, fx, kb=260):
         if s.inv > 0: return
@@ -178,7 +202,7 @@ class Game:
         for it in fx.items: it[4] -= dt
         fx.items = [it for it in fx.items if it[4] > 0]
         if pl.hp <= 0: return
-        pl.update(sim, pg.key.get_pressed(), r.g, r.mobs, s.projs, fx)
+        pl.update(sim, pg.key.get_pressed(), r.g, r.mobs, s.projs, fx); pl.update_anim(sim)
         w = SimpleNamespace(g=r.g, pl=pl, mobs=r.mobs, projs=s.projs, fx=fx)   # «мир» для мобов и пуль
         for m in r.mobs:
             m.update(sim, w)
@@ -230,8 +254,7 @@ class Game:
         for m in r.mobs: m.draw(v, s.debug)
         for q in s.projs: q.draw(v)
         if pl.inv <= 0 or int(pg.time.get_ticks() / 60) % 2:
-            pg.draw.rect(v, (200, 160, 70) if pl.state == "roll" else (240, 200, 90), pl.rect, border_radius=4)
-            ex = pl.rect.right - 6 if pl.face > 0 else pl.rect.left + 3; pg.draw.rect(v, (30, 20, 20), (ex, pl.rect.top + 6, 3, 5))
+            pl.draw(v)
         if pl.hitbox: pg.draw.rect(v, (255, 255, 255), pl.hitbox, 2)
         for kind, x, y, data, t in s.fx.items:
             if kind == "t": v.blit(s.font.render(data, True, (255, 240, 160)), (x - 14, y - (0.7 - t) * 40))

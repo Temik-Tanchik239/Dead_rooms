@@ -1,46 +1,46 @@
 {
-  "rotling": {
-    "name": "marionetka",
-    "hp": 100,
-    "w": 30,
-    "h": 40,
-    "speed": 150,
-    "color": [
-      110,
-      160,
-      90
-    ],
-    "weight": 4,
-    "draw": [
-      80,
-      80
-    ],
-    "skin": "mobs/mariotenka_m.png",
-    "mass": 4,
-    "contact": 6,
-    "move": {
-      "type": "chase",
-      "speed": 70,
-      "sight": 420,
-      "jump": 0
-    },
-    "attacks": [
-      {
-        "type": "melee",
-        "windup": 0.35,
-        "active": 0.12,
-        "recovery": 0.35,
-        "cooldown": 1.2,
-        "damage": 12,
-        "reach": [
-          36,
-          28
-        ],
-        "lunge": 140,
-        "knockback": 240
-      }
-    ]
+ "rotling": {
+  "name": "marionetka",
+  "hp": 100,
+  "w": 30,
+  "h": 40,
+  "speed": 150,
+  "color": [
+   110,
+   160,
+   90
+  ],
+  "weight": 4,
+  "draw": [
+   80,
+   80
+  ],
+  "skin": "mobs/mariotenka_m.png",
+  "mass": 4,
+  "contact": 6,
+  "move": {
+   "type": "chase",
+   "speed": 70,
+   "sight": 420,
+   "jump": 0
   },
+  "attacks": [
+   {
+    "type": "melee",
+    "windup": 0.35,
+    "active": 0.12,
+    "recovery": 0.35,
+    "cooldown": 1.2,
+    "damage": 12,
+    "reach": [
+     36,
+     28
+    ],
+    "lunge": 140,
+    "knockback": 240
+   }
+  ]
+ },
  "bone_caster": {
   "name": "Костяной стрелок",
   "hp": 28,
@@ -66,14 +66,14 @@
    "band": 50
   },
   "attacks": [
-    {
-      "type": "shoot",
-      "projectile": "bolt",
-      "windup": 0.5,
-      "cooldown": 2.0,
-      "damage": 10,
-      "range": 360
-    }
+   {
+    "type": "shoot",
+    "projectile": "bolt",
+    "windup": 0.5,
+    "cooldown": 2.0,
+    "damage": 10,
+    "range": 360
+   }
   ]
  },
  "wisp": {
@@ -138,6 +138,7 @@
    52,
    52
   ],
+  "skin": "mobs/grave_brute.png",
   "move": {
    "type": "chase",
    "speed": 45,
@@ -175,6 +176,7 @@
    36,
    36
   ],
+  "skin": "mobs/leaper.png",
   "move": {
    "type": "keep_distance",
    "distance": 190,
@@ -231,6 +233,7 @@
    30,
    24
   ],
+  "skin": "mobs/bat.png",
   "move": {
    "type": "chase",
    "speed": 125,
@@ -258,6 +261,7 @@
    36,
    36
   ],
+  "skin": "mobs/hexer.png",
   "move": {
    "type": "keep_distance",
    "distance": 230,

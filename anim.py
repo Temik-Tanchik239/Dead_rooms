@@ -46,28 +46,28 @@ def frames(path):
         _FRAMES[path] = [f.relative_to(ASSETS).as_posix() for f in files]
     return _FRAMES[path]
 
-FALLBACK = {"move": "idle", "jump": "move", "windup": "idle", "attack": "idle", "recovery": "idle", "hurt": "idle"}
-LOOPING = {"idle", "move", "jump"}
-PHASES = {"windup", "attack", "recovery"}
+FALLBACK = {"move": "idle", "jump": "move", "windup": "idle", "attack": "idle", "recovery": "idle", "hurt": "idle", "roll": "move", "ladder": "idle"}
+LOOPING = {"idle", "move", "jump", "ladder"}
+PHASES = {"windup", "attack", "recovery", "roll"}
 
-def find_anim(kind, d, state):
+def find_anim(kind, d, state, folder=None):
     """(кадры, настройки) для состояния моба или None."""
     key = (kind, state)
     if key not in _ANIM:
         spec = d.get("anims", {}).get(state)
         if isinstance(spec, str): spec = {"frames": spec}
         spec = dict(spec or {})
-        fr = frames(spec.get("frames") or f"mobs/{kind}/{state}")
+        fr = frames(spec.get("frames") or f"{folder or 'mobs/' + kind}/{state}")
         _ANIM[key] = (fr, spec) if fr else None
     return _ANIM[key]
 
-def mob_frame(kind, d, states, t, progress=None):
+def mob_frame(kind, d, states, t, progress=None, folder=None):
     """Путь к нужному кадру. states — список имён по приоритету (например ["slam_windup", "windup"]).
     t — сколько секунд моб в этом состоянии, progress — доля пройденной фазы атаки (0..1) или None."""
     chain = list(states)
     while chain[-1] in FALLBACK: chain.append(FALLBACK[chain[-1]])
     for st in chain:
-        a = find_anim(kind, d, st)
+        a = find_anim(kind, d, st, folder)
         if not a: continue
         fr, spec = a; n = len(fr)
         base = states[-1] if st in states else st   # "slam_windup" ведёт себя как windup
@@ -76,7 +76,7 @@ def mob_frame(kind, d, states, t, progress=None):
         else: i = int(t * d.get("anim_fps", 10))
         loop = spec.get("loop", base in LOOPING)
         return fr[i % n] if loop else fr[min(i, n - 1)]
-    return d.get("skin") or d.get("sprite") or f"mobs/{kind}.png"
+    return d.get("skin") or d.get("sprite") or f"{folder or 'mobs'}/{kind}.png"
 
 def anim_length(kind, d, state):
     """Длительность анимации без зацикливания (для death), 0 — анимации нет."""

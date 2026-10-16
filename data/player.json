@@ -20,5 +20,33 @@
  "hurt_inv": 0.9,
  "combo_window": 0.28,
  "dmg_mult": 1.0,
- "ledge": true
+ "ledge": true,
+ "skin": "player/idle.png",
+ "draw": [
+  44,
+  55
+ ],
+ "draws": {
+  "roll": [
+   52,
+   37
+  ],
+  "attack": [
+   88,
+   56
+  ],
+  "shoot": [
+   88,
+   56
+  ]
+ },
+ "anim_fps": 12,
+ "anims": {
+  "jump": "player/jump.png",
+  "roll": "player/roll.png",
+  "attack": "player/attack.png",
+  "shoot": "player/shoot.png",
+  "hurt": "player/hurt.png",
+  "ladder": "player/ladder.png"
+ }
 }

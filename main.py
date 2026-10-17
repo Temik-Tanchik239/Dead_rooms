@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pygame as pg
 from core import CFG, SETTINGS, T, COLS, ROWS, W, H, reload_data, sign, approach, tile, free, FX, Body
 from anim import clear_cache, sprite, mob_frame
+import weapon
 from projectiles import volley
 from mob import Mob, Corpse
 
@@ -17,6 +18,7 @@ class Player(Body):
         s.atk, s.combo, s.hitbox = None, (None, 0, 0), None
         s.buf = dict(jump=0, roll=0, a1=0, a2=0); s.slots = ["rusty_sword", "short_bow"]
         s.anim, s.anim_t, s.anim_p = "idle", 0.0, None
+        s.aim = None   # куда смотрит курсор (координаты комнаты) или None
     def press(s, what): s.buf[what] = CFG["player"]["buffer"]
     def anim_states(s):
         p = CFG["player"]
@@ -28,6 +30,18 @@ class Player(Body):
         if s.stun > 0: return ["hurt"], None
         if not s.ground: return ["jump"], None
         return (["move"] if abs(s.vx) > 25 else ["idle"]), None
+    def facing(s, d):
+        """Куда повернуться при ударе: к курсору (если есть) или по движению."""
+        return (sign(s.aim[0] - s.cx) or s.face) if s.aim else (d or s.face)
+    def hand(s, state="idle"):
+        """Где кисть в мире (по данным player.json: hand / hands)."""
+        p = CFG["player"]; hx, hy = p.get("hands", {}).get(state, p.get("hand", [13, -24])); r = s.rect
+        return (r.centerx + s.face * hx, r.bottom + hy)
+    def aim_deg(s):
+        """Угол на курсор в системе «лицом вправо» (+ вверх) или None."""
+        if not s.aim: return None
+        hx, hy = s.hand("shoot"); a = math.degrees(math.atan2(hy - s.aim[1], s.aim[0] - hx)); a = a if s.face > 0 else 180 - a
+        return (a + 180) % 360 - 180
     def update_anim(s, dt):
         st, p = s.anim_states(); key = "|".join(st)
         if key != s.anim: s.anim, s.anim_t = key, 0.0
@@ -41,6 +55,7 @@ class Player(Body):
         else:
             pg.draw.rect(v, (200, 160, 70) if s.state == "roll" else (240, 200, 90), r, border_radius=4)
             ex = r.right - 6 if s.face > 0 else r.left + 3; pg.draw.rect(v, (30, 20, 20), (ex, r.top + 6, 3, 5))
+        if st[0] not in ("roll", "ladder"): weapon.draw_held(v, s, s.hand(st[0]))
     def can_stand(s, g): return free(g, pg.Rect(int(s.x), int(s.y) - (s.H0 - s.h), s.w, s.H0))
     def hit(s, dmg, fx_x, fx, kb=260):
         if s.inv > 0: return
@@ -60,7 +75,9 @@ class Player(Body):
                 a["hit"].add(id(m)); m.hurt(st["damage"] * CFG["player"]["dmg_mult"], s.face * st["knockback"], fx)
     def fire(s, projs, st):
         pr = st["projectile"]; o = pr if isinstance(pr, dict) else {}
-        volley(projs, pr, s.cx + s.face * 10, s.cy - 4, 0 if s.face > 0 else math.pi,
+        hx, hy = s.hand("shoot"); ang = 0 if s.face > 0 else math.pi
+        if s.aim: ang = math.atan2(s.aim[1] - hy, s.aim[0] - hx)   # стреляем в курсор
+        volley(projs, pr, hx + math.cos(ang) * 14, hy + math.sin(ang) * 14, ang,
                st["damage"] * CFG["player"]["dmg_mult"], True, o.get("count", 1), o.get("spread", 0))
     def ledge(s, g):
         c = int((s.x + s.w + 2) // T) if s.wall > 0 else int((s.x - 2) // T); hr = int((s.y + 6) // T)
@@ -111,8 +128,8 @@ class Player(Body):
                 if dn and below == "=": s.drop_t = .25; s.y += 2
                 else: s.vy = -p["jump"]
                 s.buf["jump"] = 0; s.coy = 0
-            elif s.buf["a1"]: s.face = d or s.face; s.start_attack(0)
-            elif s.buf["a2"]: s.face = d or s.face; s.start_attack(1)
+            elif s.buf["a1"]: s.face = s.facing(d); s.start_attack(0)
+            elif s.buf["a2"]: s.face = s.facing(d); s.start_attack(1)
             if s.vy < 0 and not held: s.vy = max(s.vy, -p["jump"] * p["jump_cut"])
         if s.state != "ladder":
             s.vy = min(s.vy + p["gravity"] * (p["fall_mult"] if s.vy > 0 else 1) * dt, p["max_fall"])
@@ -122,6 +139,10 @@ class Player(Body):
 
 class Drop:
     def __init__(s, x, y, wid): s.x, s.y, s.wid = x, y, wid
+    def draw(s, v):
+        bob = math.sin(pg.time.get_ticks() / 300) * 3
+        if not weapon.icon(v, s.wid, s.x, s.y - 12 + bob, 36, 30):
+            pg.draw.polygon(v, (255, 220, 90), [(s.x, s.y - 8), (s.x + 8, s.y), (s.x, s.y + 8), (s.x - 8, s.y)])
 
 class Room:
     def __init__(s, pos, doors, tpl, scale, start=False):
@@ -169,6 +190,7 @@ class Game:
         pg.init(); pg.display.set_caption("DEAD ROOMS"); s.scr = pg.display.set_mode((W, H), pg.SCALED | (pg.FULLSCREEN if SETTINGS.get("fullscreen", True) else 0)); s.debug = False; s.view = pg.Surface((W, ROWS * T))
         s.font = pg.font.SysFont("arial,dejavusans,freesans", 16, bold=True); s.big = pg.font.SysFont("arial,dejavusans,freesans", 44, bold=True)
         s.clock = pg.time.Clock(); s.new_game()
+        if SETTINGS.get("mouse_aim", True): pg.mouse.set_visible(False)
     def new_game(s): s.level = 1; s.pl = Player(); s.next_level()
     def next_level(s):
         s.rooms = gen_level(s.level); s.done = False; s.fx = FX(); s.projs = []
@@ -202,6 +224,10 @@ class Game:
         for it in fx.items: it[4] -= dt
         fx.items = [it for it in fx.items if it[4] > 0]
         if pl.hp <= 0: return
+        pl.aim = pg.mouse.get_pos() if SETTINGS.get("mouse_aim", True) else None
+        mb = pg.mouse.get_pressed()   # зажатая кнопка = непрерывные атаки / комбо
+        if mb[0]: pl.press("a1")
+        if mb[2]: pl.press("a2")
         pl.update(sim, pg.key.get_pressed(), r.g, r.mobs, s.projs, fx); pl.update_anim(sim)
         w = SimpleNamespace(g=r.g, pl=pl, mobs=r.mobs, projs=s.projs, fx=fx)   # «мир» для мобов и пуль
         for m in r.mobs:
@@ -248,14 +274,14 @@ class Game:
                     for ly in (6, 22): pg.draw.line(v, (150, 110, 70), (X + 8, Y + ly), (X + 24, Y + ly), 2)
                 elif ch == "x": pg.draw.polygon(v, (200, 200, 215), [(X + 2, Y + T), (X + 16, Y + T - 18), (X + 30, Y + T)])
         for dr in r.drops:
-            pg.draw.polygon(v, (255, 220, 90), [(dr.x, dr.y - 8), (dr.x + 8, dr.y), (dr.x, dr.y + 8), (dr.x - 8, dr.y)])
+            dr.draw(v)
             if abs(dr.x - pl.cx) < 36: v.blit(s.font.render("[E] " + CFG["weapons"][dr.wid]["name"], True, (255, 230, 120)), (dr.x - 60, dr.y - 34))
         for c in r.corpses: c.draw(v)
         for m in r.mobs: m.draw(v, s.debug)
         for q in s.projs: q.draw(v)
         if pl.inv <= 0 or int(pg.time.get_ticks() / 60) % 2:
             pl.draw(v)
-        if pl.hitbox: pg.draw.rect(v, (255, 255, 255), pl.hitbox, 2)
+        if pl.hitbox and s.debug: pg.draw.rect(v, (255, 255, 255), pl.hitbox, 2)
         for kind, x, y, data, t in s.fx.items:
             if kind == "t": v.blit(s.font.render(data, True, (255, 240, 160)), (x - 14, y - (0.7 - t) * 40))
             else: pg.draw.circle(v, (255, 200, 120), (int(x), int(y)), int(data * (1 - t / .25) + 4), 2)
@@ -271,10 +297,14 @@ class Game:
             if rm is r: pg.draw.rect(s.scr, (255, 255, 255), rc, 2)
         pg.draw.rect(s.scr, (60, 20, 20), (10, ROWS * T + 8, 200, 16)); pg.draw.rect(s.scr, (210, 60, 60), (10, ROWS * T + 8, 200 * max(0, pl.hp) / pl.maxhp, 16))
         n = lambda i: CFG["weapons"][pl.slots[i]]["name"]
-        s.txt(f"[J] {n(0)}   [L] {n(1)}", 230, ROWS * T + 7)
+        for i, (key, x) in enumerate((("ЛКМ", 230), ("ПКМ", 500))):
+            weapon.icon(s.scr, pl.slots[i], x + 12, ROWS * T + 16, 24); s.txt(f"[{key}] {n(i)}", x + 30, ROWS * T + 7)
         s.txt(f"Ур.{s.level}  комнат {sum(x.cleared for x in s.rooms.values())}/{len(s.rooms)}", W - 190, ROWS * T + 7, (180, 180, 200))
         if pl.hp <= 0: s.txt("ТЫ УМЕР — R: заново", W // 2 - 220, 200, (255, 90, 90), s.big)
         elif s.done: s.txt("УРОВЕНЬ ПРОЙДЕН — Enter", W // 2 - 260, 200, (120, 255, 150), s.big)
+        if pl.aim:   # прицел
+            mx, my = pl.aim; col = (255, 255, 255); pg.draw.circle(s.scr, col, (mx, my), 10, 1); pg.draw.circle(s.scr, col, (mx, my), 1)
+            for a in ((-17, 0, -7, 0), (7, 0, 17, 0), (0, -17, 0, -7), (0, 7, 0, 17)): pg.draw.line(s.scr, col, (mx + a[0], my + a[1]), (mx + a[2], my + a[3]))
         pg.display.flip()
     def run(s):
         while True:
@@ -282,6 +312,7 @@ class Game:
             for e in pg.event.get():
                 if e.type == pg.QUIT: return
                 if e.type == pg.KEYDOWN: s.key(e.key)
+                if e.type == pg.MOUSEBUTTONDOWN and e.button in (1, 3): s.pl.press("a1" if e.button == 1 else "a2")
             s.step(dt); s.draw()
 
 if __name__ == "__main__":

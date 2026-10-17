@@ -48,5 +48,19 @@
   "shoot": "player/shoot.png",
   "hurt": "player/hurt.png",
   "ladder": "player/ladder.png"
+ },
+ "hand": [
+  13,
+  -24
+ ],
+ "hands": {
+  "attack": [
+   23,
+   -31
+  ],
+  "shoot": [
+   16,
+   -31
+  ]
  }
 }

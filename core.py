@@ -9,11 +9,17 @@ ASSETS = BASE / "assets"
 T, COLS, ROWS = 32, 30, 16
 W, H = COLS * T, ROWS * T + 32
 CFG = {}
-DATA_FILES = ("player", "weapons", "mobs", "rooms", "projectiles")
+DATA_FILES = ("player", "weapons", "mobs", "maps", "projectiles")
 
 def reload_data():
     for n in DATA_FILES:
         CFG[n] = json.loads((DATA / f"{n}.json").read_text(encoding="utf-8"))
+    # карты: data/maps/<id>.json, файлы на "_" (заготовки) не читаются
+    CFG["map_defs"], CFG["map_errors"] = {}, []
+    for f in sorted((DATA / "maps").glob("*.json")):
+        if f.stem.startswith("_"): continue
+        try: CFG["map_defs"][f.stem] = json.loads(f.read_text(encoding="utf-8"))
+        except Exception as e: CFG["map_errors"].append(f"{f.name} не читается: {e}")
 reload_data()
 try: SETTINGS = json.loads((DATA / "settings.json").read_text(encoding="utf-8"))
 except Exception: SETTINGS = {}

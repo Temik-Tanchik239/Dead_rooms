@@ -1,0 +1,31 @@
+{
+ "_help": "Порядок карт: order (какая за какой). Каждая карта — data/maps/<id>.json. Легенда ниже общая для всех карт, карта может переопределить или добавить символы в своей legend. Подробно — README, раздел «Карты».",
+ "start": "start",
+ "order": ["start", "platforms", "spikes", "hill", "blocks"],
+ "lock": true,
+ "fall_damage": 15,
+ "loop_scale": 0.2,
+ "bg_color": [20, 18, 30],
+ "bg_mode": "cover",
+ "bg_dim": 0,
+ "tiles": {},
+ "legend": {
+  ".": "empty",
+  "#": "wall",
+  "=": "platform",
+  "H": "ladder",
+  "x": {"type": "spikes", "damage": 10},
+  "<": {"exit": "prev"},
+  ">": {"exit": "next"},
+  "P": {"player": true},
+  "?": {"item": "random"},
+  "S": {"mob": "random"},
+  "t": {"mob": "rotling"},
+  "c": {"mob": "bone_caster"},
+  "w": {"mob": "wisp"},
+  "g": {"mob": "grave_brute"},
+  "l": {"mob": "leaper"},
+  "b": {"mob": "bat"},
+  "h": {"mob": "hexer"}
+ }
+}

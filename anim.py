@@ -33,6 +33,14 @@ def sprite(path, w, h, flip=False, white=False, angle=0):
         _IMG[key] = img
     return _IMG[key]
 
+def image(path):
+    """Картинка из assets/<path> в родном размере (для фонов). Нет файла -> None."""
+    key = (path, "raw")
+    if key not in _IMG:
+        try: _IMG[key] = pg.image.load(str(ASSETS / path)).convert_alpha()
+        except Exception as e: print("картинка не загружена:", path, e); _IMG[key] = None
+    return _IMG[key]
+
 def _natural(p): return [int(x) if x.isdigit() else x.lower() for x in re.split(r"(\d+)", p.name)]
 
 def frames(path):

@@ -174,12 +174,12 @@
   ],
   "skin": "weapons/short_bow.png",
   "draw": [
-   18,
-   40
+   100,
+   80
   ],
   "grip": [
-   14,
-   20
+   11,
+   11
   ],
   "rest_angle": 0
  },

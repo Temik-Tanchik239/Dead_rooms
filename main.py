@@ -1,5 +1,5 @@
-"""DEAD ROOMS — механики Dead Cells + комнаты-экраны как в Isaac.
-Весь контент (физика, оружие, мобы, комнаты) лежит в data/*.json. F5 в игре — перезагрузка данных."""
+"""DEAD ROOMS — механики Dead Cells + карты-экраны, нарисованные вручную (data/maps/*.json, порядок — data/maps.json).
+Весь контент (физика, оружие, мобы, карты) лежит в data/*.json. F5 в игре — перезагрузка данных."""
 import math, random, sys
 from types import SimpleNamespace
 import pygame as pg
@@ -8,6 +8,7 @@ from anim import clear_cache, sprite, mob_frame
 import weapon
 from projectiles import volley
 from mob import Mob, Corpse
+from maps import Campaign, Drop, END, VH, check, random_weapon
 
 class Player(Body):
     H0 = 34
@@ -137,80 +138,53 @@ class Player(Body):
         if p.get("ledge", True) and s.state == "move" and not s.ground and s.wall and s.wall == d and s.vy > -80 and s.lock <= 0:
             s.ledge(g)
 
-class Drop:
-    def __init__(s, x, y, wid): s.x, s.y, s.wid = x, y, wid
-    def draw(s, v):
-        bob = math.sin(pg.time.get_ticks() / 300) * 3
-        if not weapon.icon(v, s.wid, s.x, s.y - 12 + bob, 36, 30):
-            pg.draw.polygon(v, (255, 220, 90), [(s.x, s.y - 8), (s.x + 8, s.y), (s.x, s.y + 8), (s.x - 8, s.y)])
-
-class Room:
-    def __init__(s, pos, doors, tpl, scale, start=False):
-        s.pos, s.doors, s.tpl, s.scale = pos, doors, tpl, scale
-        s.visited = s.cleared = start; s.spawned = start; s.locked = False; s.mobs = []; s.corpses = []
-        s.spawns = [(ci + 1, ri + 1) for ri, row in enumerate(tpl) for ci, ch in enumerate(row) if ch == "S"]
-        s.drops = [Drop(W / 2, 15 * T - 14, random.choice(list(CFG["weapons"])))] if start else []
-        s.build()
-    def build(s):
-        g = [list("#" * COLS)] + [list("#" + r.replace("S", ".").ljust(COLS - 2, ".")[:COLS - 2] + "#") for r in s.tpl] + [list("#" * COLS)]
-        ch = "D" if s.locked else "."; lad = "D" if s.locked else "H"
-        if "L" in s.doors: g[13][0] = g[14][0] = ch
-        if "R" in s.doors: g[13][COLS - 1] = g[14][COLS - 1] = ch
-        if "U" in s.doors or "D" in s.doors:
-            for r in range(1, ROWS - 1):
-                if g[r][14] != "#": g[r][14] = "H"
-        if "U" in s.doors: g[0][14], g[0][15] = lad, ch
-        if "D" in s.doors: g[ROWS - 1][14], g[ROWS - 1][15] = lad, ch
-        s.g = g
-    def spawn(s):
-        s.spawned = True
-        if not s.spawns: s.cleared = True; return
-        s.locked = True; s.build(); names = list(CFG["mobs"]); wts = [CFG["mobs"][n].get("weight", 1) for n in names]
-        for c, r in s.spawns:
-            kind = random.choices(names, wts)[0]; d = CFG["mobs"][kind]
-            s.mobs.append(Mob(kind, c * T + (T - d["w"]) / 2, r * T + T - d["h"], s.scale))
-
-def gen_level(level):
-    dirs = {"L": (-1, 0), "R": (1, 0), "U": (0, -1), "D": (0, 1)}
-    cells, cur = [(0, 0)], (0, 0)
-    while len(cells) < min(6 + level, 12):
-        dx, dy = random.choice(list(dirs.values())); n = (cur[0] + dx, cur[1] + dy)
-        if abs(n[0]) <= 3 and abs(n[1]) <= 2:
-            cur = n
-            if cur not in cells: cells.append(cur)
-    scale = 1 + .2 * (level - 1); rooms = {}
-    for c in cells:
-        doors = {k for k, (dx, dy) in dirs.items() if (c[0] + dx, c[1] + dy) in cells}
-        tpl = CFG["rooms"]["start"] if c == (0, 0) else random.choice(CFG["rooms"]["rooms"])["rows"]
-        rooms[c] = Room(c, doors, tpl, scale, start=c == (0, 0))
-    return rooms
+def s_lock(): return CFG["maps"].get("lock", True)
 
 class Game:
     def __init__(s):
         pg.init(); pg.display.set_caption("DEAD ROOMS"); s.scr = pg.display.set_mode((W, H), pg.SCALED | (pg.FULLSCREEN if SETTINGS.get("fullscreen", True) else 0)); s.debug = False; s.view = pg.Surface((W, ROWS * T))
         s.font = pg.font.SysFont("arial,dejavusans,freesans", 16, bold=True); s.big = pg.font.SysFont("arial,dejavusans,freesans", 44, bold=True)
+        s.small = pg.font.SysFont("arial,dejavusans,freesans", 11, bold=True); s.grid = False
         s.clock = pg.time.Clock(); s.new_game()
         if SETTINGS.get("mouse_aim", True): pg.mouse.set_visible(False)
-    def new_game(s): s.level = 1; s.pl = Player(); s.next_level()
-    def next_level(s):
-        s.rooms = gen_level(s.level); s.done = False; s.fx = FX(); s.projs = []
-        if s.level > 1: s.pl.hp = min(s.pl.maxhp, s.pl.hp + 30)
-        s.enter((0, 0), None)
-    def enter(s, pos, via):
-        pl = s.pl; r = s.room = s.rooms[pos]; r.visited = True; s.projs = []
-        if pl.state == "attack": pl.state = "move"; pl.atk = None
-        cx = 14 * T + (T - pl.w) / 2
-        if via == "R": pl.x, pl.y = W - T - pl.w - 6, 15 * T - pl.h
-        elif via == "L": pl.x, pl.y = T + 6, 15 * T - pl.h
-        elif via == "D": pl.x, pl.y, pl.state = cx, 14 * T - pl.h, "ladder"
-        elif via == "U": pl.x, pl.y = cx, T + 2
-        else: pl.x, pl.y = W / 2 - pl.w / 2, 15 * T - pl.h
-        pl.vx = pl.vy = 0; r.corpses = []
+    def new_game(s, loop=0):
+        if loop == 0: s.pl = Player()
+        else: s.pl.hp = min(s.pl.maxhp, s.pl.hp + 30)
+        s.camp = Campaign(loop); s.room = None; s.done = False; s.fx = FX(); s.projs = []; s.warn_t = 0
+        s.warn(check())
+        first = s.camp.first
+        if first is None: print("нет ни одной карты в data/maps/"); pg.quit(); sys.exit()
+        s.go(first, None)
+    def warn(s, msgs):
+        """Ошибки в картах — в консоль и на экран (держатся 8 секунд)."""
+        for m in msgs: print("[карты]", m)
+        s.warnings, s.warn_until = msgs[:8], pg.time.get_ticks() + 8000
+    def go(s, mid, via):
+        """Перейти на карту mid. via — запись легенды выхода, через который ушли (или None)."""
+        pl, camp = s.pl, s.camp; frm = s.room.id if s.room else None
+        if frm and mid != frm: camp.came_from[mid] = frm
+        r = s.room = camp.get(mid); r.visited = True; s.projs = []; r.corpses = []
+        rect, ladder = r.arrival(frm, via, camp)
+        s.place(rect, ladder); s.respawn = (rect, ladder); s.armed = False
         if not r.spawned: r.spawn()
+    def place(s, rect, ladder):
+        pl = s.pl
+        if pl.h != pl.H0: pl.y -= pl.H0 - pl.h; pl.h = pl.H0
+        pl.atk = None; pl.state = "ladder" if ladder else "move"
+        pl.x = max(0, min(W - pl.w, rect.centerx - pl.w / 2)); pl.y = rect.bottom - pl.h; pl.vx = pl.vy = 0
+    def take_exit(s, z):
+        r = s.room; target = s.camp.resolve(r.id, z["entry"]["exit"])
+        if target == END: s.done = True; return
+        if target is None:
+            if pg.time.get_ticks() > s.warn_t: s.fx.text(f"выход '{z['char']}' никуда не ведёт", W / 2, 80); s.warn_t = pg.time.get_ticks() + 1500
+            return
+        s.go(target, z["entry"])
     def clear(s, r):
-        r.cleared = True; r.locked = False; r.build(); s.fx.text("Зачищено!", W / 2, 120)
-        if random.random() < .5: r.drops.append(Drop(W / 2, 15 * T - 14, random.choice(list(CFG["weapons"]))))
-        if all(x.cleared for x in s.rooms.values()): s.done = True
+        r.cleared = True; r.set_lock(False); s.fx.text("Зачищено!", W / 2, 120)
+        rw = r.d.get("reward")   # {"item": "random" | id оружия, "chance": 0.5} — выпадает у игрока
+        if rw and random.random() < rw.get("chance", 1):
+            wid = random_weapon() if rw.get("item", "random") == "random" else rw["item"]
+            if wid in CFG["weapons"]: r.drops.append(Drop(s.pl.cx, s.pl.y + s.pl.h - 14, wid))
     def pickup(s):
         pl = s.pl
         for dr in s.room.drops:
@@ -242,37 +216,47 @@ class Game:
         for c in r.corpses: c.update(sim)
         r.corpses = [c for c in r.corpses if not c.dead]
         r.mobs = [m for m in r.mobs if m.hp > 0]
+        for m in r.mobs:   # упал за край карты — умер
+            if m.y > VH + 200 or m.y < -400 or m.x < -400 or m.x > W + 400: m.hp = 0
         if r.spawned and not r.cleared and not r.mobs: s.clear(r)
-        if tile(r.g, int(pl.cx // T), int((pl.y + pl.h - 2) // T)) == "x": pl.hit(10, pl.cx, fx)
-        x, y = r.pos
-        if pl.cx < 0: s.enter((x - 1, y), "R")
-        elif pl.cx > W: s.enter((x + 1, y), "L")
-        elif pl.cy < 0: s.enter((x, y - 1), "D")
-        elif pl.cy > ROWS * T: s.enter((x, y + 1), "U")
+        sc, sr = int(pl.cx // T), int((pl.y + pl.h - 2) // T)
+        if tile(r.g, sc, sr) == "x": pl.hit(r.spike_damage(sc, sr), pl.cx, fx)
+        # выходы: сработают, когда игрок отошёл от места появления и потом зашёл в клетку выхода
+        z = r.exit_at(pl.cx, pl.cy)
+        if not s.armed and not r.exit_touch(pl.rect):   # целиком вышел из проёма
+            s.armed = True
+            if r.mobs and r.d.get("lock", s_lock()): r.set_lock(True)   # двери закрываются, пока есть мобы
+        elif s.armed and z is not None: s.take_exit(z); return
+        if pl.cx < 0 or pl.cx > W or pl.cy < 0 or pl.cy > VH:   # за край карты
+            z = None if r.locked else (z or r.exit_near(pl.rect))
+            if z: s.take_exit(z)
+            if s.room is r and not s.done:   # выхода нет — пропасть: урон и назад к месту появления
+                pl.hit(r.d.get("fall_damage", CFG["maps"].get("fall_damage", 15)), pl.cx, fx); s.place(*s.respawn)
     def key(s, k):
         m = {pg.K_SPACE: "jump", pg.K_w: "jump", pg.K_UP: "jump", pg.K_k: "roll", pg.K_LSHIFT: "roll", pg.K_j: "a1", pg.K_l: "a2"}
         if k in m: s.pl.press(m[k])
         elif k == pg.K_e: s.pickup()
-        elif k == pg.K_F5: reload_data(); clear_cache(); s.fx.text("данные перезагружены", W / 2, 80)
+        elif k == pg.K_F5: s.reload()
+        elif k == pg.K_F4: s.grid = not s.grid
         elif k == pg.K_F11: pg.display.toggle_fullscreen()
         elif k == pg.K_F3: s.debug = not s.debug
         elif k == pg.K_r: s.new_game()
-        elif k == pg.K_RETURN and s.done: s.level += 1; s.next_level()
+        elif k == pg.K_RETURN and s.done: s.new_game(s.camp.loop + 1)
         elif k == pg.K_ESCAPE: pg.quit(); sys.exit()
+    def reload(s):
+        """F5: перечитать JSON и картинки, пересобрать карты; игрок остаётся на месте."""
+        reload_data(); clear_cache(); pl = s.pl; x, y, st = pl.x, pl.y, pl.state
+        s.camp.reload(); s.warn(check()); s.fx.text("данные перезагружены", W / 2, 80)
+        if s.room.id not in CFG["map_defs"]: s.room = None; s.go(s.camp.first, None); return
+        r = s.room = s.camp.get(s.room.id); r.visited = True
+        if not r.spawned: r.spawn()
+        pl.x, pl.y, pl.state = x, y, st; s.projs = []
+        s.armed = not r.exit_touch(pl.rect)
+        if s.armed and r.mobs and r.d.get("lock", s_lock()): r.set_lock(True)
     def txt(s, t, x, y, col=(235, 235, 240), f=None):
         s.scr.blit((f or s.font).render(t, True, col), (x, y))
     def draw(s):
-        v, r, pl = s.view, s.room, s.pl; v.fill((20, 18, 30))
-        for y, row in enumerate(r.g):
-            for x, ch in enumerate(row):
-                X, Y = x * T, y * T
-                if ch == "#": pg.draw.rect(v, (62, 56, 84), (X, Y, T, T)); pg.draw.rect(v, (88, 80, 114), (X, Y, T, 4))
-                elif ch == "D": pg.draw.rect(v, (160, 60, 70), (X, Y, T, T)); pg.draw.line(v, (90, 30, 40), (X, Y), (X + T, Y + T), 3)
-                elif ch == "=": pg.draw.rect(v, (150, 120, 80), (X, Y, T, 8))
-                elif ch == "H":
-                    for lx in (8, 24): pg.draw.line(v, (150, 110, 70), (X + lx, Y), (X + lx, Y + T), 3)
-                    for ly in (6, 22): pg.draw.line(v, (150, 110, 70), (X + 8, Y + ly), (X + 24, Y + ly), 2)
-                elif ch == "x": pg.draw.polygon(v, (200, 200, 215), [(X + 2, Y + T), (X + 16, Y + T - 18), (X + 30, Y + T)])
+        v, r, pl = s.view, s.room, s.pl; v.blit(r.layer, (0, 0))
         for dr in r.drops:
             dr.draw(v)
             if abs(dr.x - pl.cx) < 36: v.blit(s.font.render("[E] " + CFG["weapons"][dr.wid]["name"], True, (255, 230, 120)), (dr.x - 60, dr.y - 34))
@@ -282,30 +266,43 @@ class Game:
         if pl.inv <= 0 or int(pg.time.get_ticks() / 60) % 2:
             pl.draw(v)
         if pl.hitbox and s.debug: pg.draw.rect(v, (255, 255, 255), pl.hitbox, 2)
+        if s.grid: s.draw_grid(v)
         for kind, x, y, data, t in s.fx.items:
             if kind == "t": v.blit(s.font.render(data, True, (255, 240, 160)), (x - 14, y - (0.7 - t) * 40))
             else: pg.draw.circle(v, (255, 200, 120), (int(x), int(y)), int(data * (1 - t / .25) + 4), 2)
         ox = oy = 0
         if s.fx.shake > 0: ox, oy = random.randint(-4, 4), random.randint(-4, 4)
         s.scr.fill((10, 10, 16)); s.scr.blit(v, (ox, oy))
-        bx = W - 150
-        for (x, y), rm in s.rooms.items():
-            nb = any(s.rooms.get((x + a, y + b)) and s.rooms[(x + a, y + b)].visited for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1)))
-            if not (rm.visited or nb): continue
-            col = (70, 70, 90) if not rm.visited else ((80, 170, 100) if rm.cleared else (190, 80, 80))
-            rc = (bx + 54 + x * 18, 8 + 24 + y * 12, 16, 10); pg.draw.rect(s.scr, col, rc)
+        order = s.camp.order   # прогресс: квадратик на каждую карту из order
+        for i, mid in enumerate(order):
+            rm = s.camp.maps.get(mid); rc = (W - 18 * len(order) - 8 + i * 18, 8, 14, 10)
+            col = (55, 55, 70) if not rm or not rm.visited else ((80, 170, 100) if rm.cleared else (190, 80, 80))
+            pg.draw.rect(s.scr, col, rc)
             if rm is r: pg.draw.rect(s.scr, (255, 255, 255), rc, 2)
+        s.txt(r.name, W - 18 * len(order) - 16 - s.font.size(r.name)[0], 4, (220, 220, 235))
+        if pg.time.get_ticks() < s.warn_until:
+            for i, m in enumerate(s.warnings): s.txt("! " + m, 10, 8 + i * 20, (255, 140, 120))
         pg.draw.rect(s.scr, (60, 20, 20), (10, ROWS * T + 8, 200, 16)); pg.draw.rect(s.scr, (210, 60, 60), (10, ROWS * T + 8, 200 * max(0, pl.hp) / pl.maxhp, 16))
         n = lambda i: CFG["weapons"][pl.slots[i]]["name"]
         for i, (key, x) in enumerate((("ЛКМ", 230), ("ПКМ", 500))):
             weapon.icon(s.scr, pl.slots[i], x + 12, ROWS * T + 16, 24); s.txt(f"[{key}] {n(i)}", x + 30, ROWS * T + 7)
-        s.txt(f"Ур.{s.level}  комнат {sum(x.cleared for x in s.rooms.values())}/{len(s.rooms)}", W - 190, ROWS * T + 7, (180, 180, 200))
+        if s.camp.loop: s.txt(f"Круг {s.camp.loop + 1}", W - 90, ROWS * T + 7, (180, 180, 200))
         if pl.hp <= 0: s.txt("ТЫ УМЕР — R: заново", W // 2 - 220, 200, (255, 90, 90), s.big)
-        elif s.done: s.txt("УРОВЕНЬ ПРОЙДЕН — Enter", W // 2 - 260, 200, (120, 255, 150), s.big)
+        elif s.done: s.txt("ВСЕ КАРТЫ ПРОЙДЕНЫ — Enter: ещё круг", W // 2 - 380, 200, (120, 255, 150), s.big)
         if pl.aim:   # прицел
             mx, my = pl.aim; col = (255, 255, 255); pg.draw.circle(s.scr, col, (mx, my), 10, 1); pg.draw.circle(s.scr, col, (mx, my), 1)
             for a in ((-17, 0, -7, 0), (7, 0, 17, 0), (0, -17, 0, -7), (0, 7, 0, 17)): pg.draw.line(s.scr, col, (mx + a[0], my + a[1]), (mx + a[2], my + a[3]))
         pg.display.flip()
+    def draw_grid(s, v):
+        """F4: сетка с номерами клеток — удобно рисовать карту. Под курсором — столбец, строка и символ."""
+        for c in range(COLS): pg.draw.line(v, (110, 110, 140), (c * T, 0), (c * T, VH))
+        for r in range(ROWS): pg.draw.line(v, (110, 110, 140), (0, r * T), (W, r * T))
+        for c in range(0, COLS, 2): v.blit(s.small.render(str(c), True, (255, 255, 120)), (c * T + 2, 2))
+        for r in range(ROWS): v.blit(s.small.render(str(r), True, (255, 255, 120)), (2, r * T + 2))
+        mx, my = pg.mouse.get_pos(); c, r = mx // T, my // T
+        if 0 <= c < COLS and 0 <= r < ROWS:
+            pg.draw.rect(v, (255, 255, 120), (c * T, r * T, T, T), 2)
+            v.blit(s.font.render(f"столбец {c}, строка {r}: '{s.room.chars[r][c]}'", True, (255, 255, 120)), (mx + 14, my + 14))
     def run(s):
         while True:
             dt = min(s.clock.tick(60) / 1000, 1 / 30)

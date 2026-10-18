@@ -6,6 +6,7 @@ import pygame as pg
 from core import CFG, SETTINGS, T, COLS, ROWS, W, H, reload_data, sign, approach, tile, free, FX, Body
 from anim import clear_cache, sprite, mob_frame
 import weapon
+import hud
 from projectiles import volley
 from mob import Mob, Corpse
 from maps import Campaign, Drop, END, VH, check, random_weapon
@@ -17,6 +18,7 @@ class Player(Body):
         s.hp = s.maxhp = CFG["player"]["hp"]; s.face, s.state = 1, "move"
         s.inv = s.coy = s.st = s.lock = s.drop_t = s.stun = 0
         s.atk, s.combo, s.hitbox = None, (None, 0, 0), None
+        s.refresh_mana(True)
         s.buf = dict(jump=0, roll=0, a1=0, a2=0); s.slots = ["rusty_sword", "short_bow"]
         s.anim, s.anim_t, s.anim_p = "idle", 0.0, None
         s.aim = None   # куда смотрит курсор (координаты комнаты) или None
@@ -63,17 +65,26 @@ class Player(Body):
         s.hp -= dmg; s.inv = CFG["player"]["hurt_inv"]; s.stun = .18
         s.vx = (sign(s.cx - fx_x) or 1) * kb; s.vy = -260; fx.shake = .2; fx.stop = .06
         if s.state in ("attack", "ladder"): s.state = "move"; s.atk = None
+    def refresh_mana(s, full=False):
+        """Прочитать настройки маны из player.json (full — заполнить стартовым значением)."""
+        m = CFG["player"].get("mana", {}); s.maxmana = m.get("max", 100)
+        if full: s.mana, s.mana_t, s.mana_flash = min(m.get("start", s.maxmana), s.maxmana), 0, 0
+        else: s.mana = min(s.mana, s.maxmana)
     def start_attack(s, i):
         wid = s.slots[i]; steps = CFG["weapons"][wid]["combo"]; sl, stp, left = s.combo
         n = (stp + 1) % len(steps) if sl == wid and left > 0 else 0; st = steps[n]
+        s.buf["a1" if i == 0 else "a2"] = 0; cost = weapon.mana_cost(wid, st)
+        if s.mana < cost: s.mana_flash = .35; return   # не хватает маны — удар не начинается, полоска мигает
+        s.mana -= cost; s.mana_t = CFG["player"].get("mana", {}).get("regen_delay", .9)
         s.atk = dict(w=wid, n=n, step=st, t=0.0, wu=st["windup"], ac=st["active"], rec=st["recovery"], fired=False, hit=set())
-        s.state = "attack"; s.buf["a1" if i == 0 else "a2"] = 0
+        s.state = "attack"
     def strike(s, mobs, fx):
         a = s.atk; st = a["step"]; rw, rh = st["reach"]
         s.hitbox = pg.Rect(int(s.x + s.w if s.face > 0 else s.x - rw), int(s.cy - rh / 2), rw, rh)
         for m in mobs:
             if id(m) not in a["hit"] and s.hitbox.colliderect(m.rect):
                 a["hit"].add(id(m)); m.hurt(st["damage"] * CFG["player"]["dmg_mult"], s.face * st["knockback"], fx)
+                s.mana = min(s.maxmana, s.mana + weapon.mana_hit(a["w"], st))   # попадание возвращает ману
     def fire(s, projs, st):
         pr = st["projectile"]; o = pr if isinstance(pr, dict) else {}
         hx, hy = s.hand("shoot"); ang = 0 if s.face > 0 else math.pi
@@ -89,7 +100,8 @@ class Player(Body):
     def update(s, dt, k, g, mobs, projs, fx):
         p = CFG["player"]; s.hitbox = None
         for b in s.buf: s.buf[b] = max(0, s.buf[b] - dt)
-        s.inv -= dt; s.lock -= dt; s.drop_t -= dt
+        s.inv -= dt; s.lock -= dt; s.drop_t -= dt; s.mana_t -= dt; s.mana_flash -= dt
+        if s.mana_t <= 0 and s.mana < s.maxmana: s.mana = min(s.maxmana, s.mana + p.get("mana", {}).get("regen", 14) * dt)   # восстановление маны
         sl, stp, left = s.combo; s.combo = (sl, stp, left - dt)
         s.coy = p["coyote"] if s.ground else s.coy - dt
         d = (k[pg.K_d] or k[pg.K_RIGHT]) - (k[pg.K_a] or k[pg.K_LEFT])
@@ -149,7 +161,7 @@ class Game:
         if SETTINGS.get("mouse_aim", True): pg.mouse.set_visible(False)
     def new_game(s, loop=0):
         if loop == 0: s.pl = Player()
-        else: s.pl.hp = min(s.pl.maxhp, s.pl.hp + 30)
+        else: s.pl.hp = min(s.pl.maxhp, s.pl.hp + 30); s.pl.refresh_mana(True)
         s.camp = Campaign(loop); s.room = None; s.done = False; s.fx = FX(); s.projs = []; s.warn_t = 0
         s.warn(check())
         first = s.camp.first
@@ -245,7 +257,7 @@ class Game:
         elif k == pg.K_ESCAPE: pg.quit(); sys.exit()
     def reload(s):
         """F5: перечитать JSON и картинки, пересобрать карты; игрок остаётся на месте."""
-        reload_data(); clear_cache(); pl = s.pl; x, y, st = pl.x, pl.y, pl.state
+        reload_data(); clear_cache(); pl = s.pl; x, y, st = pl.x, pl.y, pl.state; pl.refresh_mana()
         s.camp.reload(); s.warn(check()); s.fx.text("данные перезагружены", W / 2, 80)
         if s.room.id not in CFG["map_defs"]: s.room = None; s.go(s.camp.first, None); return
         r = s.room = s.camp.get(s.room.id); r.visited = True
@@ -282,10 +294,11 @@ class Game:
         s.txt(r.name, W - 18 * len(order) - 16 - s.font.size(r.name)[0], 4, (220, 220, 235))
         if pg.time.get_ticks() < s.warn_until:
             for i, m in enumerate(s.warnings): s.txt("! " + m, 10, 8 + i * 20, (255, 140, 120))
-        pg.draw.rect(s.scr, (60, 20, 20), (10, ROWS * T + 8, 200, 16)); pg.draw.rect(s.scr, (210, 60, 60), (10, ROWS * T + 8, 200 * max(0, pl.hp) / pl.maxhp, 16))
+        hud.draw(s.scr, pl, s.small)   # полоски HP и маны
         n = lambda i: CFG["weapons"][pl.slots[i]]["name"]
         for i, (key, x) in enumerate((("ЛКМ", 230), ("ПКМ", 500))):
             weapon.icon(s.scr, pl.slots[i], x + 12, ROWS * T + 16, 24); s.txt(f"[{key}] {n(i)}", x + 30, ROWS * T + 7)
+            cost = weapon.mana_cost(pl.slots[i], CFG["weapons"][pl.slots[i]]["combo"][0]); s.txt(f"{cost}", x + 38 + s.font.size(f"[{key}] {n(i)}")[0], ROWS * T + 7, (120, 170, 255))
         if s.camp.loop: s.txt(f"Круг {s.camp.loop + 1}", W - 90, ROWS * T + 7, (180, 180, 200))
         if pl.hp <= 0: s.txt("ТЫ УМЕР — R: заново", W // 2 - 220, 200, (255, 90, 90), s.big)
         elif s.done: s.txt("ВСЕ КАРТЫ ПРОЙДЕНЫ — Enter: ещё круг", W // 2 - 380, 200, (120, 255, 150), s.big)

@@ -2,7 +2,11 @@
 weapons.json: skin (картинка носом вправо, рукоять слева), draw [w, h] (размер на экране), grip [x, y] (где рука, px от левого верхнего
 угла картинки), rest_angle (угол в покое, градусы, + вверх), rotate: false + fixed_angle (не поворачивать, напр. склянка),
 style: "slash" | "thrust". В шаге комбо: style, swing [от, до] (градусы) — как идёт взмах.
-Нет skin — ищется assets/weapons/<id>.png, нет файла — оружие просто не рисуется."""
+Нет skin — ищется assets/weapons/<id>.png, нет файла — оружие просто не рисуется.
+
+МАНА: каждый удар/выстрел тратит ману. mana — цена одного удара (у оружия или у шага комбо — шаг важнее),
+mana_hit — сколько маны возвращает попадание ближним ударом. Не хватает маны — удар не начинается.
+Общие настройки (максимум, восстановление, вид полоски) — data/player.json → mana."""
 import math
 import pygame as pg
 from core import CFG
@@ -60,3 +64,15 @@ def icon(v, wid, x, y, box=24, angle=0):
     img = sprite(path, max(1, round(dw * k)), max(1, round(dh * k)), False, False, angle)
     if img: v.blit(img, img.get_rect(center=(int(x), int(y)))); return True
     return False
+
+def mana_cost(wid, step=None):
+    """Сколько маны стоит удар: поле mana у шага комбо, иначе у оружия, иначе player.json -> mana.default_cost."""
+    w = CFG["weapons"][wid]
+    if step is not None and "mana" in step: return step["mana"]
+    return w.get("mana", CFG["player"].get("mana", {}).get("default_cost", 0))
+
+def mana_hit(wid, step=None):
+    """Сколько маны возвращает попадание ближним ударом (поле mana_hit у шага или оружия)."""
+    w = CFG["weapons"][wid]
+    if step is not None and "mana_hit" in step: return step["mana_hit"]
+    return w.get("mana_hit", 0)

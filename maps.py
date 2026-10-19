@@ -1,13 +1,15 @@
 """Карты, нарисованные вручную. Ничего не генерируется случайно.
 
 data/maps.json      — порядок карт ("order"), общая легенда символов, общие настройки.
-data/maps/<id>.json — одна карта: сетка 30 x 16 символов ("rows"), фон, своя легенда, мобы, награда.
+data/maps/<id>.json — одна карта: сетка 30 x 16 символов ("rows"), фон, своя легенда, мобы, награда,
+                      "pos": [x, y] — координата карты в СЕТКЕ МИРА (x вправо, y вниз), по ней работают выходы left/right/up/down.
 Файлы, имя которых начинается с "_", игра не читает (например, _template.json — заготовка).
 
 Каждый символ сетки — это клетка. Что значит символ, говорит легенда: общая (maps.json) + своя у карты (перекрывает).
 Запись легенды — строка-тип ("wall") или словарь:
   type    — физика клетки: empty | wall | platform | ladder | spikes
-  exit    — клетка-выход: "next" | "prev" | "back" (откуда пришёл) | id карты
+  exit    — клетка-выход: "next" | "prev" (порядок order) | "back" (откуда пришёл) | id карты |
+            "left" | "right" | "up" | "down" (соседняя карта по сетке мира, см. pos) | [x, y] (карта в этой клетке сетки)
   arrive  — (у выхода) символ, у которого появиться на целевой карте
   player  — true: точка старта игрока
   mob     — id моба из mobs.json или "random"
@@ -25,6 +27,82 @@ from mob import Mob
 END = "__end__"
 PHYS = {"empty": ".", "wall": "#", "platform": "=", "ladder": "H", "spikes": "x"}
 VH = ROWS * T   # высота игрового поля в пикселях
+BACK = "__back__"
+DIRS = {"left": (-1, 0), "right": (1, 0), "up": (0, -1), "down": (0, 1)}
+NAMES = {"left": "влево", "right": "вправо", "up": "вверх", "down": "вниз"}
+
+def order(): return [m for m in CFG["maps"].get("order", []) if m in CFG["map_defs"]]
+
+# ---------- сетка мира ----------
+def pos_of(mid):
+    """Координата карты в сетке мира (поле pos = [x, y]) или None."""
+    p = CFG["map_defs"].get(mid, {}).get("pos")
+    ok = isinstance(p, (list, tuple)) and len(p) == 2 and all(isinstance(v, int) and not isinstance(v, bool) for v in p)
+    return (p[0], p[1]) if ok else None
+
+def map_at(pos):
+    """id карты, стоящей в клетке сетки pos, или None."""
+    pos = tuple(pos)
+    for mid in CFG["map_defs"]:
+        if pos_of(mid) == pos: return mid
+    return None
+
+def valid_exit(ex, defs):
+    if isinstance(ex, (list, tuple)): return len(ex) == 2
+    return isinstance(ex, str) and (ex in ("next", "prev", "back", END) or ex in DIRS or ex in defs)
+
+def target_of(cur, target):
+    """Куда ведёт выход карты cur: id карты, END (конец), BACK (туда, откуда пришёл) или None (некуда)."""
+    if isinstance(target, (list, tuple)): return map_at(target) if len(target) == 2 else None
+    o = order()
+    if target == "next":
+        if cur not in o: return None
+        i = o.index(cur) + 1; return o[i] if i < len(o) else END
+    if target == "prev":
+        if cur not in o: return None
+        i = o.index(cur) - 1; return o[i] if i >= 0 else None
+    if target == "back": return BACK
+    if target == END: return END
+    if isinstance(target, str) and target in DIRS:
+        p = pos_of(cur)
+        return map_at((p[0] + DIRS[target][0], p[1] + DIRS[target][1])) if p else None
+    return target if isinstance(target, str) and target in CFG["map_defs"] else None
+
+def used_exits(mid):
+    """[(символ, значение exit)] у карты — только символы, которые реально нарисованы в сетке."""
+    md = CFG["map_defs"][mid]; lg = legend_of(md); out = []
+    for ch in sorted({c for row in md.get("rows", []) for c in row}):
+        ex = lg.get(ch, {}).get("exit")
+        if ex is not None: out.append((ch, ex))
+    return out
+
+def world_links():
+    """Реальные переходы: множество пар (откуда, куда). 'back' зависит от прохождения и не учитывается."""
+    out = set()
+    for mid in CFG["map_defs"]:
+        for ch, ex in used_exits(mid):
+            t = target_of(mid, ex) if valid_exit(ex, CFG["map_defs"]) else None
+            if t and t not in (END, BACK): out.add((mid, t))
+    return out
+
+def two_way(a, b):
+    """Переход a→b двусторонний: на b есть выход обратно на a или выход 'back'."""
+    return (b, a) in world_links() or any(target_of(b, ex) == BACK for _, ex in used_exits(b))
+
+def world_text():
+    """Сетка мира текстом (в консоль при запуске и F5)."""
+    cells = {m: pos_of(m) for m in CFG["map_defs"] if pos_of(m)}
+    if not cells: return "[сетка мира] ни у одной карты нет pos — впиши \"pos\": [x, y] в data/maps/<id>.json"
+    xs, ys = [p[0] for p in cells.values()], [p[1] for p in cells.values()]; w = 15
+    lines = ["[сетка мира]  x вправо, y вниз", "      " + "".join(f"x={x}".ljust(w) for x in range(min(xs), max(xs) + 1))]
+    for y in range(min(ys), max(ys) + 1):
+        row = f"y={y}".ljust(6)
+        for x in range(min(xs), max(xs) + 1):
+            m = map_at((x, y)); row += (f"[{m}]"[:w - 1] if m else "·").ljust(w)
+        lines.append(row.rstrip())
+    nop = [m for m in CFG["map_defs"] if m not in cells]
+    if nop: lines.append("без pos: " + ", ".join(nop))
+    return "\n".join(lines)
 
 def norm(v):
     """Запись легенды -> словарь с полем type."""
@@ -53,7 +131,7 @@ def random_weapon(): return random.choice(list(CFG["weapons"]))
 
 class GameMap:
     def __init__(s, mid, scale=1.0):
-        s.id = mid; s.d = md = CFG["map_defs"][mid]; s.name = md.get("name", mid)
+        s.id = mid; s.d = md = CFG["map_defs"][mid]; s.name = md.get("name", mid); s.pos = pos_of(mid)
         s.scale = scale * md.get("difficulty", 1); s.legend = lg = legend_of(md)
         rows = md.get("rows", []); fill = md.get("fill", ".")
         s.chars = [[rows[r][c] if r < len(rows) and c < len(rows[r]) else fill for c in range(COLS)] for r in range(ROWS)]
@@ -204,7 +282,7 @@ class Campaign:
     def __init__(s, loop=0):
         s.loop = loop; s.maps = {}; s.came_from = {}
     @property
-    def order(s): return [m for m in CFG["maps"].get("order", []) if m in CFG["map_defs"]]
+    def order(s): return order()
     @property
     def first(s):
         st = CFG["maps"].get("start")
@@ -214,17 +292,9 @@ class Campaign:
         if mid not in s.maps: s.maps[mid] = GameMap(mid, s.scale())
         return s.maps[mid]
     def resolve(s, cur, target):
-        """Куда ведёт выход: id карты, END (конец) или None (некуда)."""
-        o = s.order
-        if target == "next":
-            if cur not in o: return None
-            i = o.index(cur) + 1; return o[i] if i < len(o) else END
-        if target == "prev":
-            if cur not in o: return None
-            i = o.index(cur) - 1; return o[i] if i >= 0 else None
-        if target == "back": return s.came_from.get(cur)
-        if target == END: return END
-        return target if target in CFG["map_defs"] else None
+        """Куда ведёт выход: id карты, END (конец) или None (некуда). Направления left/right/up/down и [x, y] — по сетке мира."""
+        t = target_of(cur, target)
+        return s.came_from.get(cur) if t == BACK else t
     def reload(s):
         """F5: карты пересобираются из файлов, зачищенные остаются зачищенными."""
         old = s.maps; s.maps = {}
@@ -236,6 +306,12 @@ class Campaign:
 def check():
     """Проверка всех карт: список предупреждений (выводятся в консоль и на экран при запуске и F5)."""
     out, defs = list(CFG.get("map_errors", [])), CFG["map_defs"]
+    seen = {}   # сетка мира: pos должен быть [x, y], в одной клетке — одна карта
+    for mid, md in defs.items():
+        if "pos" in md and pos_of(mid) is None: out.append(f"{mid}: pos должен быть [x, y] — два целых числа")
+        p = pos_of(mid)
+        if p and p in seen: out.append(f"{mid} и {seen[p]} стоят в одной клетке сетки {list(p)}")
+        elif p: seen[p] = mid
     for mid in CFG["maps"].get("order", []):
         if mid not in defs: out.append(f"order: нет файла data/maps/{mid}.json")
     if not CFG["maps"].get("order"): out.append("maps.json: пустой order")
@@ -251,7 +327,18 @@ def check():
             if e.get("mob") not in (None, "random") and e["mob"] not in CFG["mobs"]: out.append(f"{mid}: '{ch}' — нет моба {e['mob']}")
             if e.get("item") not in (None, "random") and e["item"] not in CFG["weapons"]: out.append(f"{mid}: '{ch}' — нет оружия {e['item']}")
             ex = e.get("exit")
-            if ex and ex not in ("next", "prev", "back", END) and ex not in defs: out.append(f"{mid}: '{ch}' ведёт на несуществующую карту {ex}")
+            if ex is not None and not valid_exit(ex, defs): out.append(f"{mid}: '{ch}' ведёт на несуществующую карту {ex}")
         for key in ("background",):
             if md.get(key) and not image(md[key]): out.append(f"{mid}: нет картинки assets/{md[key]}")
+    for mid in defs:   # переходы: ведут ли выходы куда надо и есть ли выход обратно
+        for ch, ex in used_exits(mid):
+            if not valid_exit(ex, defs): continue
+            t = target_of(mid, ex)
+            if t is None:
+                if isinstance(ex, str) and ex in DIRS:
+                    p = pos_of(mid)
+                    out.append(f"{mid}: выход '{ch}' ({NAMES[ex]}) — " + ("у карты нет pos" if not p else f"в клетке {[p[0] + DIRS[ex][0], p[1] + DIRS[ex][1]]} нет карты"))
+                elif isinstance(ex, (list, tuple)): out.append(f"{mid}: выход '{ch}' — в клетке {list(ex)} нет карты")
+            elif t not in (END, BACK) and not any(target_of(t, e2) in (mid, BACK) for _, e2 in used_exits(t) if valid_exit(e2, defs)):
+                out.append(f"{mid} → {t}: на карте {t} нет выхода обратно на {mid} (игрок появится у символа P)")
     return out

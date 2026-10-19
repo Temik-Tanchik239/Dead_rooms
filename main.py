@@ -9,7 +9,7 @@ import weapon
 import hud
 from projectiles import volley
 from mob import Mob, Corpse
-from maps import Campaign, Drop, END, VH, check, random_weapon
+from maps import Campaign, Drop, END, VH, check, random_weapon, pos_of, world_text, world_links, two_way
 
 class Player(Body):
     H0 = 34
@@ -153,10 +153,12 @@ class Player(Body):
 def s_lock(): return CFG["maps"].get("lock", True)
 
 class Game:
+    show_world = False   # M: карта мира открыта (игра на паузе)
     def __init__(s):
         pg.init(); pg.display.set_caption("DEAD ROOMS"); s.scr = pg.display.set_mode((W, H), pg.SCALED | (pg.FULLSCREEN if SETTINGS.get("fullscreen", True) else 0)); s.debug = False; s.view = pg.Surface((W, ROWS * T))
         s.font = pg.font.SysFont("arial,dejavusans,freesans", 16, bold=True); s.big = pg.font.SysFont("arial,dejavusans,freesans", 44, bold=True)
         s.small = pg.font.SysFont("arial,dejavusans,freesans", 11, bold=True); s.grid = False
+        s.show_world = False; s.veil = pg.Surface((W, ROWS * T), pg.SRCALPHA); s.veil.fill((6, 6, 12, 225))
         s.clock = pg.time.Clock(); s.new_game()
         if SETTINGS.get("mouse_aim", True): pg.mouse.set_visible(False)
     def new_game(s, loop=0):
@@ -164,6 +166,7 @@ class Game:
         else: s.pl.hp = min(s.pl.maxhp, s.pl.hp + 30); s.pl.refresh_mana(True)
         s.camp = Campaign(loop); s.room = None; s.done = False; s.fx = FX(); s.projs = []; s.warn_t = 0
         s.warn(check())
+        if CFG["maps"].get("print_world", True): print(world_text())
         first = s.camp.first
         if first is None: print("нет ни одной карты в data/maps/"); pg.quit(); sys.exit()
         s.go(first, None)
@@ -205,7 +208,7 @@ class Game:
                 pl.slots[i], dr.wid = dr.wid, pl.slots[i]; pl.combo = (None, 0, 0)
                 s.fx.text(CFG["weapons"][pl.slots[i]]["name"], pl.cx, pl.y - 10); break
     def step(s, dt):
-        fx, pl, r = s.fx, s.pl, s.room; sim = 0 if fx.stop > 0 else dt
+        fx, pl, r = s.fx, s.pl, s.room; sim = 0 if (fx.stop > 0 or s.show_world) else dt   # на карте мира (M) игра на паузе
         fx.stop = max(0, fx.stop - dt); fx.shake = max(0, fx.shake - dt)
         for it in fx.items: it[4] -= dt
         fx.items = [it for it in fx.items if it[4] > 0]
@@ -250,6 +253,7 @@ class Game:
         elif k == pg.K_e: s.pickup()
         elif k == pg.K_F5: s.reload()
         elif k == pg.K_F4: s.grid = not s.grid
+        elif k == pg.K_m: s.show_world = not s.show_world
         elif k == pg.K_F11: pg.display.toggle_fullscreen()
         elif k == pg.K_F3: s.debug = not s.debug
         elif k == pg.K_r: s.new_game()
@@ -259,6 +263,7 @@ class Game:
         """F5: перечитать JSON и картинки, пересобрать карты; игрок остаётся на месте."""
         reload_data(); clear_cache(); pl = s.pl; x, y, st = pl.x, pl.y, pl.state; pl.refresh_mana()
         s.camp.reload(); s.warn(check()); s.fx.text("данные перезагружены", W / 2, 80)
+        if CFG["maps"].get("print_world", True): print(world_text())
         if s.room.id not in CFG["map_defs"]: s.room = None; s.go(s.camp.first, None); return
         r = s.room = s.camp.get(s.room.id); r.visited = True
         if not r.spawned: r.spawn()
@@ -291,7 +296,8 @@ class Game:
             col = (55, 55, 70) if not rm or not rm.visited else ((80, 170, 100) if rm.cleared else (190, 80, 80))
             pg.draw.rect(s.scr, col, rc)
             if rm is r: pg.draw.rect(s.scr, (255, 255, 255), rc, 2)
-        s.txt(r.name, W - 18 * len(order) - 16 - s.font.size(r.name)[0], 4, (220, 220, 235))
+        label = r.name + (f"  [{r.pos[0]}, {r.pos[1]}]" if r.pos else "")   # имя карты и её координата в сетке мира
+        s.txt(label, W - 18 * len(order) - 16 - s.font.size(label)[0], 4, (220, 220, 235))
         if pg.time.get_ticks() < s.warn_until:
             for i, m in enumerate(s.warnings): s.txt("! " + m, 10, 8 + i * 20, (255, 140, 120))
         hud.draw(s.scr, pl, s.small)   # полоски HP и маны
@@ -302,10 +308,32 @@ class Game:
         if s.camp.loop: s.txt(f"Круг {s.camp.loop + 1}", W - 90, ROWS * T + 7, (180, 180, 200))
         if pl.hp <= 0: s.txt("ТЫ УМЕР — R: заново", W // 2 - 220, 200, (255, 90, 90), s.big)
         elif s.done: s.txt("ВСЕ КАРТЫ ПРОЙДЕНЫ — Enter: ещё круг", W // 2 - 380, 200, (120, 255, 150), s.big)
+        if s.show_world: s.draw_world()
         if pl.aim:   # прицел
             mx, my = pl.aim; col = (255, 255, 255); pg.draw.circle(s.scr, col, (mx, my), 10, 1); pg.draw.circle(s.scr, col, (mx, my), 1)
             for a in ((-17, 0, -7, 0), (7, 0, 17, 0), (0, -17, 0, -7), (0, 7, 0, 17)): pg.draw.line(s.scr, col, (mx + a[0], my + a[1]), (mx + a[2], my + a[3]))
         pg.display.flip()
+    def draw_world(s):
+        """M: сетка мира. Клетка = карта (её pos в data/maps/<id>.json), линия = переход между картами:
+        серая — в обе стороны, оранжевая — только в одну. Красная клетка — карта не зачищена, зелёная — зачищена."""
+        s.scr.blit(s.veil, (0, 0)); defs = CFG["map_defs"]; cells = {m: pos_of(m) for m in defs if pos_of(m)}
+        s.txt("Карта мира (M — закрыть)     x → вправо, y ↓ вниз     [x, y] — поле pos в data/maps/<id>.json", 12, 8, (220, 220, 235))
+        s.txt("белая рамка — вы здесь   красная — не зачищена   зелёная — зачищена   серая линия — переход в обе стороны   оранжевая — только в одну", 12, VH - 22, (170, 175, 200), s.small)
+        if not cells: s.txt('ни у одной карты нет pos — впиши "pos": [x, y] в data/maps/<id>.json', 12, 40, (255, 160, 120)); return
+        xs, ys = [p[0] for p in cells.values()], [p[1] for p in cells.values()]; nx, ny = max(xs) - min(xs) + 1, max(ys) - min(ys) + 1
+        cw, ch = min(190, (W - 60) // nx), min(100, (VH - 90) // ny); ox, oy = (W - nx * cw) // 2, 40 + (VH - 40 - ny * ch) // 2
+        links = world_links(); reveal = CFG["maps"].get("world", {}).get("reveal", "all")
+        def seen(m): rm = s.camp.maps.get(m); return bool(rm and rm.visited)
+        show = {m for m in cells if reveal == "all" or seen(m) or any(seen(b) for a, b in links if a == m) or any(seen(a) for a, b in links if b == m)}
+        rc = {m: pg.Rect(ox + (cells[m][0] - min(xs)) * cw, oy + (cells[m][1] - min(ys)) * ch, cw - 16, ch - 16) for m in show}
+        for a, b in links:
+            if a in rc and b in rc and not ((b, a) in links and a > b):
+                pg.draw.line(s.scr, (120, 120, 150) if two_way(a, b) else (255, 170, 70), rc[a].center, rc[b].center, 3)
+        for m, rect in rc.items():
+            rm = s.camp.maps.get(m); col = (45, 45, 62) if not (rm and rm.visited) else ((60, 130, 85) if rm.cleared else (150, 60, 60))
+            pg.draw.rect(s.scr, col, rect, border_radius=6); pg.draw.rect(s.scr, (255, 255, 255) if m == s.room.id else (110, 110, 140), rect, 3 if m == s.room.id else 1, border_radius=6)
+            s.scr.blit(s.font.render(defs[m].get("name", m), True, (240, 240, 250)), (rect.x + 8, rect.y + 6))
+            s.scr.blit(s.small.render(f"{m}   [{cells[m][0]}, {cells[m][1]}]" + "", True, (200, 205, 225)), (rect.x + 8, rect.bottom - 18))
     def draw_grid(s, v):
         """F4: сетка с номерами клеток — удобно рисовать карту. Под курсором — столбец, строка и символ."""
         for c in range(COLS): pg.draw.line(v, (110, 110, 140), (c * T, 0), (c * T, VH))

@@ -92,34 +92,34 @@
   "regen_delay": 0.9,
   "default_cost": 5,
   "bar": {
-    "x": 10,
-    "y": 20,
-    "w": 200,
-    "h": 9,
-    "color": [
-      70,
-      140,
-      255
-    ],
-    "back": [
-      18,
-      26,
-      60
-    ],
-    "border": [
-      8,
-      12,
-      30
-    ],
-    "flash": [
-      255,
-      90,
-      90
-    ],
-    "ticks": 20,
-    "text": true,
-    "fill_skin": "ui/mana_fill",
-    "frame_skin": "ui/mana_frame.png"
+   "x": 10,
+   "y": 20,
+   "w": 200,
+   "h": 9,
+   "color": [
+    70,
+    140,
+    255
+   ],
+   "back": [
+    18,
+    26,
+    60
+   ],
+   "border": [
+    8,
+    12,
+    30
+   ],
+   "flash": [
+    255,
+    90,
+    90
+   ],
+   "ticks": 20,
+   "text": true,
+   "fill_skin": "ui/mana_fill.png",
+   "frame_skin": "ui/mana_frame.png"
   }
  }
 }

@@ -1,10 +1,18 @@
 {
- "_help": "Заготовка. Скопируй файл как data/maps/<id>.json (без _ в начале), нарисуй сетку 30x16 и впиши <id> в order в data/maps.json. Все поля, кроме rows, необязательные.",
+ "_help": "Заготовка. Скопируй файл как data/maps/<id>.json (без _ в начале), нарисуй сетку 30x16 и впиши <id> в order в data/maps.json. Все поля, кроме rows, необязательные. pos — координата карты в сетке мира [x, y] (x вправо, y вниз): по ней выходы L R U D (left/right/up/down) находят соседей.",
  "name": "Новая карта",
+ "pos": [
+  4,
+  0
+ ],
  "background": "backgrounds/crypt.png",
  "bg_mode": "cover",
  "bg_dim": 0.1,
- "bg_color": [20, 18, 30],
+ "bg_color": [
+  20,
+  18,
+  30
+ ],
  "tiles": {
   "wall": "tiles/stone.png"
  },
@@ -15,10 +23,29 @@
   "rotling": 2,
   "bat": 1
  },
- "reward": {"item": "random", "chance": 0.5},
+ "reward": {
+  "item": "random",
+  "chance": 0.5
+ },
  "legend": {
-  "^": {"type": "ladder", "exit": "next"},
-  "T": {"type": "empty", "sprite": "tiles/stone.png", "draw": [32, 32]}
+  "^": {
+   "type": "ladder",
+   "exit": "up"
+  },
+  "1": {
+   "exit": [
+    0,
+    0
+   ]
+  },
+  "T": {
+   "type": "empty",
+   "sprite": "tiles/stone.png",
+   "draw": [
+    32,
+    32
+   ]
+  }
  },
  "rows": [
   "##############################",

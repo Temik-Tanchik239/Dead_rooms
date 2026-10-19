@@ -9,7 +9,8 @@ ASSETS = BASE / "assets"
 T, COLS, ROWS = 32, 50, 50      # размер карты в клетках: 50 x 50
 MW, MH = COLS * T, ROWS * T      # размер карты в пикселях
 VIEW_H = 16 * T                  # высота игрового окна (камера показывает кусок карты)
-W, H = 30 * T, VIEW_H + 32       # размер окна: игровое поле + панель HUD
+PANEL_H = 56                     # высота нижней панели (HUD)
+W, H = 30 * T, VIEW_H + PANEL_H  # размер окна: игровое поле + панель HUD
 CFG = {}
 DATA_FILES = ("player", "weapons", "mobs", "maps", "projectiles")
 

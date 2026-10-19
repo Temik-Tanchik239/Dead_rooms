@@ -22,6 +22,7 @@
  "dmg_mult": 1.0,
  "ledge": true,
  "skin": "player/idle.png",
+ "icon": "icons/player.png",
  "draw": [
   44,
   55
@@ -64,8 +65,8 @@
   ]
  },
  "hp_bar": {
-  "x": 10,
-  "y": 3,
+  "x": 184,
+  "y": 14,
   "w": 200,
   "h": 14,
   "color": [
@@ -92,8 +93,8 @@
   "regen_delay": 0.9,
   "default_cost": 5,
   "bar": {
-   "x": 10,
-   "y": 20,
+   "x": 184,
+   "y": 32,
    "w": 200,
    "h": 9,
    "color": [

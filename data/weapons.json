@@ -45,6 +45,7 @@
       }
     ],
     "skin": "weapons/sword.png",
+    "icon": "icons/rusty_sword.png",
     "draw": [
       100,
       80
@@ -75,6 +76,7 @@
       }
     ],
     "skin": "weapons/iron_pike.png",
+    "icon": "icons/iron_pike.png",
     "draw": [
       88,
       14
@@ -148,6 +150,7 @@
       }
     ],
     "skin": "weapons/twin_daggers.png",
+    "icon": "icons/twin_daggers.png",
     "draw": [
       34,
       20
@@ -180,6 +183,7 @@
       }
     ],
     "skin": "weapons/short_bow.png",
+    "icon": "icons/short_bow.png",
     "draw": [
       100,
       80
@@ -210,6 +214,7 @@
       }
     ],
     "skin": "weapons/fire_flask.png",
+    "icon": "icons/fire_flask.png",
     "draw": [
       20,
       28
@@ -249,6 +254,7 @@
       }
     ],
     "skin": "weapons/seeker_staff.png",
+    "icon": "icons/seeker_staff.png",
     "draw": [
       60,
       15

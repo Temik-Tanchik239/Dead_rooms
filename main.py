@@ -301,12 +301,8 @@ class Game:
         s.txt(label, W - 18 * len(order) - 16 - s.font.size(label)[0], 4, (220, 220, 235))
         if pg.time.get_ticks() < s.warn_until:
             for i, m in enumerate(s.warnings): s.txt("! " + m, 10, 8 + i * 20, (255, 140, 120))
-        hud.draw(s.scr, pl, s.small)   # полоски HP и маны
-        n = lambda i: CFG["weapons"][pl.slots[i]]["name"]
-        for i, (key, x) in enumerate((("ЛКМ", 230), ("ПКМ", 500))):
-            weapon.icon(s.scr, pl.slots[i], x + 12, VIEW_H + 16, 24); s.txt(f"[{key}] {n(i)}", x + 30, VIEW_H + 7)
-            cost = weapon.mana_cost(pl.slots[i], CFG["weapons"][pl.slots[i]]["combo"][0]); s.txt(f"{cost}", x + 38 + s.font.size(f"[{key}] {n(i)}")[0], VIEW_H + 7, (120, 170, 255))
-        if s.camp.loop: s.txt(f"Круг {s.camp.loop + 1}", W - 90, VIEW_H + 7, (180, 180, 200))
+        hud.draw(s.scr, pl, s.small)   # нижняя панель: иконки персонажа и оружия, полоски HP и маны
+        if s.camp.loop: s.txt(f"Круг {s.camp.loop + 1}", W - 90, VIEW_H + 20, (180, 180, 200))
         if pl.hp <= 0: s.txt("ТЫ УМЕР — R: заново", W // 2 - 220, 200, (255, 90, 90), s.big)
         elif s.done: s.txt("ВСЕ КАРТЫ ПРОЙДЕНЫ — Enter: ещё круг", W // 2 - 380, 200, (120, 255, 150), s.big)
         if s.show_world: s.draw_world()

@@ -65,10 +65,10 @@
   ]
  },
  "hp_bar": {
-  "x": 184,
-  "y": 14,
-  "w": 200,
-  "h": 14,
+  "x": 8,
+  "y": -28,
+  "w": 48,
+  "h": 10,
   "color": [
    210,
    60,
@@ -93,10 +93,10 @@
   "regen_delay": 0.9,
   "default_cost": 5,
   "bar": {
-   "x": 184,
-   "y": 32,
-   "w": 200,
-   "h": 9,
+   "x": 8,
+   "y": -16,
+   "w": 48,
+   "h": 10,
    "color": [
     70,
     140,
@@ -118,7 +118,7 @@
     90
    ],
    "ticks": 20,
-   "text": true,
+   "text": false,
    "fill_skin": "ui/mana_fill.png",
    "frame_skin": "ui/mana_frame.png"
   }

@@ -3,9 +3,14 @@ import json, sys
 from pathlib import Path
 import pygame as pg
 
-BASE = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent
-DATA = BASE / "data"      # в .exe-версии data и assets лежат рядом с exe, их можно править
-ASSETS = BASE / "assets"
+# В обычном запуске ресурсы лежат рядом с исходниками. В сборке PyInstaller --onefile
+# они распаковываются во временную папку sys._MEIPASS. Если рядом с EXE есть папки
+# data/assets, используем их: так игрок может редактировать JSON и настройки.
+FROZEN = bool(getattr(sys, "frozen", False))
+BASE = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent
+RESOURCE_BASE = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+DATA = (BASE / "data") if (BASE / "data").is_dir() else (RESOURCE_BASE / "data")
+ASSETS = (BASE / "assets") if (BASE / "assets").is_dir() else (RESOURCE_BASE / "assets")
 T, COLS, ROWS = 32, 50, 50      # размер карты в клетках: 50 x 50
 MW, MH = COLS * T, ROWS * T      # размер карты в пикселях
 VIEW_H = 16 * T                  # высота игрового окна (камера показывает кусок карты)

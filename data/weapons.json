@@ -256,12 +256,12 @@
     "skin": "weapons/seeker_staff.png",
     "icon": "icons/seeker_staff.png",
     "draw": [
-      60,
-      15
+      80,
+      80
     ],
     "grip": [
-      16,
-      8
+      30,
+      38
     ],
     "rest_angle": 35,
     "mana": 20

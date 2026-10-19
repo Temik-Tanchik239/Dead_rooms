@@ -16,6 +16,7 @@ class Player(Body):
     def __init__(s):
         super().__init__(0, 0, 20, s.H0)
         s.hp = s.maxhp = CFG["player"]["hp"]; s.face, s.state = 1, "move"
+        s.hp_regen_timer = 0.0
         s.inv = s.coy = s.st = s.lock = s.drop_t = s.stun = 0
         s.atk, s.combo, s.hitbox = None, (None, 0, 0), None
         s.refresh_mana(True)
@@ -62,7 +63,9 @@ class Player(Body):
     def can_stand(s, g): return free(g, pg.Rect(int(s.x), int(s.y) - (s.H0 - s.h), s.w, s.H0))
     def hit(s, dmg, fx_x, fx, kb=260):
         if s.inv > 0: return
-        s.hp -= dmg; s.inv = CFG["player"]["hurt_inv"]; s.stun = .18
+        s.hp -= dmg
+        s.hp_regen_timer = 0.0  # любой полученный урон заново запускает задержку регенерации
+        s.inv = CFG["player"]["hurt_inv"]; s.stun = .18
         s.vx = (sign(s.cx - fx_x) or 1) * kb; s.vy = -260; fx.shake = .2; fx.stop = .06
         if s.state in ("attack", "ladder"): s.state = "move"; s.atk = None
     def refresh_mana(s, full=False):
@@ -101,6 +104,12 @@ class Player(Body):
         p = CFG["player"]; s.hitbox = None
         for b in s.buf: s.buf[b] = max(0, s.buf[b] - dt)
         s.inv -= dt; s.lock -= dt; s.drop_t -= dt; s.mana_t -= dt; s.mana_flash -= dt
+        # Регенерация здоровья: начинается после hp_regen_delay секунд без полученного урона.
+        s.hp_regen_timer += dt
+        hp_regen_delay = max(0.0, float(p.get("hp_regen_delay", 5.0)))
+        hp_regen_rate = max(0.0, float(p.get("hp_regen", 5.0)))
+        if s.hp_regen_timer >= hp_regen_delay and s.hp < s.maxhp and s.hp > 0 and hp_regen_rate > 0:
+            s.hp = min(s.maxhp, s.hp + hp_regen_rate * dt)
         if s.mana_t <= 0 and s.mana < s.maxmana: s.mana = min(s.maxmana, s.mana + p.get("mana", {}).get("regen", 14) * dt)   # восстановление маны
         sl, stp, left = s.combo; s.combo = (sl, stp, left - dt)
         s.coy = p["coyote"] if s.ground else s.coy - dt

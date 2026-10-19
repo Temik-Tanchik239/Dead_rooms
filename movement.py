@@ -6,7 +6,7 @@
     w — мир (w.pl игрок, w.g сетка комнаты, w.mobs, w.projs, w.fx).
 Функция меняет только m.vx / m.vy / m.dir: гравитацию и столкновения моб считает сам."""
 import math
-from core import T, W, ROWS, tile, free, sign, approach
+from core import T, MW, ROWS, tile, free, sign, approach
 
 MOVES = {}
 def movement(name):
@@ -73,7 +73,7 @@ def keep_distance(m, p, dt, w):
     dist, band = p.get("distance", 220), p.get("band", 50)
     dx = w.pl.cx - m.cx; side = sign(dx) or m.dir; m.dir = side
     if m.flies:
-        tx = w.pl.cx - side * dist; tx = max(T + m.w, min(W - T - m.w, tx))
+        tx = w.pl.cx - side * dist; tx = max(T + m.w, min(MW - T - m.w, tx))
         return steer(m, tx, w.pl.cy + p.get("height", -70) + math.sin(m.t * 2) * 12, sp, acc, dt)
     want = side if abs(dx) > dist + band else -side if abs(dx) < dist - band else 0
     if want and (wall_ahead(m, w, want) or edge_ahead(m, w, want)): want = 0

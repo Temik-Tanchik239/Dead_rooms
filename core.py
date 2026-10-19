@@ -6,8 +6,10 @@ import pygame as pg
 BASE = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent
 DATA = BASE / "data"      # в .exe-версии data и assets лежат рядом с exe, их можно править
 ASSETS = BASE / "assets"
-T, COLS, ROWS = 32, 30, 16
-W, H = COLS * T, ROWS * T + 32
+T, COLS, ROWS = 32, 50, 50      # размер карты в клетках: 50 x 50
+MW, MH = COLS * T, ROWS * T      # размер карты в пикселях
+VIEW_H = 16 * T                  # высота игрового окна (камера показывает кусок карты)
+W, H = 30 * T, VIEW_H + 32       # размер окна: игровое поле + панель HUD
 CFG = {}
 DATA_FILES = ("player", "weapons", "mobs", "maps", "projectiles")
 

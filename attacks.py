@@ -11,7 +11,7 @@ id + next (после этой атаки сразу начать атаку с 
 Новая атака = класс-наследник Attack с декоратором @attack("имя"); переопредели нужные методы."""
 import math
 import pygame as pg
-from core import T, W, free, sign, floor_below, circle_hits_rect
+from core import T, MW, free, sign, floor_below, circle_hits_rect
 from projectiles import volley
 
 ATTACKS = {}
@@ -108,7 +108,7 @@ class Leap(Attack):
     def target(s, m, a, w):
         pl, g = w.pl, w.g; off = a.get("land_offset", 40); side = sign(m.cx - pl.cx) or -m.dir
         for sd in (side, -side):
-            tx = max(T + m.w / 2 + 2, min(W - T - m.w / 2 - 2, pl.cx + sd * off))
+            tx = max(T + m.w / 2 + 2, min(MW - T - m.w / 2 - 2, pl.cx + sd * off))
             if m.flies: return tx, pl.cy
             ty = floor_below(g, tx, pl.y + pl.h - 6) or floor_below(g, tx, pl.cy)
             if ty and free(g, pg.Rect(int(tx - m.w / 2), int(ty - m.h), m.w, m.h)): return tx, ty

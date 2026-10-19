@@ -1,7 +1,7 @@
 """Карты, нарисованные вручную. Ничего не генерируется случайно.
 
 data/maps.json      — порядок карт ("order"), общая легенда символов, общие настройки.
-data/maps/<id>.json — одна карта: сетка 30 x 16 символов ("rows"), фон, своя легенда, мобы, награда,
+data/maps/<id>.json — одна карта: сетка 50 x 50 символов ("rows"), фон, своя легенда, мобы, награда,
                       "pos": [x, y] — координата карты в СЕТКЕ МИРА (x вправо, y вниз), по ней работают выходы left/right/up/down.
 Файлы, имя которых начинается с "_", игра не читает (например, _template.json — заготовка).
 
@@ -19,7 +19,7 @@ data/maps/<id>.json — одна карта: сетка 30 x 16 символов
 """
 import math, random
 import pygame as pg
-from core import CFG, T, COLS, ROWS, W
+from core import CFG, T, COLS, ROWS, MW
 from anim import sprite, image
 import weapon
 from mob import Mob
@@ -177,13 +177,13 @@ class GameMap:
 
     # ---------- отрисовка ----------
     def render(s):
-        surf = pg.Surface((W, VH)); md = s.d
+        surf = pg.Surface((MW, VH)); md = s.d
         surf.fill(tuple(opt(md, "bg_color", [20, 18, 30])))
         bg = md.get("background")
         if bg: draw_background(surf, bg, opt(md, "bg_mode", "cover"))
         dim = opt(md, "bg_dim", 0)
         if dim:
-            sh = pg.Surface((W, VH), pg.SRCALPHA); sh.fill((0, 0, 0, int(255 * dim))); surf.blit(sh, (0, 0))
+            sh = pg.Surface((MW, VH), pg.SRCALPHA); sh.fill((0, 0, 0, int(255 * dim))); surf.blit(sh, (0, 0))
         tiles = dict(CFG["maps"].get("tiles", {})); tiles.update(md.get("tiles", {}))
         for c, r, e in s.cells():
             X, Y = c * T, r * T
@@ -221,7 +221,7 @@ class GameMap:
                 if camp.resolve(s.id, z["entry"]["exit"]) == came_from: return z["rect"], z["ladder"]
         cells = s.find(lambda c, r, e: e.get("player"))
         if cells: c, r = cells[0]; return pg.Rect(c * T, r * T, T, T), s.info[r][c]["type"] == "ladder"
-        return pg.Rect(W // 2 - T // 2, VH - 2 * T, T, T), False
+        return pg.Rect(MW // 2 - T // 2, VH - 2 * T, T, T), False
 
     # ---------- мобы ----------
     def spawn(s):
@@ -257,14 +257,14 @@ def draw_background(surf, path, mode):
     img = image(path)
     if not img: return
     iw, ih = img.get_size()
-    if mode == "stretch": surf.blit(sprite(path, W, VH), (0, 0))
+    if mode == "stretch": surf.blit(sprite(path, MW, VH), (0, 0))
     elif mode == "tile":
         for y in range(0, VH, ih):
-            for x in range(0, W, iw): surf.blit(img, (x, y))
-    elif mode == "center": surf.blit(img, ((W - iw) // 2, (VH - ih) // 2))
+            for x in range(0, MW, iw): surf.blit(img, (x, y))
+    elif mode == "center": surf.blit(img, ((MW - iw) // 2, (VH - ih) // 2))
     else:
-        k = (max if mode != "fit" else min)(W / iw, VH / ih); w, h = max(1, int(iw * k)), max(1, int(ih * k))
-        surf.blit(sprite(path, w, h), ((W - w) // 2, (VH - h) // 2))
+        k = (max if mode != "fit" else min)(MW / iw, VH / ih); w, h = max(1, int(iw * k)), max(1, int(ih * k))
+        surf.blit(sprite(path, w, h), ((MW - w) // 2, (VH - h) // 2))
 
 def draw_default(v, ch, X, Y, color):
     col = tuple(color) if color else None

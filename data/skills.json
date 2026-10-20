@@ -1,0 +1,43 @@
+{
+  "dash": {
+    "name": "Рывок",
+    "type": "dash",
+    "cooldown": 4.0,
+    "speed": 620,
+    "invulnerability": 0.18,
+    "radius": 24,
+    "icon": "icons/skill_dash.png",
+    "color": [
+      90,
+      210,
+      255
+    ]
+  },
+  "nova": {
+    "name": "Импульс",
+    "type": "nova",
+    "cooldown": 15.0,
+    "radius": 105,
+    "damage": 28,
+    "knockback": 220,
+    "icon": "icons/skill_nova.png",
+    "color": [
+      255,
+      150,
+      70
+    ]
+  },
+  "heal": {
+    "name": "Лечение",
+    "type": "heal",
+    "cooldown": 30.0,
+    "amount": 30,
+    "radius": 42,
+    "icon": "icons/skill_heal.png",
+    "color": [
+      100,
+      235,
+      140
+    ]
+  }
+}

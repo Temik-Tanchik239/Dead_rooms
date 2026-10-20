@@ -16,7 +16,7 @@ MW, MH = COLS * T, ROWS * T      # размер карты в пикселях
 VIEW_H = 16 * T                  # высота игрового окна (камера показывает кусок карты)
 W, H = 30 * T, VIEW_H            # размер окна; HUD рисуется прямо поверх игрового поля (панель прозрачная)
 CFG = {}
-DATA_FILES = ("player", "weapons", "mobs", "maps", "projectiles")
+DATA_FILES = ("player", "weapons", "mobs", "maps", "projectiles", "skills")
 
 def reload_data():
     for n in DATA_FILES:

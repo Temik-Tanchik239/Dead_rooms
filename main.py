@@ -20,9 +20,11 @@ class Player(Body):
         s.inv = s.coy = s.st = s.lock = s.drop_t = s.stun = 0
         s.atk, s.combo, s.hitbox = None, (None, 0, 0), None
         s.refresh_mana(True)
-        s.buf = dict(jump=0, roll=0, a1=0, a2=0); s.slots = ["rusty_sword", "short_bow"]
+        s.buf = dict(jump=0, roll=0, a1=0, a2=0, skill=0); s.slots = ["rusty_sword", "short_bow"]
         s.anim, s.anim_t, s.anim_p = "idle", 0.0, None
         s.aim = None   # куда смотрит курсор (координаты комнаты) или None
+        s.skills = ["dash", "nova", "heal"]; s.skill_index = 0
+        s.skill_cooldowns = {key: 0.0 for key in s.skills}; s.skill_notice = 0.0
     def press(s, what): s.buf[what] = CFG["player"]["buffer"]
     def anim_states(s):
         p = CFG["player"]
@@ -94,6 +96,36 @@ class Player(Body):
         if s.aim: ang = math.atan2(s.aim[1] - hy, s.aim[0] - hx)   # стреляем в курсор
         volley(projs, pr, hx + math.cos(ang) * 14, hy + math.sin(ang) * 14, ang,
                st["damage"] * CFG["player"]["dmg_mult"], True, o.get("count", 1), o.get("spread", 0))
+    def swap_skill(s, direction=1):
+        if not s.skills: return
+        s.skill_index = (s.skill_index + direction) % len(s.skills)
+        s.skill_notice = 1.0
+    def use_skill(s, mobs, fx):
+        """Использует активный скилл из data/skills.json; новые скиллы добавляются в JSON."""
+        defs = CFG.get("skills", {})
+        if not s.skills: return
+        sid = s.skills[s.skill_index % len(s.skills)]
+        a = defs.get(sid)
+        if not a: return
+        if s.skill_cooldowns.get(sid, 0) > 0:
+            fx.text(f"{a.get('name', sid)}: {s.skill_cooldowns[sid]:.1f}с", s.cx, s.y - 18)
+            return
+        kind = a.get("type", "nova")
+        if kind == "dash":
+            s.vx = s.face * a.get("speed", 620); s.inv = max(s.inv, a.get("invulnerability", .18))
+            fx.ring(s.cx + s.face * 20, s.cy, a.get("radius", 24))
+        elif kind == "nova":
+            radius, damage = a.get("radius", 100), a.get("damage", 25)
+            fx.ring(s.cx, s.cy, radius); fx.shake = max(fx.shake, .12)
+            for m in mobs:
+                if (m.cx-s.cx)**2 + (m.cy-s.cy)**2 <= radius**2:
+                    m.hurt(damage * CFG["player"].get("dmg_mult", 1.0), s.face * a.get("knockback", 220), fx)
+        elif kind == "heal":
+            amount = a.get("amount", 30); s.hp = min(s.maxhp, s.hp + amount)
+            fx.ring(s.cx, s.cy, a.get("radius", 42))
+        s.skill_cooldowns[sid] = max(0.0, float(a.get("cooldown", 5.0)))
+        fx.text(a.get("name", sid), s.cx, s.y - 18)
+
     def ledge(s, g):
         c = int((s.x + s.w + 2) // T) if s.wall > 0 else int((s.x - 2) // T); hr = int((s.y + 6) // T)
         if tile(g, c, hr) in "#D" and tile(g, c, hr - 1) not in "#D" and (s.y + 6) - hr * T < 16:
@@ -104,6 +136,11 @@ class Player(Body):
         p = CFG["player"]; s.hitbox = None
         for b in s.buf: s.buf[b] = max(0, s.buf[b] - dt)
         s.inv -= dt; s.lock -= dt; s.drop_t -= dt; s.mana_t -= dt; s.mana_flash -= dt
+        s.skill_notice = max(0.0, s.skill_notice - dt)
+        for skill_id in s.skill_cooldowns: s.skill_cooldowns[skill_id] = max(0.0, s.skill_cooldowns[skill_id] - dt)
+        if s.buf.get("skill", 0) > 0:
+            s.buf["skill"] = 0
+            s.use_skill(mobs, fx)
         # Регенерация здоровья: начинается после hp_regen_delay секунд без полученного урона.
         s.hp_regen_timer += dt
         hp_regen_delay = max(0.0, float(p.get("hp_regen_delay", 5.0)))
@@ -260,6 +297,9 @@ class Game:
         m = {pg.K_SPACE: "jump", pg.K_w: "jump", pg.K_UP: "jump", pg.K_k: "roll", pg.K_LSHIFT: "roll", pg.K_j: "a1", pg.K_l: "a2"}
         if k in m: s.pl.press(m[k])
         elif k == pg.K_e: s.pickup()
+        elif k == pg.K_q: s.pl.press("skill")
+        elif k == pg.K_c: s.pl.swap_skill(1)
+        elif k == pg.K_v: s.pl.swap_skill(-1)
         elif k == pg.K_F5: s.reload()
         elif k == pg.K_F4: s.grid = not s.grid
         elif k == pg.K_m: s.show_world = not s.show_world

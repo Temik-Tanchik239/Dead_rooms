@@ -55,8 +55,23 @@ def icons(scr, pl, font):
         img = sprite(P.get("skin", "player/idle.png"), 30, 38)
         if img: scr.blit(img, img.get_rect(center=r.center))
     slot(scr, 0, P.get("icon", "icons/player.png"), face)
+    # Активный скилл рядом с иконкой героя; затемнение и дуга показывают перезарядку.
+    defs = CFG.get("skills", {})
+    if getattr(pl, "skills", None):
+        sid = pl.skills[pl.skill_index % len(pl.skills)]
+        skill = defs.get(sid, {"name": sid, "color": [150, 130, 220], "cooldown": 1})
+        r = slot(scr, 1, skill.get("icon"), lambda r: pg.draw.circle(scr, skill.get("color", [150, 130, 220]), r.center, 13), border=tuple(skill.get("color", [150, 130, 220])))
+        label(scr, font, "Q", r.x + 4, r.y + 3, (255, 230, 150))
+        left = max(0.0, getattr(pl, "skill_cooldowns", {}).get(sid, 0.0))
+        if left > 0:
+            veil = pg.Surface(r.size, pg.SRCALPHA); pg.draw.rect(veil, (8, 8, 18, 165), veil.get_rect(), border_radius=8); scr.blit(veil, r)
+            label(scr, font, str(int(left + .99)), r.centerx - 4, r.centery - 8, (255, 255, 255))
+        else:
+            pg.draw.circle(scr, (100, 240, 150), (r.right - 7, r.bottom - 7), 4)
+        nm = font.render(skill.get("name", sid), True, (225, 220, 245))
+        scr.blit(nm, (r.x + (r.w - nm.get_width()) // 2, r.y - nm.get_height() - 2))
     for n, (key, wid) in enumerate(zip(("ЛКМ", "ПКМ"), pl.slots[:2])):
-        w = Wp[wid]; r = slot(scr, n + 1, w.get("icon", f"icons/{wid}.png"), lambda r, wid=wid: weapon.icon(scr, wid, r.centerx, r.centery, 36))
+        w = Wp[wid]; r = slot(scr, n + 2, w.get("icon", f"icons/{wid}.png"), lambda r, wid=wid: weapon.icon(scr, wid, r.centerx, r.centery, 36))
         cost = weapon.mana_cost(wid, w["combo"][0])
         if pl.mana < cost:   # не хватает маны — иконка темнеет
             veil = pg.Surface(r.size, pg.SRCALPHA); pg.draw.rect(veil, (10, 10, 20, 130), veil.get_rect(), border_radius=8); scr.blit(veil, r)

@@ -3,7 +3,7 @@
 import math, random, sys
 from types import SimpleNamespace
 import pygame as pg
-from core import CFG, SETTINGS, T, COLS, ROWS, W, H, MW, MH, VIEW_H, reload_data, sign, approach, tile, free, FX, Body
+from core import CFG, SETTINGS, DATA, T, COLS, ROWS, W, H, MW, MH, VIEW_H, reload_data, sign, approach, tile, free, FX, Body
 from anim import clear_cache, sprite, mob_frame
 import weapon
 import hud
@@ -204,7 +204,7 @@ class Game:
         pg.init(); pg.display.set_caption("DEAD ROOMS"); s.scr = pg.display.set_mode((W, H), pg.SCALED | (pg.FULLSCREEN if SETTINGS.get("fullscreen", True) else 0)); s.debug = False; s.cam = [0, 0]; s.view = pg.Surface((MW, MH))
         s.font = pg.font.SysFont("arial,dejavusans,freesans", 16, bold=True); s.big = pg.font.SysFont("arial,dejavusans,freesans", 44, bold=True)
         s.small = pg.font.SysFont("arial,dejavusans,freesans", 11, bold=True); s.grid = False
-        s.show_world = False; s.veil = pg.Surface((W, VIEW_H), pg.SRCALPHA); s.veil.fill((6, 6, 12, 225))
+        s.show_world = False; s.controls_open = False; s.waiting_for_bind = None; s.veil = pg.Surface((W, VIEW_H), pg.SRCALPHA); s.veil.fill((6, 6, 12, 225))
         s.clock = pg.time.Clock(); s.new_game()
         if SETTINGS.get("mouse_aim", True): pg.mouse.set_visible(False)
     def new_game(s, loop=0):
@@ -254,7 +254,7 @@ class Game:
                 pl.slots[i], dr.wid = dr.wid, pl.slots[i]; pl.combo = (None, 0, 0)
                 s.fx.text(CFG["weapons"][pl.slots[i]]["name"], pl.cx, pl.y - 10); break
     def step(s, dt):
-        fx, pl, r = s.fx, s.pl, s.room; sim = 0 if (fx.stop > 0 or s.show_world) else dt   # на карте мира (M) игра на паузе
+        fx, pl, r = s.fx, s.pl, s.room; sim = 0 if (fx.stop > 0 or s.show_world or s.controls_open) else dt   # на карте мира (M) игра на паузе
         fx.stop = max(0, fx.stop - dt); fx.shake = max(0, fx.shake - dt)
         for it in fx.items: it[4] -= dt
         fx.items = [it for it in fx.items if it[4] > 0]
@@ -293,13 +293,37 @@ class Game:
             if z: s.take_exit(z)
             if s.room is r and not s.done:   # выхода нет — пропасть: урон и назад к месту появления
                 pl.hit(r.d.get("fall_damage", CFG["maps"].get("fall_damage", 15)), pl.cx, fx); s.place(*s.respawn)
+    CONTROL_DEFAULTS = {"jump": "SPACE", "roll": "LSHIFT", "attack1": "J", "attack2": "L", "pickup": "E", "skill": "Q", "skill_next": "C", "skill_prev": "V"}
+    CONTROL_LABELS = {"jump": "Прыжок", "roll": "Уклонение", "attack1": "Атака 1 (клавиша)", "attack2": "Атака 2 (клавиша)", "pickup": "Подобрать предмет", "skill": "Использовать скилл", "skill_next": "Следующий скилл", "skill_prev": "Предыдущий скилл"}
+    def controls(s):
+        cfg = SETTINGS.setdefault("controls", {})
+        for action, keyname in s.CONTROL_DEFAULTS.items(): cfg.setdefault(action, keyname)
+        return cfg
+    def key_name(s, key):
+        try: return pg.key.name(pg.key.key_code(key))
+        except (ValueError, TypeError): return str(key).lower()
+    def save_settings(s):
+        try: (DATA / "settings.json").write_text(__import__("json").dumps(SETTINGS, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        except OSError as exc: print("Не удалось сохранить настройки:", exc)
     def key(s, k):
-        m = {pg.K_SPACE: "jump", pg.K_w: "jump", pg.K_UP: "jump", pg.K_k: "roll", pg.K_LSHIFT: "roll", pg.K_j: "a1", pg.K_l: "a2"}
-        if k in m: s.pl.press(m[k])
-        elif k == pg.K_e: s.pickup()
-        elif k == pg.K_q: s.pl.press("skill")
-        elif k == pg.K_c: s.pl.swap_skill(1)
-        elif k == pg.K_v: s.pl.swap_skill(-1)
+        if s.controls_open:
+            if s.waiting_for_bind:
+                if k == pg.K_ESCAPE: s.waiting_for_bind = None; return
+                action = s.waiting_for_bind; s.controls()[action] = pg.key.name(k).upper(); s.waiting_for_bind = None; s.save_settings(); return
+            if k in (pg.K_ESCAPE, pg.K_F1): s.controls_open = False
+            return
+        if k == pg.K_F1: s.controls_open = True; return
+        controls = s.controls()
+        def pressed(action):
+            try: return k == pg.key.key_code(controls[action])
+            except (ValueError, TypeError): return False
+        # Все основные действия читаются из настроек управления.
+        for action, buf in (("jump", "jump"), ("roll", "roll"), ("attack1", "a1"), ("attack2", "a2")):
+            if pressed(action): self_press = buf; s.pl.press(self_press); return
+        if pressed("pickup"): s.pickup()
+        elif pressed("skill"): s.pl.press("skill")
+        elif pressed("skill_next"): s.pl.swap_skill(1)
+        elif pressed("skill_prev"): s.pl.swap_skill(-1)
         elif k == pg.K_F5: s.reload()
         elif k == pg.K_F4: s.grid = not s.grid
         elif k == pg.K_m: s.show_world = not s.show_world
@@ -308,6 +332,26 @@ class Game:
         elif k == pg.K_r: s.new_game()
         elif k == pg.K_RETURN and s.done: s.new_game(s.camp.loop + 1)
         elif k == pg.K_ESCAPE: pg.quit(); sys.exit()
+    def controls_event(s, e):
+        if not s.controls_open or e.type != pg.MOUSEBUTTONDOWN or e.button != 1 or s.waiting_for_bind: return
+        mx, my = e.pos; y0 = 86
+        actions = list(s.CONTROL_LABELS)
+        for i, action in enumerate(actions):
+            rect = pg.Rect(W // 2 - 220, y0 + i * 38, 440, 32)
+            if rect.collidepoint(mx, my): s.waiting_for_bind = action; return
+    def draw_controls(s):
+        s.scr.blit(s.veil, (0, 0))
+        title = s.big.render("УПРАВЛЕНИЕ", True, (240, 235, 255)); s.scr.blit(title, title.get_rect(center=(W // 2, 42)))
+        cfg = s.controls()
+        for i, (action, label) in enumerate(s.CONTROL_LABELS.items()):
+            rect = pg.Rect(W // 2 - 220, 86 + i * 38, 440, 32)
+            pg.draw.rect(s.scr, (58, 52, 78) if s.waiting_for_bind != action else (105, 75, 130), rect, border_radius=5)
+            pg.draw.rect(s.scr, (130, 120, 165), rect, 1, border_radius=5)
+            s.txt(label, rect.x + 10, rect.y + 7, (235, 235, 245), s.small)
+            keytext = "НАЖМИ КЛАВИШУ…" if s.waiting_for_bind == action else str(cfg[action]).upper()
+            tw = s.small.render(keytext, True, (255, 220, 130)); s.scr.blit(tw, (rect.right - tw.get_width() - 10, rect.y + 7))
+        s.txt("Нажми на действие и затем нужную клавишу. Esc — отмена/выход.", W // 2 - 215, 86 + len(s.CONTROL_LABELS) * 38 + 8, (190, 190, 215), s.small)
+        s.txt("Настройки сохраняются в data/settings.json", W // 2 - 150, VIEW_H - 28, (160, 220, 175), s.small)
     def reload(s):
         """F5: перечитать JSON и картинки, пересобрать карты; игрок остаётся на месте."""
         reload_data(); clear_cache(); pl = s.pl; x, y, st = pl.x, pl.y, pl.state; pl.refresh_mana()
@@ -355,6 +399,7 @@ class Game:
         if pl.hp <= 0: s.txt("ТЫ УМЕР — R: заново", W // 2 - 220, 200, (255, 90, 90), s.big)
         elif s.done: s.txt("ВСЕ КАРТЫ ПРОЙДЕНЫ — Enter: ещё круг", W // 2 - 380, 200, (120, 255, 150), s.big)
         if s.show_world: s.draw_world()
+        if s.controls_open: s.draw_controls()
         if pl.aim:   # прицел
             mx, my = pl.aim[0] - s.cam[0], pl.aim[1] - s.cam[1]; col = (255, 255, 255); pg.draw.circle(s.scr, col, (mx, my), 10, 1); pg.draw.circle(s.scr, col, (mx, my), 1)
             for a in ((-17, 0, -7, 0), (7, 0, 17, 0), (0, -17, 0, -7), (0, 7, 0, 17)): pg.draw.line(s.scr, col, (mx + a[0], my + a[1]), (mx + a[2], my + a[3]))
@@ -396,7 +441,8 @@ class Game:
             for e in pg.event.get():
                 if e.type == pg.QUIT: return
                 if e.type == pg.KEYDOWN: s.key(e.key)
-                if e.type == pg.MOUSEBUTTONDOWN and e.button in (1, 3): s.pl.press("a1" if e.button == 1 else "a2")
+                if e.type == pg.MOUSEBUTTONDOWN and s.controls_open: s.controls_event(e)
+                elif e.type == pg.MOUSEBUTTONDOWN and e.button in (1, 3): s.pl.press("a1" if e.button == 1 else "a2")
             s.step(dt); s.draw()
 
 if __name__ == "__main__":

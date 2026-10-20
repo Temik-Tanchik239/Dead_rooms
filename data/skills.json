@@ -16,7 +16,7 @@
   "nova": {
     "name": "Импульс",
     "type": "nova",
-    "cooldown": 15.0,
+    "cooldown": 7.0,
     "radius": 105,
     "damage": 28,
     "knockback": 220,
@@ -30,7 +30,7 @@
   "heal": {
     "name": "Лечение",
     "type": "heal",
-    "cooldown": 30.0,
+    "cooldown": 12.0,
     "amount": 30,
     "radius": 42,
     "icon": "icons/skill_heal.png",

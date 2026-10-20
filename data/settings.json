@@ -1,4 +1,14 @@
 {
- "fullscreen": true,
- "mouse_aim": true
+  "fullscreen": true,
+  "mouse_aim": true,
+  "controls": {
+    "jump": "SPACE",
+    "roll": "LSHIFT",
+    "attack1": "J",
+    "attack2": "L",
+    "pickup": "V",
+    "skill": "Q",
+    "skill_next": "X",
+    "skill_prev": "E"
+  }
 }

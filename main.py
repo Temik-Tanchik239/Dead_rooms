@@ -3,7 +3,7 @@
 import math, random, sys
 from types import SimpleNamespace
 import pygame as pg
-from core import CFG, SETTINGS, DATA, T, COLS, ROWS, W, H, MW, MH, VIEW_H, reload_data, sign, approach, tile, free, FX, Body
+from core import CFG, SETTINGS, DATA, ASSETS, T, COLS, ROWS, W, H, MW, MH, VIEW_H, reload_data, sign, approach, tile, free, FX, Body
 from anim import clear_cache, sprite, mob_frame
 import weapon
 import hud
@@ -206,6 +206,20 @@ class Game:
         s.small = pg.font.SysFont("arial,dejavusans,freesans", 11, bold=True); s.grid = False
         s.show_world = False; s.controls_open = False; s.waiting_for_bind = None; s.hud_edit = False; s.hud_drag = None; s.hud_selected = "player"; s.veil = pg.Surface((W, VIEW_H), pg.SRCALPHA); s.veil.fill((6, 6, 12, 225))
         s.clock = pg.time.Clock(); s.new_game()
+        # Стартовое меню; после Esc игровой мир сохраняется и ставится на паузу.
+        s.menu_mode = "start"  # start | pause | None
+        s.menu_selection = 0
+        # Ресурсы главного меню можно заменить без изменения кода.
+        # assets/menu/background.png, button.png, button_selected.png
+        menu_assets = ASSETS / "menu"
+        def load_menu_image(filename):
+            try:
+                return pg.image.load(str(menu_assets / filename)).convert_alpha()
+            except (pg.error, OSError):
+                return None
+        s.menu_background = load_menu_image("background.png")
+        s.menu_button = load_menu_image("button.png")
+        s.menu_button_selected = load_menu_image("button_selected.png")
         if SETTINGS.get("mouse_aim", True): pg.mouse.set_visible(False)
     def new_game(s, loop=0):
         if loop == 0: s.pl = Player()
@@ -254,7 +268,7 @@ class Game:
                 pl.slots[i], dr.wid = dr.wid, pl.slots[i]; pl.combo = (None, 0, 0)
                 s.fx.text(CFG["weapons"][pl.slots[i]]["name"], pl.cx, pl.y - 10); break
     def step(s, dt):
-        fx, pl, r = s.fx, s.pl, s.room; sim = 0 if (fx.stop > 0 or s.show_world or s.controls_open) else dt   # на карте мира (M) игра на паузе
+        fx, pl, r = s.fx, s.pl, s.room; sim = 0 if (fx.stop > 0 or s.show_world or s.controls_open or s.menu_mode is not None) else dt   # меню ставит игру на паузу
         fx.stop = max(0, fx.stop - dt); fx.shake = max(0, fx.shake - dt)
         for it in fx.items: it[4] -= dt
         fx.items = [it for it in fx.items if it[4] > 0]
@@ -306,6 +320,14 @@ class Game:
         try: (DATA / "settings.json").write_text(__import__("json").dumps(SETTINGS, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         except OSError as exc: print("Не удалось сохранить настройки:", exc)
     def key(s, k):
+        if s.menu_mode is not None:
+            if k == pg.K_UP: s.menu_selection = (s.menu_selection - 1) % (3 if s.menu_mode == "pause" else 2); return
+            if k == pg.K_DOWN: s.menu_selection = (s.menu_selection + 1) % (3 if s.menu_mode == "pause" else 2); return
+            if k in (pg.K_RETURN, pg.K_SPACE):
+                options = ["continue", "new", "exit"] if s.menu_mode == "pause" else ["new", "exit"]
+                s.menu_action(options[s.menu_selection]); return
+            if k == pg.K_ESCAPE and s.menu_mode == "pause": s.menu_mode = None
+            return
         if s.hud_edit:
             if k == pg.K_F2 or k == pg.K_ESCAPE: s.hud_edit = False; s.hud_drag = None; return
             if k in (pg.K_EQUALS, pg.K_PLUS, pg.K_KP_PLUS, pg.K_MINUS, pg.K_KP_MINUS):
@@ -342,7 +364,58 @@ class Game:
         elif k == pg.K_F3: s.debug = not s.debug
         elif k == pg.K_r: s.new_game()
         elif k == pg.K_RETURN and s.done: s.new_game(s.camp.loop + 1)
-        elif k == pg.K_ESCAPE: pg.quit(); sys.exit()
+        elif k == pg.K_ESCAPE:
+            s.menu_mode = "pause"; s.menu_selection = 0
+    def menu_action(s, action):
+        if action == "continue":
+            s.menu_mode = None
+        elif action == "new":
+            s.new_game()
+            s.menu_mode = None
+        elif action == "exit":
+            pg.quit(); sys.exit()
+    def menu_event(s, e):
+        if s.menu_mode is None: return
+        if e.type == pg.MOUSEBUTTONDOWN and e.button == 1:
+            mx, my = e.pos
+            options = ["continue", "new", "exit"] if s.menu_mode == "pause" else ["new", "exit"]
+            y0 = VIEW_H // 2 + 10
+            for i, action in enumerate(options):
+                rect = pg.Rect(W // 2 - 150, y0 + i * 58, 300, 44)
+                if rect.collidepoint(mx, my):
+                    s.menu_action(action); return
+    def draw_menu(s):
+        if s.menu_mode == "start":
+            if s.menu_background:
+                s.scr.blit(pg.transform.smoothscale(s.menu_background, (W, VIEW_H)), (0, 0))
+            else:
+                s.scr.fill((8, 8, 17))
+            # Лёгкое затемнение повышает читаемость надписей; само изображение остаётся заменяемым.
+            s.scr.blit(s.veil, (0, 0))
+        else:
+            s.scr.blit(s.veil, (0, 0))
+        title = s.big.render("DEAD ROOMS", True, (240, 235, 255))
+        s.scr.blit(title, title.get_rect(center=(W // 2, VIEW_H // 2 - 125)))
+        subtitle = "ГЛАВНОЕ МЕНЮ" if s.menu_mode == "start" else "ПАУЗА"
+        st = s.font.render(subtitle, True, (175, 170, 205))
+        s.scr.blit(st, st.get_rect(center=(W // 2, VIEW_H // 2 - 75)))
+        options = [("НОВАЯ ИГРА", "new"), ("ВЫХОД", "exit")] if s.menu_mode == "start" else [("ПРОДОЛЖИТЬ", "continue"), ("НОВАЯ ИГРА", "new"), ("ВЫХОД", "exit")]
+        y0 = VIEW_H // 2 + 10
+        mouse = pg.mouse.get_pos()
+        for i, (label, action) in enumerate(options):
+            rect = pg.Rect(W // 2 - 150, y0 + i * 58, 300, 44)
+            hovered = rect.collidepoint(mouse)
+            selected = i == s.menu_selection
+            button_img = s.menu_button_selected if (hovered or selected) else s.menu_button
+            if button_img:
+                s.scr.blit(pg.transform.smoothscale(button_img, rect.size), rect.topleft)
+            else:
+                col = (92, 76, 130) if hovered or selected else (43, 40, 60)
+                pg.draw.rect(s.scr, col, rect, border_radius=8)
+                pg.draw.rect(s.scr, (180, 160, 230) if hovered or selected else (95, 88, 120), rect, 2, border_radius=8)
+            text = s.font.render(label, True, (250, 248, 255))
+            s.scr.blit(text, text.get_rect(center=rect.center))
+        s.txt("↑ ↓ — выбор   Enter — подтвердить   Esc — назад", W // 2 - 165, VIEW_H - 28, (175, 170, 195), s.small)
     def hud_event(s, e):
         if not s.hud_edit: return
         cfg = hud.layout()
@@ -436,7 +509,8 @@ class Game:
         if s.show_world: s.draw_world()
         if s.controls_open: s.draw_controls()
         if s.hud_edit: s.draw_hud_editor()
-        if pl.aim:   # прицел
+        if s.menu_mode is not None: s.draw_menu()
+        if pl.aim and s.menu_mode is None:   # прицел
             mx, my = pl.aim[0] - s.cam[0], pl.aim[1] - s.cam[1]; col = (255, 255, 255); pg.draw.circle(s.scr, col, (mx, my), 10, 1); pg.draw.circle(s.scr, col, (mx, my), 1)
             for a in ((-17, 0, -7, 0), (7, 0, 17, 0), (0, -17, 0, -7), (0, 7, 0, 17)): pg.draw.line(s.scr, col, (mx + a[0], my + a[1]), (mx + a[2], my + a[3]))
         pg.display.flip()
@@ -477,7 +551,9 @@ class Game:
             for e in pg.event.get():
                 if e.type == pg.QUIT: return
                 if e.type == pg.KEYDOWN: s.key(e.key)
-                if s.hud_edit: s.hud_event(e)
+                if s.menu_mode is not None:
+                    s.menu_event(e)
+                elif s.hud_edit: s.hud_event(e)
                 elif e.type == pg.MOUSEBUTTONDOWN and s.controls_open: s.controls_event(e)
                 elif e.type == pg.MOUSEBUTTONDOWN and e.button in (1, 3): s.pl.press("a1" if e.button == 1 else "a2")
             s.step(dt); s.draw()

@@ -204,7 +204,7 @@ class Game:
         pg.init(); pg.display.set_caption("DEAD ROOMS"); s.scr = pg.display.set_mode((W, H), pg.SCALED | (pg.FULLSCREEN if SETTINGS.get("fullscreen", True) else 0)); s.debug = False; s.cam = [0, 0]; s.view = pg.Surface((MW, MH))
         s.font = pg.font.SysFont("arial,dejavusans,freesans", 16, bold=True); s.big = pg.font.SysFont("arial,dejavusans,freesans", 44, bold=True)
         s.small = pg.font.SysFont("arial,dejavusans,freesans", 11, bold=True); s.grid = False
-        s.show_world = False; s.controls_open = False; s.waiting_for_bind = None; s.veil = pg.Surface((W, VIEW_H), pg.SRCALPHA); s.veil.fill((6, 6, 12, 225))
+        s.show_world = False; s.controls_open = False; s.waiting_for_bind = None; s.hud_edit = False; s.hud_drag = None; s.hud_selected = "player"; s.veil = pg.Surface((W, VIEW_H), pg.SRCALPHA); s.veil.fill((6, 6, 12, 225))
         s.clock = pg.time.Clock(); s.new_game()
         if SETTINGS.get("mouse_aim", True): pg.mouse.set_visible(False)
     def new_game(s, loop=0):
@@ -306,6 +306,16 @@ class Game:
         try: (DATA / "settings.json").write_text(__import__("json").dumps(SETTINGS, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         except OSError as exc: print("Не удалось сохранить настройки:", exc)
     def key(s, k):
+        if s.hud_edit:
+            if k == pg.K_F2 or k == pg.K_ESCAPE: s.hud_edit = False; s.hud_drag = None; return
+            if k in (pg.K_EQUALS, pg.K_PLUS, pg.K_KP_PLUS, pg.K_MINUS, pg.K_KP_MINUS):
+                cfg = hud.layout(); key = s.hud_selected
+                if key in ("hp", "mana"):
+                    cfg[key][2] = max(20, min(500, cfg[key][2] + (8 if k in (pg.K_EQUALS, pg.K_PLUS, pg.K_KP_PLUS) else -8)))
+                    cfg[key][3] = max(4, min(50, cfg[key][3] + (2 if k in (pg.K_EQUALS, pg.K_PLUS, pg.K_KP_PLUS) else -2)))
+                else: cfg[key][2] = max(16, min(128, cfg[key][2] + (4 if k in (pg.K_EQUALS, pg.K_PLUS, pg.K_KP_PLUS) else -4)))
+                s.save_settings(); return
+            return
         if s.controls_open:
             if s.waiting_for_bind:
                 if k == pg.K_ESCAPE: s.waiting_for_bind = None; return
@@ -313,6 +323,7 @@ class Game:
             if k in (pg.K_ESCAPE, pg.K_F1): s.controls_open = False
             return
         if k == pg.K_F1: s.controls_open = True; return
+        if k == pg.K_F2: s.hud_edit = True; return
         controls = s.controls()
         def pressed(action):
             try: return k == pg.key.key_code(controls[action])
@@ -332,6 +343,30 @@ class Game:
         elif k == pg.K_r: s.new_game()
         elif k == pg.K_RETURN and s.done: s.new_game(s.camp.loop + 1)
         elif k == pg.K_ESCAPE: pg.quit(); sys.exit()
+    def hud_event(s, e):
+        if not s.hud_edit: return
+        cfg = hud.layout()
+        if e.type == pg.MOUSEBUTTONDOWN and e.button == 1:
+            mx, my = e.pos
+            # Приоритет более мелких/поздних элементов, затем бары.
+            for key in ("weapon2", "weapon1", "skill", "player", "mana", "hp"):
+                a = cfg[key]; rect = pg.Rect(a[0], a[1], a[2], a[2] if key not in ("hp", "mana") else a[3])
+                if rect.collidepoint(mx, my): s.hud_selected = key; s.hud_drag = (key, mx-a[0], my-a[1]); return
+        elif e.type == pg.MOUSEBUTTONUP and e.button == 1: s.hud_drag = None
+        elif e.type == pg.MOUSEMOTION and s.hud_drag:
+            key, dx, dy = s.hud_drag; a = cfg[key]; a[0] = max(0, min(W-a[2], e.pos[0]-dx)); a[1] = max(0, min(VIEW_H-(a[3] if key in ("hp", "mana") else a[2]), e.pos[1]-dy)); s.save_settings()
+        elif e.type == pg.MOUSEBUTTONDOWN and e.button in (4, 5):
+            key = s.hud_selected; a = cfg[key]; delta = 4 if e.button == 4 else -4
+            if key in ("hp", "mana"): a[2] = max(20, min(500, a[2]+delta*2)); a[3] = max(4, min(50, a[3]+delta//2))
+            else: a[2] = max(16, min(128, a[2]+delta))
+            s.save_settings()
+    def draw_hud_editor(s):
+        s.txt("РЕДАКТОР HUD — перетаскивай элементы мышью | колесо или +/-: размер | F2/Esc: выход", 12, 10, (255, 230, 140), s.small)
+        cfg = hud.layout()
+        for key, a in cfg.items():
+            rect = pg.Rect(a[0], a[1], a[2], a[2] if key not in ("hp", "mana") else a[3])
+            pg.draw.rect(s.scr, (255, 220, 100) if key == s.hud_selected else (120, 180, 255), rect, 2)
+            s.txt(key.upper(), rect.x, max(25, rect.y-14), (255, 255, 255), s.small)
     def controls_event(s, e):
         if not s.controls_open or e.type != pg.MOUSEBUTTONDOWN or e.button != 1 or s.waiting_for_bind: return
         mx, my = e.pos; y0 = 86
@@ -400,6 +435,7 @@ class Game:
         elif s.done: s.txt("ВСЕ КАРТЫ ПРОЙДЕНЫ — Enter: ещё круг", W // 2 - 380, 200, (120, 255, 150), s.big)
         if s.show_world: s.draw_world()
         if s.controls_open: s.draw_controls()
+        if s.hud_edit: s.draw_hud_editor()
         if pl.aim:   # прицел
             mx, my = pl.aim[0] - s.cam[0], pl.aim[1] - s.cam[1]; col = (255, 255, 255); pg.draw.circle(s.scr, col, (mx, my), 10, 1); pg.draw.circle(s.scr, col, (mx, my), 1)
             for a in ((-17, 0, -7, 0), (7, 0, 17, 0), (0, -17, 0, -7), (0, 7, 0, 17)): pg.draw.line(s.scr, col, (mx + a[0], my + a[1]), (mx + a[2], my + a[3]))
@@ -441,7 +477,8 @@ class Game:
             for e in pg.event.get():
                 if e.type == pg.QUIT: return
                 if e.type == pg.KEYDOWN: s.key(e.key)
-                if e.type == pg.MOUSEBUTTONDOWN and s.controls_open: s.controls_event(e)
+                if s.hud_edit: s.hud_event(e)
+                elif e.type == pg.MOUSEBUTTONDOWN and s.controls_open: s.controls_event(e)
                 elif e.type == pg.MOUSEBUTTONDOWN and e.button in (1, 3): s.pl.press("a1" if e.button == 1 else "a2")
             s.step(dt); s.draw()
 

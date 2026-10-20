@@ -1,6 +1,40 @@
 {
   "fullscreen": true,
   "mouse_aim": true,
+  "hud_layout": {
+    "player": [
+      8,
+      432,
+      48
+    ],
+    "skill": [
+      60,
+      460,
+      48
+    ],
+    "weapon1": [
+      112,
+      460,
+      48
+    ],
+    "weapon2": [
+      165,
+      460,
+      48
+    ],
+    "hp": [
+      8,
+      484,
+      48,
+      10
+    ],
+    "mana": [
+      8,
+      496,
+      48,
+      10
+    ]
+  },
   "controls": {
     "jump": "SPACE",
     "roll": "LSHIFT",
@@ -8,7 +42,7 @@
     "attack2": "L",
     "pickup": "V",
     "skill": "Q",
-    "skill_next": "X",
+    "skill_next": "C",
     "skill_prev": "E"
   }
 }

@@ -59,13 +59,24 @@ LOOPING = {"idle", "move", "jump", "ladder"}
 PHASES = {"windup", "attack", "recovery", "roll"}
 
 def find_anim(kind, d, state, folder=None):
-    """(кадры, настройки) для состояния моба или None."""
+    """(кадры, настройки) для состояния моба или None.
+    Для ходьбы поддерживаются оба имени: move и walk."""
     key = (kind, state)
     if key not in _ANIM:
-        spec = d.get("anims", {}).get(state)
-        if isinstance(spec, str): spec = {"frames": spec}
+        anims = d.get("anims", {})
+        source_state = state
+        spec = anims.get(state)
+        if state == "move" and spec is None and "walk" in anims:
+            source_state, spec = "walk", anims["walk"]
+        if isinstance(spec, str):
+            spec = {"frames": spec}
         spec = dict(spec or {})
-        fr = frames(spec.get("frames") or f"{folder or 'mobs/' + kind}/{state}")
+        base = folder or f"mobs/{kind}"
+        frame_path = spec.get("frames") or f"{base}/{source_state}"
+        fr = frames(frame_path)
+        # Для папки ходьбы без явной настройки разрешаем оба варианта имени.
+        if not fr and state == "move" and source_state == "move":
+            fr = frames(f"{base}/walk")
         _ANIM[key] = (fr, spec) if fr else None
     return _ANIM[key]
 

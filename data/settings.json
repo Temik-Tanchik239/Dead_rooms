@@ -1,4 +1,18 @@
 {
  "fullscreen": true,
- "mouse_aim": true
+ "mouse_aim": true,
+ "menu_layout": {
+  "new": [
+   684,
+   291,
+   268,
+   36
+  ],
+  "exit": [
+   787,
+   480,
+   172,
+   28
+  ]
+ }
 }

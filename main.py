@@ -209,6 +209,9 @@ class Game:
         # Стартовое меню; после Esc игровой мир сохраняется и ставится на паузу.
         s.menu_mode = "start"  # start | pause | None
         s.menu_selection = 0
+        s.menu_edit = False
+        s.menu_drag = None
+        s.menu_selected = "new"
         # Ресурсы меню загружаются из assets рядом с исходниками/EXE.
         # Для EXE после сборки редактируйте dist/assets/menu/* — внешние ресурсы имеют приоритет.
         menu_assets = ASSETS / "menu"
@@ -328,12 +331,22 @@ class Game:
         except OSError as exc: print("Не удалось сохранить настройки:", exc)
     def key(s, k):
         if s.menu_mode is not None:
-            if k == pg.K_UP: s.menu_selection = (s.menu_selection - 1) % (3 if s.menu_mode == "pause" else 2); return
-            if k == pg.K_DOWN: s.menu_selection = (s.menu_selection + 1) % (3 if s.menu_mode == "pause" else 2); return
-            if k in (pg.K_RETURN, pg.K_SPACE):
-                options = ["continue", "new", "exit"] if s.menu_mode == "pause" else ["new", "exit"]
-                s.menu_action(options[s.menu_selection]); return
-            if k == pg.K_ESCAPE and s.menu_mode == "pause": s.menu_mode = None
+            if k == pg.K_F3:
+                s.menu_edit = not s.menu_edit
+                s.menu_drag = None
+                return
+            if s.menu_edit:
+                if k in (pg.K_ESCAPE, pg.K_F3):
+                    s.menu_edit = False; s.menu_drag = None; return
+                if k in (pg.K_EQUALS, pg.K_PLUS, pg.K_KP_PLUS, pg.K_MINUS, pg.K_KP_MINUS):
+                    s.resize_menu_button(8 if k in (pg.K_EQUALS, pg.K_PLUS, pg.K_KP_PLUS) else -8)
+                    s.save_settings(); return
+                return
+            # Кнопки главного меню и паузы выбираются только мышью.
+            # Esc закрывает меню паузы и возвращает в забег; навигации стрелками/Enter нет.
+            if k == pg.K_ESCAPE and s.menu_mode == "pause":
+                s.menu_mode = None
+                pg.mouse.set_visible(not SETTINGS.get("mouse_aim", True))
             return
         if s.hud_edit:
             if k == pg.K_F2 or k == pg.K_ESCAPE: s.hud_edit = False; s.hud_drag = None; return
@@ -383,15 +396,84 @@ class Game:
             pg.mouse.set_visible(not SETTINGS.get("mouse_aim", True))
         elif action == "exit":
             pg.quit(); sys.exit()
+    MENU_BUTTONS = {"continue": "ПРОДОЛЖИТЬ", "new": "НОВАЯ ИГРА", "exit": "ВЫХОД"}
+    def menu_layout(s):
+        """Отдельные координаты для главного меню и паузы; сохраняются в data/settings.json."""
+        is_pause = s.menu_mode == "pause"
+        setting_key = "menu_layout_pause" if is_pause else "menu_layout"
+        cfg = SETTINGS.setdefault(setting_key, {})
+        if is_pause:
+            defaults = {
+                "continue": [W // 2 - 150, VIEW_H // 2 - 70, 300, 44],
+                "new": [W // 2 - 150, VIEW_H // 2 - 12, 300, 44],
+                "exit": [W // 2 - 150, VIEW_H // 2 + 46, 300, 44],
+            }
+        else:
+            # Запрошенные координаты главного меню: x, y, width, height.
+            defaults = {
+                "new": [684, 291, 268, 36],
+                "exit": [787, 480, 172, 28],
+            }
+        for name, rect in defaults.items():
+            cfg.setdefault(name, rect[:])
+            if not isinstance(cfg[name], list) or len(cfg[name]) != 4:
+                cfg[name] = rect[:]
+            cfg[name] = [int(v) for v in cfg[name]]
+            cfg[name][0] = max(0, min(W - 1, cfg[name][0]))
+            cfg[name][1] = max(0, min(VIEW_H - 1, cfg[name][1]))
+            cfg[name][2] = max(100, min(700, cfg[name][2]))
+            cfg[name][3] = max(28, min(120, cfg[name][3]))
+            cfg[name][0] = min(cfg[name][0], W - cfg[name][2])
+            cfg[name][1] = min(cfg[name][1], VIEW_H - cfg[name][3])
+        return cfg
+    def resize_menu_button(s, delta):
+        cfg = s.menu_layout(); key = s.menu_selected
+        if key not in cfg: return
+        a = cfg[key]
+        nw, nh = max(100, min(700, a[2] + delta)), max(28, min(120, a[3] + round(delta * 0.22)))
+        cx, cy = a[0] + a[2] // 2, a[1] + a[3] // 2
+        a[:] = [cx - nw // 2, cy - nh // 2, nw, nh]
     def menu_event(s, e):
         if s.menu_mode is None: return
+        options = ["continue", "new", "exit"] if s.menu_mode == "pause" else ["new", "exit"]
+        cfg = s.menu_layout()
+        if s.menu_edit:
+            if e.type == pg.MOUSEBUTTONDOWN and e.button == 1:
+                mx, my = e.pos
+                for action in reversed(options):
+                    rect = pg.Rect(cfg[action])
+                    if rect.collidepoint(mx, my):
+                        s.menu_selected = action
+                        s.menu_drag = (action, mx - rect.x, my - rect.y)
+                        return
+            elif e.type == pg.MOUSEMOTION and s.menu_drag:
+                action, dx, dy = s.menu_drag
+                cfg[action][0] = max(0, min(W - cfg[action][2], e.pos[0] - dx))
+                cfg[action][1] = max(0, min(VIEW_H - cfg[action][3], e.pos[1] - dy))
+                s.save_settings()
+            elif e.type == pg.MOUSEBUTTONUP and e.button == 1:
+                s.menu_drag = None
+            elif e.type == pg.MOUSEBUTTONDOWN and e.button in (4, 5):
+                mx, my = e.pos
+                # Совместимость со старыми событиями колеса мыши.
+                for action in reversed(options):
+                    if pg.Rect(cfg[action]).collidepoint(mx, my):
+                        s.menu_selected = action; break
+                s.resize_menu_button(8 if e.button == 4 else -8)
+                s.save_settings()
+            elif e.type == pg.MOUSEWHEEL:
+                mx, my = pg.mouse.get_pos()
+                for action in reversed(options):
+                    if pg.Rect(cfg[action]).collidepoint(mx, my):
+                        s.menu_selected = action; break
+                if e.y:
+                    s.resize_menu_button(8 if e.y > 0 else -8)
+                    s.save_settings()
+            return
         if e.type == pg.MOUSEBUTTONDOWN and e.button == 1:
             mx, my = e.pos
-            options = ["continue", "new", "exit"] if s.menu_mode == "pause" else ["new", "exit"]
-            y0 = VIEW_H // 2 + 10
-            for i, action in enumerate(options):
-                rect = pg.Rect(W // 2 - 150, y0 + i * 58, 300, 44)
-                if rect.collidepoint(mx, my):
+            for action in options:
+                if pg.Rect(cfg[action]).collidepoint(mx, my):
                     s.menu_action(action); return
     def draw_menu(s):
         if s.menu_mode == "start":
@@ -399,33 +481,44 @@ class Game:
                 s.scr.blit(pg.transform.smoothscale(s.menu_background, (W, VIEW_H)), (0, 0))
             else:
                 s.scr.fill((8, 8, 17))
-            # Лёгкое затемнение повышает читаемость надписей; само изображение остаётся заменяемым.
             s.scr.blit(s.menu_veil, (0, 0))
         else:
             s.scr.blit(s.menu_veil, (0, 0))
-        title = s.big.render("DEAD ROOMS", True, (240, 235, 255))
-        s.scr.blit(title, title.get_rect(center=(W // 2, VIEW_H // 2 - 125)))
-        subtitle = "ГЛАВНОЕ МЕНЮ" if s.menu_mode == "start" else "ПАУЗА"
-        st = s.font.render(subtitle, True, (175, 170, 205))
-        s.scr.blit(st, st.get_rect(center=(W // 2, VIEW_H // 2 - 75)))
+        # В главном меню не рисуем текстовый логотип и подзаголовок:
+        # оформление задаётся полностью изображениями из assets/menu.
+        # В меню паузы оставляем заголовок, чтобы отличать его от стартового экрана.
+        if s.menu_mode != "start":
+            title = s.big.render("DEAD ROOMS", True, (240, 235, 255))
+            s.scr.blit(title, title.get_rect(center=(W // 2, VIEW_H // 2 - 125)))
+            st = s.font.render("ПАУЗА", True, (175, 170, 205))
+            s.scr.blit(st, st.get_rect(center=(W // 2, VIEW_H // 2 - 75)))
         options = [("НОВАЯ ИГРА", "new"), ("ВЫХОД", "exit")] if s.menu_mode == "start" else [("ПРОДОЛЖИТЬ", "continue"), ("НОВАЯ ИГРА", "new"), ("ВЫХОД", "exit")]
-        y0 = VIEW_H // 2 + 10
+        cfg = s.menu_layout()
         mouse = pg.mouse.get_pos()
         for i, (label, action) in enumerate(options):
-            rect = pg.Rect(W // 2 - 150, y0 + i * 58, 300, 44)
+            rect = pg.Rect(cfg[action])
             hovered = rect.collidepoint(mouse)
-            selected = i == s.menu_selection
-            button_img = s.menu_button_selected if (hovered or selected) else s.menu_button
+            selected = False  # больше нет переключения кнопок с клавиатуры
+            button_img = s.menu_button_selected if (hovered or (s.menu_edit and action == s.menu_selected)) else s.menu_button
             if button_img:
                 s.scr.blit(pg.transform.smoothscale(button_img, rect.size), rect.topleft)
             else:
-                col = (92, 76, 130) if hovered or selected else (43, 40, 60)
+                col = (92, 76, 130) if hovered else (43, 40, 60)
                 pg.draw.rect(s.scr, col, rect, border_radius=8)
-                pg.draw.rect(s.scr, (180, 160, 230) if hovered or selected else (95, 88, 120), rect, 2, border_radius=8)
+                pg.draw.rect(s.scr, (180, 160, 230) if hovered else (95, 88, 120), rect, 2, border_radius=8)
             text = s.font.render(label, True, (250, 248, 255))
             s.scr.blit(text, text.get_rect(center=rect.center))
-        s.txt("↑ ↓ — выбор   Enter — подтвердить   Esc — назад", W // 2 - 165, VIEW_H - 28, (175, 170, 195), s.small)
-        # Пользовательский курсор рисуется поверх всего меню; заменяется файлом assets/menu/cursor.png.
+            if s.menu_edit:
+                color = (255, 210, 80) if action == s.menu_selected else (110, 220, 255)
+                pg.draw.rect(s.scr, color, rect, 2)
+                size_label = s.small.render(f"{action}: {rect.w}x{rect.h} ({rect.x},{rect.y})", True, color)
+                s.scr.blit(size_label, (rect.x, max(0, rect.y - 16)))
+        if s.menu_edit:
+            hint = "РЕДАКТОР КНОПОК: перетаскивай мышью · колесо или +/- — размер · F3/Esc — готово"
+            ht = s.small.render(hint, True, (255, 225, 135))
+            s.scr.blit(ht, ht.get_rect(center=(W // 2, VIEW_H - 28)))
+        elif s.menu_mode != "start":
+            s.txt("Мышь — выбор   Esc — назад   F3 — настройка кнопок", W // 2 - 170, VIEW_H - 28, (175, 170, 195), s.small)
         if s.menu_cursor is not None:
             mx, my = pg.mouse.get_pos()
             cursor = s.menu_cursor

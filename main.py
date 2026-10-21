@@ -209,18 +209,25 @@ class Game:
         # Стартовое меню; после Esc игровой мир сохраняется и ставится на паузу.
         s.menu_mode = "start"  # start | pause | None
         s.menu_selection = 0
-        # Ресурсы главного меню можно заменить без изменения кода.
-        # assets/menu/background.png, button.png, button_selected.png
+        # Ресурсы меню загружаются из assets рядом с исходниками/EXE.
+        # Для EXE после сборки редактируйте dist/assets/menu/* — внешние ресурсы имеют приоритет.
         menu_assets = ASSETS / "menu"
         def load_menu_image(filename):
             try:
-                return pg.image.load(str(menu_assets / filename)).convert_alpha()
+                path = menu_assets / filename
+                if path.is_file():
+                    return pg.image.load(str(path)).convert_alpha()
             except (pg.error, OSError):
-                return None
+                pass
+            return None
         s.menu_background = load_menu_image("background.png")
         s.menu_button = load_menu_image("button.png")
         s.menu_button_selected = load_menu_image("button_selected.png")
-        if SETTINGS.get("mouse_aim", True): pg.mouse.set_visible(False)
+        s.menu_cursor = load_menu_image("cursor.png")
+        # Отдельная полупрозрачная вуаль: не перекрывает пользовательский фон почти полностью.
+        s.menu_veil = pg.Surface((W, VIEW_H), pg.SRCALPHA)
+        s.menu_veil.fill((6, 6, 12, 72))
+        pg.mouse.set_visible(False if s.menu_cursor is not None or SETTINGS.get("mouse_aim", True) else True)
     def new_game(s, loop=0):
         if loop == 0: s.pl = Player()
         else: s.pl.hp = min(s.pl.maxhp, s.pl.hp + 30); s.pl.refresh_mana(True)
@@ -369,9 +376,11 @@ class Game:
     def menu_action(s, action):
         if action == "continue":
             s.menu_mode = None
+            pg.mouse.set_visible(not SETTINGS.get("mouse_aim", True))
         elif action == "new":
             s.new_game()
             s.menu_mode = None
+            pg.mouse.set_visible(not SETTINGS.get("mouse_aim", True))
         elif action == "exit":
             pg.quit(); sys.exit()
     def menu_event(s, e):
@@ -391,9 +400,9 @@ class Game:
             else:
                 s.scr.fill((8, 8, 17))
             # Лёгкое затемнение повышает читаемость надписей; само изображение остаётся заменяемым.
-            s.scr.blit(s.veil, (0, 0))
+            s.scr.blit(s.menu_veil, (0, 0))
         else:
-            s.scr.blit(s.veil, (0, 0))
+            s.scr.blit(s.menu_veil, (0, 0))
         title = s.big.render("DEAD ROOMS", True, (240, 235, 255))
         s.scr.blit(title, title.get_rect(center=(W // 2, VIEW_H // 2 - 125)))
         subtitle = "ГЛАВНОЕ МЕНЮ" if s.menu_mode == "start" else "ПАУЗА"
@@ -416,6 +425,15 @@ class Game:
             text = s.font.render(label, True, (250, 248, 255))
             s.scr.blit(text, text.get_rect(center=rect.center))
         s.txt("↑ ↓ — выбор   Enter — подтвердить   Esc — назад", W // 2 - 165, VIEW_H - 28, (175, 170, 195), s.small)
+        # Пользовательский курсор рисуется поверх всего меню; заменяется файлом assets/menu/cursor.png.
+        if s.menu_cursor is not None:
+            mx, my = pg.mouse.get_pos()
+            cursor = s.menu_cursor
+            max_size = 64
+            if cursor.get_width() > max_size or cursor.get_height() > max_size:
+                scale = min(max_size / cursor.get_width(), max_size / cursor.get_height())
+                cursor = pg.transform.smoothscale(cursor, (max(1, int(cursor.get_width() * scale)), max(1, int(cursor.get_height() * scale))))
+            s.scr.blit(cursor, (mx, my))
     def hud_event(s, e):
         if not s.hud_edit: return
         cfg = hud.layout()
@@ -548,6 +566,8 @@ class Game:
     def run(s):
         while True:
             dt = min(s.clock.tick(60) / 1000, 1 / 30)
+            # В меню используем курсор из assets; в забеге сохраняем обычное управление мышью.
+            pg.mouse.set_visible(s.menu_mode is not None and s.menu_cursor is None or s.menu_mode is None and not SETTINGS.get("mouse_aim", True))
             for e in pg.event.get():
                 if e.type == pg.QUIT: return
                 if e.type == pg.KEYDOWN: s.key(e.key)

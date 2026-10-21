@@ -21,12 +21,20 @@ if errorlevel 1 goto :err
 uv run pyinstaller --noconfirm --clean --onefile --windowed --name DEAD_ROOMS --add-data "data;data" --add-data "assets;assets" main.py
 if errorlevel 1 goto :err
 
+rem Копируем редактируемые ресурсы рядом с EXE: замена PNG после сборки сразу видна в игре.
+if not exist "dist\assets" mkdir "dist\assets"
+xcopy "assets\*" "dist\assets\" /E /I /Y >nul
+if errorlevel 1 goto :err
+if not exist "dist\data" mkdir "dist\data"
+xcopy "data\*" "dist\data\" /E /I /Y >nul
+if errorlevel 1 goto :err
+
 echo.
-echo ГОТОВО! Игра собрана в:
+echo ГОТОВО! Запускайте двойным щелчком:
 echo   "%~dp0dist\DEAD_ROOMS.exe"
 echo.
-echo EXE включает игровые ресурсы и запускается двойным щелчком.
-echo Если рядом с EXE создать папки data и assets, игра будет использовать их вместо встроенных ресурсов.
+echo Изменяемые картинки меню лежат в dist\assets\menu\.
+echo Можно заменять PNG после сборки — пересобирать EXE не нужно.
 pause
 exit /b 0
 

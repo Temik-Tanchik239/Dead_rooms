@@ -15,7 +15,7 @@
       80,
       80
     ],
-    "skin": "mobs\\marionetka\\mariotenka_m",
+    "skin": "mobs\rotling\rotling",
     "mass": 4,
     "contact": 6,
     "move": {
@@ -39,7 +39,8 @@
         "lunge": 140,
         "knockback": 240
       }
-    ]
+    ],
+    "xp": 20
   },
   "bone_caster": {
     "name": "Костяной стрелок",
@@ -74,7 +75,8 @@
         "damage": 10,
         "range": 360
       }
-    ]
+    ],
+    "xp": 35
   },
   "wisp": {
     "name": "Болотный огонёк",
@@ -118,7 +120,8 @@
         "range": 380,
         "range_y": 380
       }
-    ]
+    ],
+    "xp": 15
   },
   "grave_brute": {
     "name": "Могильный громила",
@@ -156,7 +159,8 @@
         "knockback": 380,
         "interrupt": false
       }
-    ]
+    ],
+    "xp": 60
   },
   "leaper": {
     "name": "Скакун",
@@ -212,7 +216,8 @@
         ],
         "lunge": 100
       }
-    ]
+    ],
+    "xp": 40
   },
   "bat": {
     "name": "Трупная мышь",
@@ -246,7 +251,8 @@
         "frames": "mobs/bat/walk",
         "fps": 10
       }
-    }
+    },
+    "xp": 10
   },
   "hexer": {
     "name": "Ведьмин глаз",
@@ -286,6 +292,7 @@
         "range": 420,
         "range_y": 400
       }
-    ]
+    ],
+    "xp": 30
   }
 }

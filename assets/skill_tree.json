@@ -1,0 +1,39 @@
+{
+  "lock_icon": "icons/skill_locked.png",
+  "grid_columns": 4,
+  "grid_rows": 2,
+  "slots": [
+    {
+      "skill": "dash",
+      "unlock_level": 1
+    },
+    {
+      "skill": "nova",
+      "unlock_level": 2
+    },
+    {
+      "skill": "heal",
+      "unlock_level": 3
+    },
+    {
+      "skill": "double_jump",
+      "unlock_level": 4
+    },
+    {
+      "skill": "mana_blades",
+      "unlock_level": 5
+    },
+    {
+      "skill": "mana_ranged",
+      "unlock_level": 6
+    },
+    {
+      "skill": "mana_regen",
+      "unlock_level": 7
+    },
+    {
+      "skill": "mana_reserve",
+      "unlock_level": 8
+    }
+  ]
+}

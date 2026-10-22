@@ -26,7 +26,7 @@
   "P": {"player": true},
   "?": {"item": "random"},
   "S": {"mob": "random"},
-  "t": {"mob": "rotling"},
+  "r": {"mob": "rotling"},
   "c": {"mob": "bone_caster"},
   "w": {"mob": "wisp"},
   "g": {"mob": "grave_brute"},

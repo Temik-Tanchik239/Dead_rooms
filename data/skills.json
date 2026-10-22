@@ -1,6 +1,7 @@
 {
   "dash": {
     "name": "Рывок",
+    "category": "active",
     "type": "dash",
     "cooldown": 4.0,
     "speed": 620,
@@ -11,10 +12,12 @@
       90,
       210,
       255
-    ]
+    ],
+    "unlock_level": 1
   },
   "nova": {
     "name": "Импульс",
+    "category": "active",
     "type": "nova",
     "cooldown": 7.0,
     "radius": 105,
@@ -25,10 +28,12 @@
       255,
       150,
       70
-    ]
+    ],
+    "unlock_level": 2
   },
   "heal": {
     "name": "Лечение",
+    "category": "active",
     "type": "heal",
     "cooldown": 12.0,
     "amount": 30,
@@ -38,6 +43,84 @@
       100,
       235,
       140
-    ]
+    ],
+    "unlock_level": 3
+  },
+  "double_jump": {
+    "name": "Двойной прыжок",
+    "category": "passive",
+    "type": "double_jump",
+    "icon": "icons/skill_double_jump.png",
+    "color": [
+      120,
+      220,
+      255
+    ],
+    "unlock_level": 4,
+    "description": "Позволяет прыгнуть ещё раз в воздухе"
+  },
+  "mana_blades": {
+    "name": "Экономия маны: клинки",
+    "category": "passive",
+    "type": "mana_cost_reduction",
+    "weapons": [
+      "rusty_sword",
+      "twin_daggers"
+    ],
+    "amount": 0.25,
+    "icon": "icons/skill_mana_blades.png",
+    "color": [
+      130,
+      180,
+      255
+    ],
+    "unlock_level": 5,
+    "description": "На 25% меньше маны для меча и кинжалов"
+  },
+  "mana_ranged": {
+    "name": "Экономия маны: дальнее",
+    "category": "passive",
+    "type": "mana_cost_reduction",
+    "weapons": [
+      "short_bow",
+      "seeker_staff"
+    ],
+    "amount": 0.25,
+    "icon": "icons/skill_mana_ranged.png",
+    "color": [
+      130,
+      180,
+      255
+    ],
+    "unlock_level": 6,
+    "description": "На 25% меньше маны для лука и посоха"
+  },
+  "mana_regen": {
+    "name": "Поток маны",
+    "category": "passive",
+    "type": "mana_regen",
+    "multiplier": 1.5,
+    "icon": "icons/skill_mana_regen.png",
+    "color": [
+      120,
+      255,
+      190
+    ],
+    "unlock_level": 7,
+    "description": "Регенерация маны увеличена на 50%"
+  },
+  "mana_reserve": {
+    "name": "Глубокий резерв",
+    "category": "passive",
+    "type": "max_mana",
+    "amount": 25,
+    "icon": "icons/skill_mana_reserve.png",
+    "color": [
+      170,
+      140,
+      255
+    ],
+    "unlock_level": 8,
+    "description": "Максимум маны увеличен на 25"
   }
 }

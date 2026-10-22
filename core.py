@@ -21,6 +21,13 @@ DATA_FILES = ("player", "weapons", "mobs", "maps", "projectiles", "skills")
 def reload_data():
     for n in DATA_FILES:
         CFG[n] = json.loads((DATA / f"{n}.json").read_text(encoding="utf-8"))
+    # Настраиваемое дерево навыков хранится в assets/skill_tree.json.
+    try:
+        CFG["skill_tree"] = json.loads((ASSETS / "skill_tree.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        CFG["skill_tree"] = {"lock_icon": "icons/skill_locked.png", "grid_columns": 4, "grid_rows": 2,
+                             "slots": [{"skill": sid, "unlock_level": int(d.get("unlock_level", i + 1))}
+                                       for i, (sid, d) in enumerate(CFG.get("skills", {}).items())][:8]}
     # карты: data/maps/<id>.json, файлы на "_" (заготовки) не читаются
     CFG["map_defs"], CFG["map_errors"] = {}, []
     for f in sorted((DATA / "maps").glob("*.json")):

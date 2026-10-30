@@ -1,18 +1,83 @@
 {
- "fullscreen": true,
- "mouse_aim": true,
- "menu_layout": {
-  "new": [
-   684,
-   291,
-   268,
-   36
-  ],
-  "exit": [
-   787,
-   480,
-   172,
-   28
-  ]
- }
+  "fullscreen": true,
+  "mouse_aim": true,
+  "menu_layout": {
+    "new": [
+      684,
+      291,
+      268,
+      36
+    ],
+    "exit": [
+      787,
+      480,
+      172,
+      28
+    ]
+  },
+  "hud_layout": {
+    "player": [
+      8,
+      432,
+      48
+    ],
+    "weapon1": [
+      64,
+      456,
+      48
+    ],
+    "weapon2": [
+      120,
+      456,
+      48
+    ],
+    "skill": [
+      176,
+      456,
+      48
+    ],
+    "hp": [
+      8,
+      484,
+      48,
+      10
+    ],
+    "mana": [
+      8,
+      496,
+      48,
+      10
+    ]
+  },
+  "last_character": "knight",
+  "controls": {
+    "jump": "SPACE",
+    "roll": "LSHIFT",
+    "attack1": "J",
+    "attack2": "L",
+    "pickup": "E",
+    "skill": "Q",
+    "skill_next": "C",
+    "skill_prev": "V"
+  },
+  "menu_layout_pause": {
+    "continue": [
+      330,
+      186,
+      300,
+      44
+    ],
+    "new": [
+      330,
+      244,
+      300,
+      44
+    ],
+    "exit": [
+      330,
+      302,
+      300,
+      44
+    ]
+  }
 }

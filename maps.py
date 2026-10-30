@@ -1,7 +1,7 @@
 """Карты, нарисованные вручную. Ничего не генерируется случайно.
 
 data/maps.json      — порядок карт ("order"), общая легенда символов, общие настройки.
-data/maps/<id>.json — одна карта: сетка 50 x 50 символов ("rows"), фон, своя легенда, мобы, награда,
+data/maps/<id>.json — одна карта: сетка произвольного размера ("rows"), фон, своя легенда, мобы, награда,
                       "pos": [x, y] — координата карты в СЕТКЕ МИРА (x вправо, y вниз), по ней работают выходы left/right/up/down.
 Файлы, имя которых начинается с "_", игра не читает (например, _template.json — заготовка).
 
@@ -16,12 +16,14 @@ data/maps/<id>.json — одна карта: сетка 50 x 50 символов
   item    — id оружия или "random": оружие лежит на полу
   sprite  — картинка клетки из assets (иначе стандартная отрисовка типа), draw [w, h], offset [x, y], color [r, g, b]
   damage  — урон шипов
+  light   — блок света: "torch" | "lantern" | "crystal" | "orb" или свой словарь (подробно — lighting.py)
 """
 import math, random
 import pygame as pg
 from core import CFG, T, COLS, ROWS, MW
 from anim import sprite, image
 import weapon
+import lighting
 from mob import Mob
 
 END = "__end__"
@@ -127,27 +129,39 @@ class Drop:
         if not weapon.icon(v, s.wid, s.x, s.y - 12 + bob, 36, 30):
             pg.draw.polygon(v, (255, 220, 90), [(s.x, s.y - 8), (s.x + 8, s.y), (s.x, s.y + 8), (s.x - 8, s.y)])
 
-def random_weapon(): return random.choice(list(CFG["weapons"]))
+def random_weapon():
+    """Случайное оружие из тех, что разрешены текущему персонажу (allowed_weapons в data/characters.json)."""
+    allowed = CFG.get("character", {}).get("allowed_weapons")
+    pool = [w for w in CFG["weapons"] if not allowed or w in allowed]
+    return random.choice(pool or list(CFG["weapons"]))
 
 class GameMap:
     def __init__(s, mid, scale=1.0):
         s.id = mid; s.d = md = CFG["map_defs"][mid]; s.name = md.get("name", mid); s.pos = pos_of(mid)
         s.scale = scale * md.get("difficulty", 1); s.legend = lg = legend_of(md)
         rows = md.get("rows", []); fill = md.get("fill", ".")
+        # Сохраняем реальные границы карты отдельно от общей буферной сетки.
+        s.width = max((len(row) for row in rows if isinstance(row, str)), default=COLS)
+        s.height = len(rows) if rows else ROWS
+        s.width_px, s.height_px = s.width * T, s.height * T
         s.chars = [[rows[r][c] if r < len(rows) and c < len(rows[r]) else fill for c in range(COLS)] for r in range(ROWS)]
         s.info = [[lg.get(ch, {"type": "empty"}) for ch in row] for row in s.chars]
         s.visited = s.cleared = s.spawned = s.locked = False
         s.mobs, s.corpses, s.drops = [], [], []
+        s.boss_spawned = False
         for c, r, e in s.cells():
             if "item" in e:
                 wid = random_weapon() if e["item"] == "random" else e["item"]
                 if wid in CFG["weapons"]: s.drops.append(Drop(c * T + T / 2, (r + 1) * T - 14, wid))
         s.exits = s.find_exits()
+        s.lights = lighting.find_lights(s)   # блоки света: факелы, фонари, кристаллы, сферы
         s.build()
 
     def cells(s):
-        for r in range(ROWS):
-            for c in range(COLS): yield c, r, s.info[r][c]
+        # Рисуем только реальные клетки этой карты, а не общую буферную сетку.
+        for r in range(s.height):
+            for c in range(s.width):
+                yield c, r, s.info[r][c]
 
     def find(s, test):
         return [(c, r) for c, r, e in s.cells() if test(c, r, e)]
@@ -162,7 +176,7 @@ class GameMap:
             while stack:
                 x, y = stack.pop(); group.append((x, y))
                 for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
-                    if 0 <= nx < COLS and 0 <= ny < ROWS and (nx, ny) not in seen and s.chars[ny][nx] == ch:
+                    if 0 <= nx < s.width and 0 <= ny < s.height and (nx, ny) not in seen and s.chars[ny][nx] == ch:
                         seen.add((nx, ny)); stack.append((nx, ny))
             zones.append(dict(char=ch, entry=e, cells=set(group), rect=box(group), ladder=e["type"] == "ladder"))
         return zones
@@ -177,20 +191,33 @@ class GameMap:
 
     # ---------- отрисовка ----------
     def render(s):
-        surf = pg.Surface((MW, VH)); md = s.d
+        # Фон и геометрия создаются в фактическом размере карты.
+        # Раньше использовался общий размер MW × VH (максимум по всем картам),
+        # поэтому фон на карте 60×32 растягивался на высоту 50 клеток и камера
+        # показывала неверно обрезанный/размытый участок.
+        surf = pg.Surface((s.width_px, s.height_px)); md = s.d
         surf.fill(tuple(opt(md, "bg_color", [20, 18, 30])))
         bg = md.get("background")
         if bg: draw_background(surf, bg, opt(md, "bg_mode", "cover"))
         dim = opt(md, "bg_dim", 0)
         if dim:
-            sh = pg.Surface((MW, VH), pg.SRCALPHA); sh.fill((0, 0, 0, int(255 * dim))); surf.blit(sh, (0, 0))
+            sh = pg.Surface(surf.get_size(), pg.SRCALPHA); sh.fill((0, 0, 0, int(255 * dim))); surf.blit(sh, (0, 0))
         tiles = dict(CFG["maps"].get("tiles", {})); tiles.update(md.get("tiles", {}))
         for c, r, e in s.cells():
             X, Y = c * T, r * T
             if s.g[r][c] == "D": draw_default(surf, "D", X, Y, None); continue
+            # Все элементы окружения берутся из assets/environment. Если в легенде
+            # задан sprite/tiles, он имеет приоритет; иначе выбираем вариант по координатам.
             spr = e.get("sprite") or tiles.get(e["type"])
+            variants = {"wall": 3, "platform": 5, "ladder": 3, "spikes": 3}
+            if not spr and e["type"] in variants:
+                kind = e["type"]
+                variant = (c * 7 + r * 11 + (c // 3) * 5) % variants[kind] + 1
+                spr = f"environment/{kind}_{variant}.png" if kind != "spikes" else f"environment/spikes_{variant}.png"
             if spr:
                 dw, dh = e.get("draw", [T, T]); ox, oy = e.get("offset", [0, 0])
+                # Платформы и шипы занимают нижнюю часть клетки, сохраняя физику клетки.
+                if not e.get("draw") and e["type"] == "platform": dw, dh = T, T
                 img = sprite(spr, dw, dh, e.get("flip", False))
                 if img: surf.blit(img, (X + ox, Y + T - dh + oy)); continue
             draw_default(surf, s.g[r][c], X, Y, e.get("color"))
@@ -214,14 +241,80 @@ class GameMap:
     def arrival(s, came_from, via, camp):
         """Где появиться: (прямоугольник, на лестнице ли)."""
         if via and via.get("arrive"):
-            cells = s.find(lambda c, r, e: s.chars[r][c] == via["arrive"])
-            if cells: return box(cells), any(s.info[r][c]["type"] == "ladder" for c, r in cells)
+            # Символ прибытия может встречаться на карте несколько раз.
+            # Нельзя объединять все такие клетки в один огромный прямоугольник:
+            # выбираем отдельную связную группу, ближайшую к стороне входа.
+            ch = via["arrive"]
+            candidates, seen = [], set()
+            for c, r, e in s.cells():
+                if s.chars[r][c] != ch or (c, r) in seen:
+                    continue
+                stack, group = [(c, r)], []
+                seen.add((c, r))
+                while stack:
+                    x, y = stack.pop(); group.append((x, y))
+                    for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                        if (0 <= nx < s.width and 0 <= ny < s.height and
+                                (nx, ny) not in seen and s.chars[ny][nx] == ch):
+                            seen.add((nx, ny)); stack.append((nx, ny))
+                candidates.append(group)
+            if candidates:
+                src_pos, dst_pos = pos_of(came_from), pos_of(s.id) if came_from else (None, None)
+                edge = None
+                if src_pos and dst_pos:
+                    dx, dy = dst_pos[0] - src_pos[0], dst_pos[1] - src_pos[1]
+                    if abs(dx) >= abs(dy) and dx: edge = "left" if dx > 0 else "right"
+                    elif dy: edge = "top" if dy > 0 else "bottom"
+                def arrival_score(group):
+                    if edge == "left": return min(c for c, r in group) * 1000 + sum(r for c, r in group) / len(group)
+                    if edge == "right": return (s.width - 1 - max(c for c, r in group)) * 1000 + sum(r for c, r in group) / len(group)
+                    if edge == "top": return min(r for c, r in group) * 1000 + sum(c for c, r in group) / len(group)
+                    if edge == "bottom": return (s.height - 1 - max(r for c, r in group)) * 1000 + sum(c for c, r in group) / len(group)
+                    return min((c - s.width / 2) ** 2 + (r - s.height / 2) ** 2 for c, r in group)
+                cells = min(candidates, key=arrival_score)
+                return box(cells), any(s.info[r][c]["type"] == "ladder" for c, r in cells)
         if came_from:
+            # Сначала используем явный обратный выход, если он задан в легенде.
             for z in s.exits:
-                if camp.resolve(s.id, z["entry"]["exit"]) == came_from: return z["rect"], z["ladder"]
+                if camp.resolve(s.id, z["entry"]["exit"]) == came_from:
+                    return z["rect"], z["ladder"]
+
+            # Если на карте нет явного обратного выхода, определяем точку входа
+            # по координатам карт в сетке мира. Это важно для карт с разным
+            # размером: иначе игрок попадал в fallback-точку в центре уровня.
+            src_pos, dst_pos = pos_of(came_from), pos_of(s.id)
+            if src_pos and dst_pos:
+                dx, dy = dst_pos[0] - src_pos[0], dst_pos[1] - src_pos[1]
+                edge = None
+                if abs(dx) >= abs(dy) and dx:
+                    edge = "left" if dx > 0 else "right"
+                elif dy:
+                    edge = "top" if dy > 0 else "bottom"
+                if edge:
+                    if edge == "left": edge_cells = lambda c, r: c == 0
+                    elif edge == "right": edge_cells = lambda c, r: c == s.width - 1
+                    elif edge == "top": edge_cells = lambda c, r: r == 0
+                    else: edge_cells = lambda c, r: r == s.height - 1
+                    # Предпочитаем реальные выходы у нужного края.
+                    edge_exits = [z for z in s.exits if any(edge_cells(c, r) for c, r in z["cells"])]
+                    if edge_exits:
+                        z = min(edge_exits, key=lambda z: min(
+                            abs(c) + abs(r) if edge == "left" else
+                            abs((s.width - 1) - c) + abs(r) if edge == "right" else
+                            abs(r) + abs(c) if edge == "top" else
+                            abs((s.height - 1) - r) + abs(c)
+                            for c, r in z["cells"] if edge_cells(c, r)))
+                        return z["rect"], z["ladder"]
+                    # Если на краю нет помеченного выхода, всё равно появляемся
+                    # у соответствующего края, а не в центре карты.
+                    if edge == "left": c, r = 0, max(0, s.height - 3)
+                    elif edge == "right": c, r = s.width - 1, max(0, s.height - 3)
+                    elif edge == "top": c, r = max(0, s.width // 2), 0
+                    else: c, r = max(0, s.width // 2), s.height - 1
+                    return pg.Rect(c * T, r * T, T, T), False
         cells = s.find(lambda c, r, e: e.get("player"))
         if cells: c, r = cells[0]; return pg.Rect(c * T, r * T, T, T), s.info[r][c]["type"] == "ladder"
-        return pg.Rect(MW // 2 - T // 2, VH - 2 * T, T, T), False
+        return pg.Rect(s.width_px // 2 - T // 2, max(0, s.height_px - 2 * T), T, T), False
 
     # ---------- мобы ----------
     def spawn(s):
@@ -257,14 +350,15 @@ def draw_background(surf, path, mode):
     img = image(path)
     if not img: return
     iw, ih = img.get_size()
-    if mode == "stretch": surf.blit(sprite(path, MW, VH), (0, 0))
+    sw, sh = surf.get_size()
+    if mode == "stretch": surf.blit(sprite(path, sw, sh), (0, 0))
     elif mode == "tile":
-        for y in range(0, VH, ih):
-            for x in range(0, MW, iw): surf.blit(img, (x, y))
-    elif mode == "center": surf.blit(img, ((MW - iw) // 2, (VH - ih) // 2))
+        for y in range(0, sh, ih):
+            for x in range(0, sw, iw): surf.blit(img, (x, y))
+    elif mode == "center": surf.blit(img, ((sw - iw) // 2, (sh - ih) // 2))
     else:
-        k = (max if mode != "fit" else min)(MW / iw, VH / ih); w, h = max(1, int(iw * k)), max(1, int(ih * k))
-        surf.blit(sprite(path, w, h), ((MW - w) // 2, (VH - h) // 2))
+        k = (max if mode != "fit" else min)(sw / iw, sh / ih); w, h = max(1, int(iw * k)), max(1, int(ih * k))
+        surf.blit(sprite(path, w, h), ((sw - w) // 2, (sh - h) // 2))
 
 def draw_default(v, ch, X, Y, color):
     col = tuple(color) if color else None
@@ -317,9 +411,13 @@ def check():
     if not CFG["maps"].get("order"): out.append("maps.json: пустой order")
     for mid, md in defs.items():
         rows, lg = md.get("rows", []), legend_of(md)
-        if len(rows) != ROWS: out.append(f"{mid}: строк {len(rows)}, нужно {ROWS}")
-        for i, row in enumerate(rows):
-            if len(row) != COLS: out.append(f"{mid}: строка {i} длиной {len(row)}, нужно {COLS}")
+        if not isinstance(rows, list) or not rows:
+            out.append(f"{mid}: карта не содержит rows")
+            rows = []
+        widths = [len(row) for row in rows if isinstance(row, str)]
+        if len(widths) != len(rows): out.append(f"{mid}: rows должны содержать только строки")
+        if widths and min(widths) != max(widths):
+            out.append(f"{mid}: строки карты имеют разную длину (будут дополнены пустыми клетками)")
         bad = sorted({ch for row in rows for ch in row if ch not in lg})
         if bad: out.append(f"{mid}: нет в легенде символов {' '.join(bad)} (будут пустотой)")
         for ch, e in lg.items():
@@ -328,6 +426,10 @@ def check():
             if e.get("item") not in (None, "random") and e["item"] not in CFG["weapons"]: out.append(f"{mid}: '{ch}' — нет оружия {e['item']}")
             ex = e.get("exit")
             if ex is not None and not valid_exit(ex, defs): out.append(f"{mid}: '{ch}' ведёт на несуществующую карту {ex}")
+            if e.get("light") is not None and not lighting.preset(e["light"]): out.append(f"{mid}: '{ch}' — нет света {e['light']} (см. lights в data/maps.json)")
+            li = e.get("light")
+            if isinstance(li, dict) and "color" in li and lighting.color_of(li["color"]) is None:
+                out.append(f"{mid}: '{ch}' — непонятный цвет света {li['color']} (пример: \"красный\", \"green\", [255, 80, 40], \"#ff8040\")")
         for key in ("background",):
             if md.get(key) and not image(md[key]): out.append(f"{mid}: нет картинки assets/{md[key]}")
     for mid in defs:   # переходы: ведут ли выходы куда надо и есть ли выход обратно

@@ -1,37 +1,205 @@
 {
- "_help": "Порядок карт: order (какая за какой). Каждая карта — data/maps/<id>.json. Легенда ниже общая для всех карт, карта может переопределить или добавить символы в своей legend. Подробно — README, раздел «Карты».",
- "start": "start",
- "print_world": true,
- "world": {"reveal": "all"},
- "order": ["start", "platforms", "spikes", "hill", "blocks"],
- "lock": true,
- "fall_damage": 15,
- "loop_scale": 0.2,
- "bg_color": [20, 18, 30],
- "bg_mode": "cover",
- "bg_dim": 0,
- "tiles": {},
- "legend": {
-  ".": "empty",
-  "#": "wall",
-  "=": "platform",
-  "H": "ladder",
-  "x": {"type": "spikes", "damage": 10},
-  "<": {"exit": "prev"},
-  ">": {"exit": "next"},
-  "L": {"exit": "left"},
-  "R": {"exit": "right"},
-  "U": {"exit": "up", "type": "ladder"},
-  "D": {"exit": "down", "type": "ladder"},
-  "P": {"player": true},
-  "?": {"item": "random"},
-  "S": {"mob": "random"},
-  "r": {"mob": "rotling"},
-  "c": {"mob": "bone_caster"},
-  "w": {"mob": "wisp"},
-  "g": {"mob": "grave_brute"},
-  "l": {"mob": "leaper"},
-  "b": {"mob": "bat"},
-  "h": {"mob": "hexer"}
- }
+  "_help": "Порядок карт: order (какая за какой). Каждая карта — data/maps/<id>.json. Легенда ниже общая для всех карт, карта может переопределить или добавить символы в своей legend. Подробно — README, раздел «Карты».",
+  "start": "start",
+  "print_world": true,
+  "world": {
+    "reveal": "all"
+  },
+  "order": [
+    "start",
+    "platforms",
+    "spikes",
+    "hill",
+    "blocks",
+    "my_map",
+    "kanalisaciya"
+  ],
+  "lock": true,
+  "fall_damage": 15,
+  "loop_scale": 0.2,
+  "bg_color": [
+    20,
+    18,
+    30
+  ],
+  "bg_mode": "cover",
+  "bg_dim": 0,
+  "tiles": {},
+  "legend": {
+    ".": "empty",
+    "#": "wall",
+    "=": "platform",
+    "H": "ladder",
+    "x": {
+      "type": "spikes",
+      "damage": 10
+    },
+    "<": {
+      "exit": "prev"
+    },
+    ">": {
+      "exit": "next"
+    },
+    "L": {
+      "exit": "left"
+    },
+    "R": {
+      "exit": "right"
+    },
+    "U": {
+      "exit": "up",
+      "type": "ladder"
+    },
+    "D": {
+      "exit": "down",
+      "type": "ladder"
+    },
+    "P": {
+      "player": true
+    },
+    "?": {
+      "item": "random"
+    },
+    "S": {
+      "mob": "random"
+    },
+    "r": {
+      "mob": "rotling"
+    },
+    "c": {
+      "mob": "bone_caster"
+    },
+    "w": {
+      "mob": "wisp"
+    },
+    "g": {
+      "mob": "grave_brute"
+    },
+    "l": {
+      "mob": "leaper"
+    },
+    "b": {
+      "mob": "bat"
+    },
+    "h": {
+      "mob": "hexer"
+    },
+    "*": {
+      "light": "torch"
+    },
+    "o": {
+      "light": "lantern"
+    },
+    "+": {
+      "light": "crystal"
+    },
+    "%": {
+      "light": "orb"
+    }
+  },
+  "_help_lighting": "Освещение. Блоки света в легенде: * факел, o фонарь, + кристалл, % магическая сфера (поле light). lights — заготовки света (цвет, радиус, мерцание, как рисовать). lighting — общие настройки: default_darkness — темнота карты с блоками света, если у карты нет своего darkness; ambient — оттенок темноты; player_light — свет вокруг игрока; projectile_light — светятся ли снаряды; resolution — качество (1 — лучше, 4 — быстрее). У карты: \"darkness\": 0..1 и \"ambient\": [r, g, b]. Подробно — lighting.py и README.",
+  "lights": {
+    "torch": {
+      "color": [
+        255,
+        150,
+        60
+      ],
+      "radius": 190,
+      "intensity": 1.0,
+      "flicker": "torch",
+      "speed": 1.0,
+      "offset": [
+        0,
+        -6
+      ],
+      "draw": "torch",
+      "embers": true
+    },
+    "lantern": {
+      "color": [
+        255,
+        214,
+        150
+      ],
+      "radius": 230,
+      "intensity": 0.9,
+      "flicker": "pulse",
+      "speed": 0.35,
+      "offset": [
+        0,
+        -2
+      ],
+      "draw": "lantern"
+    },
+    "crystal": {
+      "color": [
+        110,
+        210,
+        255
+      ],
+      "radius": 170,
+      "intensity": 0.85,
+      "flicker": "pulse",
+      "speed": 0.8,
+      "offset": [
+        0,
+        2
+      ],
+      "draw": "crystal"
+    },
+    "orb": {
+      "color": [
+        190,
+        110,
+        255
+      ],
+      "radius": 200,
+      "intensity": 0.9,
+      "flicker": "pulse",
+      "speed": 1.4,
+      "offset": [
+        0,
+        0
+      ],
+      "draw": "orb"
+    },
+    "glow": {
+      "color": [
+        255,
+        230,
+        190
+      ],
+      "radius": 200,
+      "intensity": 0.85,
+      "flicker": "pulse",
+      "speed": 0.3,
+      "offset": [
+        0,
+        0
+      ],
+      "draw": "none"
+    }
+  },
+  "lighting": {
+    "default_darkness": 0.68,
+    "ambient": [
+      14,
+      14,
+      30
+    ],
+    "resolution": 3,
+    "player_light": {
+      "color": [
+        255,
+        236,
+        210
+      ],
+      "radius": 130,
+      "intensity": 0.55
+    },
+    "projectile_light": true,
+    "halo": true,
+    "glow": 0.2
+  }
 }

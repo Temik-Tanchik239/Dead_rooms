@@ -1,0 +1,106 @@
+{
+  "background_image": "ui/skill_menu_background.png",
+  "overlay_color": [
+    5,
+    5,
+    14
+  ],
+  "overlay_alpha": 100,
+  "title": "ABILITIES",
+  "title_color": [
+    255,
+    220,
+    130
+  ],
+  "title_x": 480,
+  "title_y": 42,
+  "subtitle": "Навыки открываются автоматически по порядку",
+  "show_subtitle": true,
+  "subtitle_color": [
+    215,
+    215,
+    235
+  ],
+  "subtitle_x": 480,
+  "subtitle_y": 76,
+  "columns": 4,
+  "rows": 2,
+  "max_slots": 8,
+  "grid_y": 112,
+  "cell_width": 150,
+  "cell_height": 145,
+  "gap_x": 12,
+  "gap_y": 14,
+  "corner_radius": 4,
+  "border_width": 2,
+  "slot_image": "ui/skill_slot_unlocked.png",
+  "slot_unlocked_image": "ui/skill_slot_unlocked.png",
+  "slot_locked_image": "ui/skill_slot_locked.png",
+  "tint_slot_images": false,
+  "icon_size": 64,
+  "icon_y": 48,
+  "name_y": 96,
+  "status_y": 119,
+  "show_skill_names": true,
+  "show_status": true,
+  "show_slot_numbers": false,
+  "locked_name": "",
+  "locked_status_format": "УРОВЕНЬ {level}",
+  "unlocked_status": "ОТКРЫТ",
+  "unlocked_passive_status": "ПАССИВ АКТИВЕН",
+  "mark_passive": true,
+  "passive_prefix": "[ПАССИВ] ",
+  "unlocked_bg": [
+    30,
+    43,
+    60
+  ],
+  "locked_bg": [
+    22,
+    24,
+    38
+  ],
+  "locked_border": [
+    85,
+    93,
+    120
+  ],
+  "name_unlocked_color": [
+    255,
+    240,
+    190
+  ],
+  "name_locked_color": [
+    145,
+    145,
+    165
+  ],
+  "status_unlocked_color": [
+    175,
+    220,
+    190
+  ],
+  "status_locked_color": [
+    125,
+    125,
+    145
+  ],
+  "slot_number_color": [
+    225,
+    225,
+    240
+  ],
+  "slot_number_bottom_offset": 18,
+  "show_footer": true,
+  "footer": "Новый уровень — открывается следующий навык",
+  "footer_color": [
+    210,
+    210,
+    225
+  ],
+  "footer_x": 480,
+  "footer_y": 460,
+  "fallback_lock_draw": true,
+  "grid_x": 150,
+  "auto_close_ms": 4000
+}

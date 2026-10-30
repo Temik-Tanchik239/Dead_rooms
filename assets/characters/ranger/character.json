@@ -1,0 +1,61 @@
+{
+  "_help": "Внешний вид героя. Все пути — относительно assets/. Кадры бега — папка move/ (1.png, 2.png ...). Любое состояние можно сделать анимацией: положи кадры в папку <состояние>/ и укажи её в anims.",
+  "color": [
+    120,
+    210,
+    110
+  ],
+  "folder": "characters/ranger",
+  "skin": "characters/ranger/idle.png",
+  "icon": "characters/ranger/icon.png",
+  "anim_fps": 3,
+  "anims": {
+    "move": {
+      "frames": "characters/ranger/move",
+      "fps": 8
+    },
+    "jump": "characters/ranger/jump.png",
+    "roll": "characters/ranger/roll.png",
+    "attack": "characters/ranger/attack.png",
+    "shoot": "characters/ranger/shoot.png",
+    "hurt": "characters/ranger/hurt.png",
+    "ladder": "characters/ranger/ladder.png"
+  },
+  "draw": [
+    44,
+    55
+  ],
+  "draws": {
+    "roll": [
+      52,
+      37
+    ],
+    "attack": [
+      88,
+      56
+    ],
+    "shoot": [
+      88,
+      56
+    ]
+  },
+  "hand": [
+    13,
+    -24
+  ],
+  "hands": {
+    "attack": [
+      23,
+      -31
+    ],
+    "shoot": [
+      16,
+      -31
+    ]
+  },
+  "select": {
+    "idle": "idle",
+    "selected": "move",
+    "fps": 8
+  }
+}

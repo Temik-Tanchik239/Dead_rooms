@@ -1,0 +1,87 @@
+{
+  "name": "ХРАНИТЕЛЬ КРУГА",
+  "health_per_player": 0.45,
+  "mob": {
+    "hp": 900,
+    "w": 56,
+    "h": 72,
+    "color": [
+      145,
+      45,
+      65
+    ],
+    "draw": [
+      128,
+      128
+    ],
+    "skin": "boss/boss.png",
+    "mass": 8,
+    "contact": 14,
+    "stun": 0.12,
+    "boss": true,
+    "move": {
+      "type": "chase",
+      "speed": 92,
+      "sight": 900,
+      "jump": 500
+    },
+    "attacks": [
+      {
+        "type": "melee",
+        "windup": 0.55,
+        "active": 0.2,
+        "recovery": 0.55,
+        "cooldown": 1.35,
+        "damage": 24,
+        "reach": [
+          76,
+          58
+        ],
+        "lunge": 190,
+        "knockback": 360,
+        "range_y": 100
+      }
+    ],
+    "xp": 500,
+    "weight": 0
+  },
+  "bar": {
+    "x": 170,
+    "y": 38,
+    "w": 620,
+    "h": 22,
+    "radius": 6,
+    "back": [
+      35,
+      18,
+      25
+    ],
+    "fill": [
+      190,
+      38,
+      55
+    ],
+    "border": [
+      235,
+      190,
+      150
+    ],
+    "border_width": 2,
+    "text": [
+      255,
+      235,
+      220
+    ],
+    "number_color": [
+      255,
+      255,
+      255
+    ],
+    "font_size": 18,
+    "title_gap": 12,
+    "show_numbers": true,
+    "back_skin": null,
+    "fill_skin": null,
+    "frame_skin": null
+  }
+}

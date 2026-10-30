@@ -1,0 +1,385 @@
+{
+  "_help": "Персонажи. stats — правки data/player.json (любое поле: hp, speed, jump, dmg_mult, roll_speed, mana.max ...). weapons — [оружие ЛКМ, оружие ПКМ]. allowed_weapons — какое оружие может подбирать и выпадать (null — любое). base_skills — навыки с самого начала. skill_tree — ячейки экрана навыков по порядку: skill + unlock_level (можно lock_icon). skill_overrides / weapon_overrides — правки data/skills.json и data/weapons.json только для этого героя. assets — папка внешнего вида в assets (по умолчанию characters/<id>). model_scale — множитель размера спрайта героя (например 1.2); hitbox — [ширина, высота] физического хитбокса в пикселях. Эти параметры независимы и задаются отдельно для каждого персонажа.",
+  "default": "wanderer",
+  "order": [
+    "wanderer",
+    "knight",
+    "ranger",
+    "mage",
+    "shadow"
+  ],
+  "characters": {
+    "wanderer": {
+      "name": "Странник",
+      "role": "Универсал",
+      "description": "Сбалансированный боец: меч для ближнего боя, лук для дальнего. Хороший выбор для первого забега.",
+      "assets": "characters/wanderer",
+      "stats": {},
+      "weapons": [
+        "rusty_sword",
+        "short_bow"
+      ],
+      "allowed_weapons": null,
+      "base_skills": [
+        "dash"
+      ],
+      "skill_tree": [
+        {
+          "skill": "dash",
+          "unlock_level": 1
+        },
+        {
+          "skill": "heal",
+          "unlock_level": 2
+        },
+        {
+          "skill": "nova",
+          "unlock_level": 3
+        },
+        {
+          "skill": "double_jump",
+          "unlock_level": 4
+        },
+        {
+          "skill": "mana_blades",
+          "unlock_level": 5
+        },
+        {
+          "skill": "mana_ranged",
+          "unlock_level": 6
+        },
+        {
+          "skill": "mana_regen",
+          "unlock_level": 7
+        },
+        {
+          "skill": "shield",
+          "unlock_level": 8
+        }
+      ],
+      "skill_overrides": {},
+      "weapon_overrides": {},
+      "model_scale": 1.0,
+      "hitbox": [
+        20,
+        34
+      ]
+    },
+    "knight": {
+      "name": "Рыцарь",
+      "role": "Танк",
+      "description": "пенис",
+      "assets": "characters/knight",
+      "stats": {
+        "hp": 150,
+        "speed": 180,
+        "jump": 930,
+        "dmg_mult": 1.2,
+        "roll_speed": 520,
+        "hurt_inv": 1.1,
+        "mana": {
+          "max": 80,
+          "start": 80,
+          "regen": 8
+        }
+      },
+      "weapons": [
+        "rusty_sword",
+        "fire_flask"
+      ],
+      "allowed_weapons": [
+        "rusty_sword",
+        "iron_pike",
+        "fire_flask",
+        "short_bow"
+      ],
+      "base_skills": [
+        "shield"
+      ],
+      "skill_tree": [
+        {
+          "skill": "shield",
+          "unlock_level": 1
+        },
+        {
+          "skill": "vitality",
+          "unlock_level": 2
+        },
+        {
+          "skill": "heal",
+          "unlock_level": 3
+        },
+        {
+          "skill": "fury",
+          "unlock_level": 4
+        },
+        {
+          "skill": "nova",
+          "unlock_level": 5
+        },
+        {
+          "skill": "mana_blades",
+          "unlock_level": 6
+        },
+        {
+          "skill": "mana_reserve",
+          "unlock_level": 7
+        },
+        {
+          "skill": "mana_regen",
+          "unlock_level": 8
+        }
+      ],
+      "skill_overrides": {
+        "shield": {
+          "capacity": 90,
+          "cooldown": 8.0
+        }
+      },
+      "weapon_overrides": {},
+      "model_scale": 1.5,
+      "hitbox": [
+        30,
+        50
+      ]
+    },
+    "ranger": {
+      "name": "Следопыт",
+      "role": "Стрелок",
+      "description": "Быстрый и прыгучий: с самого начала умеет делать двойной прыжок и рывок. Держит врагов на расстоянии луком, вблизи — кинжалы.",
+      "assets": "characters/ranger",
+      "stats": {
+        "hp": 95,
+        "speed": 235,
+        "jump": 1050,
+        "dmg_mult": 1.0,
+        "mana": {
+          "max": 110,
+          "start": 110,
+          "regen": 12
+        }
+      },
+      "weapons": [
+        "twin_daggers",
+        "short_bow"
+      ],
+      "allowed_weapons": [
+        "twin_daggers",
+        "iron_pike",
+        "short_bow",
+        "seeker_staff"
+      ],
+      "base_skills": [
+        "dash",
+        "double_jump"
+      ],
+      "skill_tree": [
+        {
+          "skill": "dash",
+          "unlock_level": 1
+        },
+        {
+          "skill": "double_jump",
+          "unlock_level": 1
+        },
+        {
+          "skill": "mana_ranged",
+          "unlock_level": 2
+        },
+        {
+          "skill": "swift",
+          "unlock_level": 3
+        },
+        {
+          "skill": "heal",
+          "unlock_level": 4
+        },
+        {
+          "skill": "fury",
+          "unlock_level": 5
+        },
+        {
+          "skill": "mana_regen",
+          "unlock_level": 6
+        },
+        {
+          "skill": "nova",
+          "unlock_level": 7
+        }
+      ],
+      "skill_overrides": {
+        "dash": {
+          "cooldown": 2.5
+        }
+      },
+      "weapon_overrides": {
+        "short_bow": {
+          "mana": 9
+        }
+      },
+      "model_scale": 1.0,
+      "hitbox": [
+        20,
+        34
+      ]
+    },
+    "mage": {
+      "name": "Чародей",
+      "role": "Маг",
+      "description": "Хрупкий, но с огромным запасом маны и быстрой регенерацией. Посох-искатель сам находит цель, а усиленный Импульс раскидывает толпу.",
+      "assets": "characters/mage",
+      "stats": {
+        "hp": 75,
+        "speed": 200,
+        "jump": 1000,
+        "dmg_mult": 0.9,
+        "mana": {
+          "max": 160,
+          "start": 160,
+          "regen": 18,
+          "regen_delay": 0.6
+        }
+      },
+      "weapons": [
+        "rusty_sword",
+        "seeker_staff"
+      ],
+      "allowed_weapons": [
+        "rusty_sword",
+        "twin_daggers",
+        "seeker_staff",
+        "fire_flask"
+      ],
+      "base_skills": [
+        "nova"
+      ],
+      "skill_tree": [
+        {
+          "skill": "nova",
+          "unlock_level": 1
+        },
+        {
+          "skill": "mana_reserve",
+          "unlock_level": 2
+        },
+        {
+          "skill": "mana_ranged",
+          "unlock_level": 3
+        },
+        {
+          "skill": "heal",
+          "unlock_level": 4
+        },
+        {
+          "skill": "mana_regen",
+          "unlock_level": 5
+        },
+        {
+          "skill": "shield",
+          "unlock_level": 6
+        },
+        {
+          "skill": "double_jump",
+          "unlock_level": 7
+        },
+        {
+          "skill": "fury",
+          "unlock_level": 8
+        }
+      ],
+      "skill_overrides": {
+        "nova": {
+          "damage": 36,
+          "radius": 125,
+          "cooldown": 5.0
+        }
+      },
+      "weapon_overrides": {},
+      "model_scale": 1.0,
+      "hitbox": [
+        20,
+        34
+      ]
+    },
+    "shadow": {
+      "name": "Тень",
+      "role": "Убийца",
+      "description": "Самый быстрый герой с длинным перекатом и почти мгновенным рывком. Мало здоровья — бейте первым и не стойте на месте.",
+      "assets": "characters/shadow",
+      "stats": {
+        "hp": 80,
+        "speed": 260,
+        "jump": 1080,
+        "dmg_mult": 1.1,
+        "roll_speed": 700,
+        "roll_time": 0.42,
+        "mana": {
+          "max": 100,
+          "start": 100,
+          "regen": 12
+        }
+      },
+      "weapons": [
+        "twin_daggers",
+        "short_bow"
+      ],
+      "allowed_weapons": [
+        "twin_daggers",
+        "rusty_sword",
+        "short_bow",
+        "fire_flask"
+      ],
+      "base_skills": [
+        "dash"
+      ],
+      "skill_tree": [
+        {
+          "skill": "dash",
+          "unlock_level": 1
+        },
+        {
+          "skill": "swift",
+          "unlock_level": 2
+        },
+        {
+          "skill": "double_jump",
+          "unlock_level": 3
+        },
+        {
+          "skill": "fury",
+          "unlock_level": 4
+        },
+        {
+          "skill": "mana_blades",
+          "unlock_level": 5
+        },
+        {
+          "skill": "vitality",
+          "unlock_level": 6
+        },
+        {
+          "skill": "mana_regen",
+          "unlock_level": 7
+        },
+        {
+          "skill": "nova",
+          "unlock_level": 8
+        }
+      ],
+      "skill_overrides": {
+        "dash": {
+          "cooldown": 1.8,
+          "speed": 760,
+          "invulnerability": 0.3,
+          "mana_cost": 10
+        }
+      },
+      "weapon_overrides": {},
+      "model_scale": 1.0,
+      "hitbox": [
+        20,
+        34
+      ]
+    }
+  }
+}

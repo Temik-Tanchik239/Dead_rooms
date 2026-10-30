@@ -117,8 +117,41 @@ class Mob(Body):
         if debug:
             pg.draw.rect(v, (0, 255, 0), r, 1)
             if s.act and "box" in s.act: pg.draw.rect(v, (255, 0, 255), s.act["box"], 1)
-        pg.draw.rect(v, (60, 20, 20), (r.centerx - 14, top - 8, 28, 3))
-        pg.draw.rect(v, (220, 60, 60), (r.centerx - 14, top - 8, 28 * max(0, s.hp) / s.maxhp, 3))
+        if not d.get("boss"):
+            pg.draw.rect(v, (60, 20, 20), (r.centerx - 14, top - 8, 28, 3))
+            pg.draw.rect(v, (220, 60, 60), (r.centerx - 14, top - 8, 28 * max(0, s.hp) / s.maxhp, 3))
+
+def spawn_boss(room, scale=1.0, player_count=1):
+    """Создать босса на ближайшей свободной площадке; вызывается только авторитетным миром/хостом."""
+    cfg = CFG.get("boss", {})
+    if "__boss__" not in CFG.get("mobs", {}): return None
+    d = normalize(CFG["mobs"]["__boss__"])
+    # Ищем пол в центральной части комнаты, чтобы босс не появлялся внутри стены.
+    candidates = []
+    center = room.width_px / 2
+    for c in range(room.width):
+        x = c * 32 + 16
+        floor_y = None
+        for rr in range(room.height):
+            if room.chars[rr][c] in "#D=":
+                floor_y = rr * 32
+                break
+        if floor_y is None: continue
+        rect = pg.Rect(0, floor_y - d.get("h", 72), d.get("w", 56), d.get("h", 72))
+        rect.centerx = int(x)
+        # Проверяем свободное место под тело; площадка сама остаётся под ногами.
+        from core import free
+        if free(room.g, rect): candidates.append((abs(x - center), x, floor_y))
+    if candidates:
+        _, x, floor_y = min(candidates)
+        y = floor_y - d.get("h", 72)
+    else:
+        x = room.width_px / 2 - d.get("w", 56) / 2
+        y = max(0, room.height_px - 3 * 32 - d.get("h", 72))
+    per_player = max(0.0, float(cfg.get("health_per_player", 0.45)))
+    hp_scale = scale * (1.0 + per_player * max(0, int(player_count) - 1))
+    return Mob("__boss__", x, y, hp_scale)
+
 
 class Corpse:
     """Проигрывает анимацию death (если она есть) на месте погибшего моба и исчезает."""

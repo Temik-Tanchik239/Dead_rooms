@@ -19,8 +19,19 @@ def attack(name):
     def reg(cls): ATTACKS[name] = cls(); return cls
     return reg
 
-def hit_player(m, a, w, from_x=None):
-    w.pl.hit(a.get("damage", 10) * m.dmg_scale, m.cx if from_x is None else from_x, w.fx, a.get("knockback", 260))
+def players_of(w):
+    """Все живые игроки (мультиплеер: w.players) или единственный w.pl."""
+    return getattr(w, "players", None) or [w.pl]
+
+def hit_player(m, a, w, from_x=None, target=None):
+    (target or w.pl).hit(a.get("damage", 10) * m.dmg_scale, m.cx if from_x is None else from_x, w.fx, a.get("knockback", 260))
+
+def hit_zone(m, a, act, w, touches, from_x=None):
+    """Бьёт каждого игрока, которого задевает зона (touches(rect) -> bool), не больше одного раза за атаку."""
+    done = act.setdefault("hit_ids", set())
+    for p in players_of(w):
+        if id(p) in done or not touches(p.rect): continue
+        done.add(id(p)); act["hit"] = True; hit_player(m, a, w, from_x, p)
 
 class Attack:
     range = 60; range_y = 60; active_time = .12
@@ -46,7 +57,7 @@ class Melee(Attack):
     def begin(s, m, a, act, w): m.vx = m.dir * a.get("lunge", 0)
     def active(s, m, a, act, dt, w):
         act["box"] = s.box(m, a)
-        if not act["hit"] and act["box"].colliderect(w.pl.rect): act["hit"] = True; hit_player(m, a, w)
+        hit_zone(m, a, act, w, act["box"].colliderect)
         return super().active(m, a, act, dt, w)
     def draw(s, m, a, act, v):
         if act["phase"] == "active": pg.draw.rect(v, (255, 120, 90), s.box(m, a), 2)
@@ -62,8 +73,8 @@ class Circle(Attack):
     def begin(s, m, a, act, w):
         x, y = s.center(m, a, act); w.fx.ring(x, y, a.get("radius", 80)); w.fx.shake = max(w.fx.shake, .12)
     def active(s, m, a, act, dt, w):
-        x, y = s.center(m, a, act)
-        if not act["hit"] and circle_hits_rect(x, y, a.get("radius", 80), w.pl.rect): act["hit"] = True; hit_player(m, a, w, x)
+        x, y = s.center(m, a, act); rad = a.get("radius", 80)
+        hit_zone(m, a, act, w, lambda r: circle_hits_rect(x, y, rad, r), x)
         return super().active(m, a, act, dt, w)
     def draw(s, m, a, act, v):
         x, y = map(int, s.center(m, a, act)); r = a.get("radius", 80)
@@ -129,7 +140,7 @@ class Leap(Attack):
         if m.flies: m.vy = 0
         r = a.get("radius", 60); x, y = m.cx, m.y + m.h - 4
         w.fx.ring(x, y, r); w.fx.shake = max(w.fx.shake, .2)
-        if circle_hits_rect(x, y, r, w.pl.rect): hit_player(m, a, w)
+        hit_zone(m, a, act, w, lambda rect: circle_hits_rect(x, y, r, rect))
         return True
     def anim(s, m, a, act): return "jump"
     def draw(s, m, a, act, v):

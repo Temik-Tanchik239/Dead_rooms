@@ -157,3 +157,33 @@ def icons(scr, pl, font):
             pg.draw.circle(scr, (100, 240, 150), (r.right - 7, r.bottom - 7), 4)
         nm = font.render(skill.get("name", sid), True, (225, 220, 245))
         scr.blit(nm, (r.x + (r.w - nm.get_width()) // 2, r.y - nm.get_height() - 2))
+
+
+def draw_boss_bar(scr, mobs, font):
+    """Большая настраиваемая полоса здоровья активного босса в верхней части экрана."""
+    boss = next((m for m in mobs if m.d.get("boss") and m.hp > 0), None)
+    if boss is None: return
+    cfg = CFG.get("boss", {}).get("bar", {})
+    x = int(cfg.get("x", (W - cfg.get("w", 620)) / 2))
+    y = int(cfg.get("y", 34)); w = int(cfg.get("w", 620)); h = int(cfg.get("h", 22))
+    ratio = max(0.0, min(1.0, boss.hp / max(1, boss.maxhp)))
+    back = sprite(cfg.get("back_skin"), w, h) if cfg.get("back_skin") else None
+    fill = sprite(cfg.get("fill_skin"), w, h) if cfg.get("fill_skin") else None
+    frame = sprite(cfg.get("frame_skin"), w, h) if cfg.get("frame_skin") else None
+    if back: scr.blit(back, (x, y))
+    else: pg.draw.rect(scr, tuple(cfg.get("back", [35, 18, 25])), (x, y, w, h), border_radius=int(cfg.get("radius", 6)))
+    fw = int(w * ratio)
+    if fw:
+        if fill:
+            scr.blit(fill, (x, y), pg.Rect(0, 0, fw, h))
+        else:
+            pg.draw.rect(scr, tuple(cfg.get("fill", [190, 38, 55])), (x, y, fw, h), border_radius=int(cfg.get("radius", 6)))
+    if frame: scr.blit(frame, (x, y))
+    else: pg.draw.rect(scr, tuple(cfg.get("border", [235, 190, 150])), (x, y, w, h), max(1, int(cfg.get("border_width", 2))), border_radius=int(cfg.get("radius", 6)))
+    title = str(CFG.get("boss", {}).get("name", boss.d.get("name", "БОСС")))
+    title_font = pg.font.SysFont("arial,dejavusans,freesans", int(cfg.get("font_size", 18)), bold=True)
+    label = title_font.render(title, True, tuple(cfg.get("text", [255, 235, 220])))
+    scr.blit(label, label.get_rect(center=(x + w // 2, y - int(cfg.get("title_gap", 12)) - label.get_height() // 2)))
+    if cfg.get("show_numbers", True):
+        nums = font.render(f"{max(0, int(boss.hp))} / {int(boss.maxhp)}", True, tuple(cfg.get("number_color", [255, 255, 255])))
+        scr.blit(nums, nums.get_rect(center=(x + w // 2, y + h // 2)))

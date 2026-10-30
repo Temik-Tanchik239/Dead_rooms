@@ -41,7 +41,7 @@
    56
   ]
  },
- "anim_fps": 12,
+ "anim_fps": 3,
  "anims": {
   "jump": "player/jump.png",
   "roll": "player/roll.png",

@@ -52,7 +52,7 @@ class Proj:
     def angle(s): return math.atan2(s.vy, s.vx)
     def set_dir(s, angle, speed=None):
         sp = s.speed if speed is None else speed; s.vx, s.vy = math.cos(angle) * sp, math.sin(angle) * sp
-    def targets(s, w): return w.mobs if s.friendly else [w.pl]
+    def targets(s, w): return w.mobs if s.friendly else (getattr(w, "players", None) or [w.pl])   # мультиплеер: все живые игроки
     def damage(s, target, w, kb_dir):
         if s.friendly: target.hurt(s.dmg, kb_dir * s.kb, w.fx)
         else: target.hit(s.dmg, s.x, w.fx, s.kb)

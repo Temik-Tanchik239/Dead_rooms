@@ -1,0 +1,61 @@
+{
+  "_help": "Внешний вид героя. Все пути — относительно assets/. Кадры бега — папка move/ (1.png, 2.png ...). Любое состояние можно сделать анимацией: положи кадры в папку <состояние>/ и укажи её в anims.",
+  "color": [
+    110,
+    170,
+    235
+  ],
+  "folder": "characters/wanderer",
+  "skin": "characters/wanderer/idle.png",
+  "icon": "icons/player.png",
+  "anim_fps": 3,
+  "anims": {
+    "move": {
+      "frames": "characters/wanderer/move",
+      "fps": 8
+    },
+    "jump": "characters/wanderer/jump.png",
+    "roll": "characters/wanderer/roll.png",
+    "attack": "characters/wanderer/attack.png",
+    "shoot": "characters/wanderer/shoot.png",
+    "hurt": "characters/wanderer/hurt.png",
+    "ladder": "characters/wanderer/ladder.png"
+  },
+  "draw": [
+    44,
+    55
+  ],
+  "draws": {
+    "roll": [
+      52,
+      37
+    ],
+    "attack": [
+      88,
+      56
+    ],
+    "shoot": [
+      88,
+      56
+    ]
+  },
+  "hand": [
+    13,
+    -24
+  ],
+  "hands": {
+    "attack": [
+      23,
+      -31
+    ],
+    "shoot": [
+      16,
+      -31
+    ]
+  },
+  "select": {
+    "idle": "idle",
+    "selected": "move",
+    "fps": 8
+  }
+}

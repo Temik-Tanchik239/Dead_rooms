@@ -1,0 +1,200 @@
+{
+  "_help": "Оформление экрана выбора героя. Пути к картинкам — относительно assets/. Прямоугольники — [x, y, ширина, высота] в пикселях экрана 960x512. Пустая строка вместо картинки — рисуется цветом.",
+  "background_image": "ui/character_select/background.png",
+  "background_color": [
+    10,
+    10,
+    18
+  ],
+  "overlay_color": [
+    6,
+    6,
+    12
+  ],
+  "overlay_alpha": 40,
+  "show_title": true,
+  "title": "ВЫБОР ГЕРОЯ",
+  "title_size": 34,
+  "title_color": [
+    255,
+    220,
+    130
+  ],
+  "title_x": 480,
+  "title_y": 34,
+  "cards_x": null,
+  "cards_y": 70,
+  "card_width": 168,
+  "card_height": 206,
+  "card_gap": 12,
+  "card_positions": {},
+  "card_image": "ui/character_select/card.png",
+  "card_selected_image": "ui/character_select/card_selected.png",
+  "card_hover_image": "ui/character_select/card_hover.png",
+  "card_color": [
+    26,
+    26,
+    40
+  ],
+  "card_border": [
+    80,
+    80,
+    110
+  ],
+  "card_border_width": 2,
+  "card_radius": 10,
+  "selected_border": true,
+  "selected_border_width": 3,
+  "selected_lift": 6,
+  "preview_width": 92,
+  "preview_height": 115,
+  "preview_y": 16,
+  "preview_anim": "idle",
+  "preview_anim_selected": "move",
+  "preview_fps": 8,
+  "name_size": 18,
+  "name_y": 152,
+  "name_color": [
+    235,
+    230,
+    245
+  ],
+  "show_role": true,
+  "role_size": 12,
+  "role_y": 176,
+  "role_color": [
+    170,
+    170,
+    195
+  ],
+  "show_hotkeys": true,
+  "hotkey_color": [
+    150,
+    150,
+    175
+  ],
+  "panel": [
+    36,
+    290,
+    600,
+    176
+  ],
+  "panel_image": "ui/character_select/panel.png",
+  "panel_color": [
+    20,
+    20,
+    32
+  ],
+  "panel_border": [
+    80,
+    80,
+    110
+  ],
+  "panel_padding": 14,
+  "panel_name_size": 22,
+  "description_width": 370,
+  "description_size": 12,
+  "description_lines": 7,
+  "description_color": [
+    210,
+    210,
+    225
+  ],
+  "stats_gap": 18,
+  "stat_bar_width": 170,
+  "stat_bar_height": 8,
+  "stat_step": 29,
+  "stat_bar_accent": true,
+  "stat_bar_color": [
+    120,
+    200,
+    255
+  ],
+  "stat_bar_back": [
+    40,
+    40,
+    58
+  ],
+  "stat_label_color": [
+    190,
+    190,
+    210
+  ],
+  "stat_value_color": [
+    255,
+    235,
+    180
+  ],
+  "stats": [
+    {
+      "label": "Здоровье",
+      "key": "hp",
+      "max": 160
+    },
+    {
+      "label": "Скорость",
+      "key": "speed",
+      "max": 270
+    },
+    {
+      "label": "Урон",
+      "key": "dmg_mult",
+      "max": 1.3,
+      "percent": true
+    },
+    {
+      "label": "Мана",
+      "key": "mana.max",
+      "max": 170
+    },
+    {
+      "label": "Прыжок",
+      "key": "jump",
+      "max": 1100
+    }
+  ],
+  "loadout_panel": [
+    648,
+    290,
+    276,
+    122
+  ],
+  "loadout_image": "ui/character_select/loadout.png",
+  "loadout_icon_size": 34,
+  "weapons_label": "Оружие",
+  "skills_label": "Навыки",
+  "show_tree_size": true,
+  "tree_label": "Дерево: {n} навыков",
+  "start_button": [
+    648,
+    422,
+    276,
+    44
+  ],
+  "start_label": "НАЧАТЬ ЗАБЕГ",
+  "show_back_button": true,
+  "back_button": [
+    20,
+    16,
+    120,
+    32
+  ],
+  "back_label": "НАЗАД",
+  "button_image": "menu/button.png",
+  "button_selected_image": "menu/button_selected.png",
+  "button_text_size": 16,
+  "button_text_color": [
+    250,
+    248,
+    255
+  ],
+  "double_click_start": true,
+  "hint": "←/→ или 1–5 — выбор · Enter — начать · Esc — назад · F5 — перечитать файлы",
+  "hint_x": 480,
+  "hint_y": 500,
+  "hint_color": [
+    160,
+    160,
+    185
+  ]
+}

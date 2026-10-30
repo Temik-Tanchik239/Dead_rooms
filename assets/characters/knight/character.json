@@ -1,0 +1,61 @@
+{
+  "_help": "Внешний вид героя. Все пути — относительно assets/. Кадры бега — папка move/ (1.png, 2.png ...). Любое состояние можно сделать анимацией: положи кадры в папку <состояние>/ и укажи её в anims.",
+  "color": [
+    235,
+    200,
+    90
+  ],
+  "folder": "characters/knight",
+  "skin": "characters/knight/idle.png",
+  "icon": "characters/knight/icon.png",
+  "anim_fps": 3,
+  "anims": {
+    "move": {
+      "frames": "characters/knight/move",
+      "fps": 8
+    },
+    "jump": "characters/knight/jump.png",
+    "roll": "characters/knight/roll.png",
+    "attack": "characters/knight/attack.png",
+    "shoot": "characters/knight/shoot.png",
+    "hurt": "characters/knight/hurt.png",
+    "ladder": "characters/knight/ladder.png"
+  },
+  "draw": [
+    44,
+    55
+  ],
+  "draws": {
+    "roll": [
+      52,
+      37
+    ],
+    "attack": [
+      88,
+      56
+    ],
+    "shoot": [
+      88,
+      56
+    ]
+  },
+  "hand": [
+    13,
+    -24
+  ],
+  "hands": {
+    "attack": [
+      23,
+      -31
+    ],
+    "shoot": [
+      16,
+      -31
+    ]
+  },
+  "select": {
+    "idle": "idle",
+    "selected": "move",
+    "fps": 8
+  }
+}

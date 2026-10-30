@@ -1,31 +1,81 @@
 """DEAD ROOMS — механики Dead Cells + карты-экраны, нарисованные вручную (data/maps/*.json, порядок — data/maps.json).
 Весь контент (физика, оружие, мобы, карты) лежит в data/*.json. F5 в игре — перезагрузка данных."""
-import math, random, sys
+import functools, math, random, sys
 from types import SimpleNamespace
 import pygame as pg
-from core import CFG, SETTINGS, DATA, ASSETS, T, COLS, ROWS, W, H, MW, MH, VIEW_H, reload_data, sign, approach, tile, free, FX, Body
+from core import CFG, SETTINGS, DATA, ASSETS, T, COLS, ROWS, W, H, MW, MH, VIEW_H, reload_data, sign, approach, tile, free, FX, Body, CHAR, apply_character, char_ids, use_char
+
+CAMERA_ZOOM = 0.92  # меньше 1.0 — камера дальше, видно больше окружения
 from anim import clear_cache, sprite, mob_frame
 import weapon
 import hud
 from projectiles import volley
-from mob import Mob, Corpse
+from mob import Mob, Corpse, spawn_boss
+import characters as char_menu
 from maps import Campaign, Drop, END, VH, check, random_weapon, pos_of, world_text, world_links, two_way
+import multiplayer as mp
+import lighting
+
+# Навыки по умолчанию, если у персонажа в data/characters.json нет base_skills.
+BASE_SKILLS = ["dash"]
+DEFAULT_WEAPONS = ["rusty_sword", "short_bow"]
+
+def in_char(fn):
+    """Метод игрока выполняется с данными ЕГО героя (в мультиплеере у игроков разные персонажи)."""
+    @functools.wraps(fn)
+    def wrap(s, *a, **k):
+        if CHAR["id"] == s.char_id: return fn(s, *a, **k)
+        with use_char(s.char_id): return fn(s, *a, **k)
+    return wrap
 
 class Player(Body):
     H0 = 34
     def __init__(s):
-        super().__init__(0, 0, 20, s.H0)
-        s.hp = s.maxhp = CFG["player"]["hp"]; s.face, s.state = 1, "move"
+        ch = CFG.get("character", {})
+        # Физический хитбокс задаётся отдельно для каждого героя в data/characters.json.
+        hitbox = ch.get("hitbox", [20, 34])
+        try: hw, hh = max(4, int(hitbox[0])), max(4, int(hitbox[1]))
+        except (TypeError, ValueError, IndexError): hw, hh = 20, 34
+        super().__init__(0, 0, hw, hh)
+        s.H0 = hh
+        s.model_scale = max(0.1, min(5.0, float(ch.get("model_scale", 1.0))))
+        s.char_id = ch.get("id")
+        s.face, s.state = 1, "move"
         s.hp_regen_timer = 0.0
         s.inv = s.coy = s.st = s.lock = s.drop_t = s.stun = 0
         s.atk, s.combo, s.hitbox = None, (None, 0, 0), None
-        s.refresh_mana(True)
-        s.buf = dict(jump=0, roll=0, a1=0, a2=0, skill=0); s.slots = ["rusty_sword", "short_bow"]
+        s.buf = dict(jump=0, roll=0, a1=0, a2=0, skill=0)
+        # Стартовое оружие персонажа (data/characters.json -> weapons: [оружие ЛКМ, оружие ПКМ]).
+        s.slots = [w if w in CFG["weapons"] else DEFAULT_WEAPONS[i] for i, w in enumerate((list(ch.get("weapons", [])) + DEFAULT_WEAPONS[len(ch.get("weapons", [])):])[:2])]
         s.anim, s.anim_t, s.anim_p = "idle", 0.0, None
         s.aim = None   # куда смотрит курсор (координаты комнаты) или None
-        s.level = 1; s.xp = 0; s.xp_next = 100; s.skills = []; s.skill_index = 0; s.air_jumps = 0
+        s.level = 1; s.xp = 0; s.xp_next = 100
+        # Базовые навыки персонажа выдаются сразу и не требуют повышения уровня.
+        s.skills = [sid for sid in ch.get("base_skills", BASE_SKILLS) if sid in CFG.get("skills", {})]
+        s.refresh_mana(True); s.hp = s.maxhp
+        s.skill_index = 0; s.air_jumps = 0
         s.skill_cooldowns = {key: 0.0 for key in s.skills}; s.skill_notice = 0.0
+        s.shield_time = 0.0; s.shield_hp = 0.0; s.shield_face = s.face; s.shield_asset_cache = {}
+        s.last_weapon = s.slots[0]; s.skill_cast = None
+        # Мультиплеер: номер и имя игрока, прогресс воскрешения, «отошёл от входа» (для выходов).
+        s.pid, s.name, s.revive, s.armed, s.downed = 0, "", 0.0, False, False
+        # tp — номер «телепорта» (хост переставил игрока), hitc/kb — счётчик попаданий и отброс: клиент повторяет их у себя.
+        s.tp, s.hitc, s.kb = 0, 0, (0.0, 0.0)
+    @in_char
     def press(s, what): s.buf[what] = CFG["player"]["buffer"]
+    def passive_mult(s, kind):
+        """Произведение multiplier всех пассивок типа kind (damage, move_speed, mana_regen)."""
+        k = 1.0
+        for sid in s.skills:
+            d = CFG.get("skills", {}).get(sid, {})
+            if d.get("type") == kind: k *= float(d.get("multiplier", 1.0))
+        return k
+    def dmg_mult(s): return CFG["player"].get("dmg_mult", 1.0) * s.passive_mult("damage")
+    def speed(s): return CFG["player"]["speed"] * s.passive_mult("move_speed")
+    @in_char
+    def can_use(s, wid):
+        allowed = CFG.get("character", {}).get("allowed_weapons")
+        return not allowed or wid in allowed
     def anim_states(s):
         p = CFG["player"]
         if s.state == "roll": return ["roll"], 1 - max(0, s.st) / p["roll_time"]
@@ -48,38 +98,109 @@ class Player(Body):
         if not s.aim: return None
         hx, hy = s.hand("shoot"); a = math.degrees(math.atan2(hy - s.aim[1], s.aim[0] - hx)); a = a if s.face > 0 else 180 - a
         return (a + 180) % 360 - 180
+    @in_char
     def update_anim(s, dt):
         st, p = s.anim_states(); key = "|".join(st)
         if key != s.anim: s.anim, s.anim_t = key, 0.0
         else: s.anim_t += dt
         s.anim_p = p
+    @in_char
     def draw(s, v):
         p = CFG["player"]; r = s.rect; st = s.anim.split("|")
         dw, dh = p.get("draws", {}).get(st[0], p.get("draw", [s.w, s.H0]))
-        img = sprite(mob_frame("player", p, st, s.anim_t, s.anim_p, folder="player"), dw, dh, s.face < 0)
+        dw, dh = max(1, int(dw * s.model_scale)), max(1, int(dh * s.model_scale))
+        img = sprite(mob_frame(f"player:{s.char_id}", p, st, s.anim_t, s.anim_p, folder=p.get("folder", "player")), dw, dh, s.face < 0)
         if img: v.blit(img, (r.centerx - dw // 2, r.bottom - dh))
         else:
             pg.draw.rect(v, (200, 160, 70) if s.state == "roll" else (240, 200, 90), r, border_radius=4)
             ex = r.right - 6 if s.face > 0 else r.left + 3; pg.draw.rect(v, (30, 20, 20), (ex, r.top + 6, 3, 5))
         if st[0] not in ("roll", "ladder"): weapon.draw_held(v, s, s.hand(st[0]))
+        # У каждого активного навыка своя короткая процедурная анимация применения.
+        cast = s.skill_cast
+        if cast:
+            sid, elapsed, duration = cast
+            t = max(0.0, min(1.0, elapsed / max(duration, 0.001)))
+            cx, cy = int(r.centerx + s.face * 20), int(r.centery)
+            defs = CFG.get("skills", {}); sk = defs.get(sid, {})
+            color = tuple(sk.get("color", [100, 190, 255]))
+            overlay = pg.Surface(v.get_size(), pg.SRCALPHA)
+            if sid == "dash":
+                # Быстрые следы за персонажем.
+                for i in range(4):
+                    alpha = int(110 * (1-t) * (1-i/4))
+                    x = int(r.centerx - s.face * (12 + i*9))
+                    pg.draw.line(overlay, (*color, alpha), (x, r.top+5+i*3), (x-s.face*15, r.bottom-4-i*2), 3)
+            elif sid == "nova":
+                rad = int(10 + 95*t)
+                pg.draw.circle(overlay, (*color, int(180*(1-t))), (int(r.centerx), int(r.centery)), rad, max(2, int(6*(1-t))))
+                for i in range(8):
+                    ang = i * math.tau/8 + t*0.8
+                    x2, y2 = int(r.centerx + math.cos(ang)*rad), int(r.centery + math.sin(ang)*rad)
+                    pg.draw.circle(overlay, (*color, int(210*(1-t))), (x2,y2), max(1, int(4*(1-t))))
+            elif sid == "heal":
+                rad = int(12 + 26*t)
+                pg.draw.circle(overlay, (*color, int(190*(1-t))), (int(r.centerx), int(r.centery)), rad, 3)
+                for i in range(5):
+                    yy = r.bottom - int((t*38 + i*9) % 45)
+                    xx = r.centerx + int(math.sin(t*8+i*1.7)*18)
+                    pg.draw.circle(overlay, (*color, int(180*(1-t))), (xx, yy), 2)
+            elif sid == "shield":
+                # Короткий всплеск вокруг щита при создании.
+                rad = int(16 + 24*t)
+                pg.draw.circle(overlay, (*color, int(190*(1-t))), (cx,cy), rad, 3)
+            v.blit(overlay, (0,0))
+        if s.shield_time > 0:
+            shield_def = CFG.get("skills", {}).get("shield", {})
+            rel = shield_def.get("visual", "skills/shield/shield_effect.png")
+            if rel not in s.shield_asset_cache:
+                try:
+                    s.shield_asset_cache[rel] = pg.image.load(str(ASSETS / rel)).convert_alpha()
+                except (OSError, pg.error):
+                    s.shield_asset_cache[rel] = None
+            shield_img = s.shield_asset_cache.get(rel)
+            if shield_img:
+                size = shield_def.get("visual_size", [70, 78])
+                shield_img = pg.transform.smoothscale(shield_img, (int(size[0]), int(size[1])))
+                s.shield_face = s.face  # щит постоянно следует за текущим направлением игрока
+                if s.shield_face < 0: shield_img = pg.transform.flip(shield_img, True, False)
+                sx = r.centerx + s.shield_face * (r.width // 2 + int(size[0]) * 0.32)
+                sy = r.centery + int(shield_def.get("visual_y_offset", 2))
+                shield_img.set_alpha(max(90, min(255, int(150 + 55 * math.sin(pg.time.get_ticks() * .012)))))
+                v.blit(shield_img, shield_img.get_rect(center=(sx, sy)))
     def can_stand(s, g): return free(g, pg.Rect(int(s.x), int(s.y) - (s.H0 - s.h), s.w, s.H0))
+    @in_char
     def hit(s, dmg, fx_x, fx, kb=260):
-        if s.inv > 0: return
+        if s.inv > 0 or s.hp <= 0: return
+        # Щит блокирует атаки, пришедшие со стороны, куда он выставлен.
+        if s.shield_time > 0 and abs(fx_x - s.cx) > 2 and s.shield_face * (fx_x - s.cx) > 0 and s.shield_hp > 0:
+            absorbed = min(float(dmg), s.shield_hp)
+            s.shield_hp -= absorbed
+            dmg = max(0.0, float(dmg) - absorbed)
+            fx.ring(s.cx + s.shield_face * 24, s.cy, 18)
+            if s.shield_hp <= 0:
+                s.shield_hp = 0; s.shield_time = 0
+                fx.text("Щит разрушен", s.cx, s.y - 18)
+            if dmg <= 0: return
         s.hp -= dmg
         s.hp_regen_timer = 0.0  # любой полученный урон заново запускает задержку регенерации
         s.inv = CFG["player"]["hurt_inv"]; s.stun = .18
         s.vx = (sign(s.cx - fx_x) or 1) * kb; s.vy = -260; fx.shake = .2; fx.stop = .06
+        s.hitc += 1; s.kb = (s.vx, s.vy)
         if s.state in ("attack", "ladder"): s.state = "move"; s.atk = None
+    @in_char
     def refresh_mana(s, full=False):
         """Прочитать настройки маны из player.json (full — заполнить стартовым значением)."""
-        m = CFG["player"].get("mana", {}); s.maxmana = m.get("max", 100)
+        m = CFG["player"].get("mana", {}); s.maxmana = m.get("max", 100); s.maxhp = CFG["player"]["hp"]
         for sid in getattr(s, "skills", []):
             passive = CFG.get("skills", {}).get(sid, {})
             if passive.get("type") == "max_mana": s.maxmana += float(passive.get("amount", 0))
+            if passive.get("type") == "max_hp": s.maxhp += float(passive.get("amount", 0))
+        if hasattr(s, "hp"): s.hp = min(s.hp, s.maxhp)
         if full: s.mana, s.mana_t, s.mana_flash = min(m.get("start", s.maxmana), s.maxmana), 0, 0
         else: s.mana = min(s.mana, s.maxmana)
+    @in_char
     def start_attack(s, i):
-        wid = s.slots[i]; steps = CFG["weapons"][wid]["combo"]; sl, stp, left = s.combo
+        wid = s.slots[i]; s.last_weapon = wid; steps = CFG["weapons"][wid]["combo"]; sl, stp, left = s.combo
         n = (stp + 1) % len(steps) if sl == wid and left > 0 else 0; st = steps[n]
         s.buf["a1" if i == 0 else "a2"] = 0; cost = weapon.mana_cost(wid, st)
         for sid in s.skills:
@@ -95,19 +216,21 @@ class Player(Body):
         s.hitbox = pg.Rect(int(s.x + s.w if s.face > 0 else s.x - rw), int(s.cy - rh / 2), rw, rh)
         for m in mobs:
             if id(m) not in a["hit"] and s.hitbox.colliderect(m.rect):
-                a["hit"].add(id(m)); m.hurt(st["damage"] * CFG["player"]["dmg_mult"], s.face * st["knockback"], fx)
+                a["hit"].add(id(m)); m.hurt(st["damage"] * s.dmg_mult(), s.face * st["knockback"], fx)
                 s.mana = min(s.maxmana, s.mana + weapon.mana_hit(a["w"], st))   # попадание возвращает ману
     def fire(s, projs, st):
         pr = st["projectile"]; o = pr if isinstance(pr, dict) else {}
         hx, hy = s.hand("shoot"); ang = 0 if s.face > 0 else math.pi
         if s.aim: ang = math.atan2(s.aim[1] - hy, s.aim[0] - hx)   # стреляем в курсор
         volley(projs, pr, hx + math.cos(ang) * 14, hy + math.sin(ang) * 14, ang,
-               st["damage"] * CFG["player"]["dmg_mult"], True, o.get("count", 1), o.get("spread", 0))
+               st["damage"] * s.dmg_mult(), True, o.get("count", 1), o.get("spread", 0))
+    @in_char
     def swap_skill(s, direction=1):
         active_skills = [sid for sid in s.skills if CFG.get("skills", {}).get(sid, {}).get("category", "active") == "active"]
         if not active_skills: return
         s.skill_index = (s.skill_index + direction) % len(active_skills)
         s.skill_notice = 1.0
+    @in_char
     def use_skill(s, mobs, fx):
         """Использует активный скилл из data/skills.json; новые скиллы добавляются в JSON."""
         defs = CFG.get("skills", {})
@@ -119,7 +242,14 @@ class Player(Body):
         if s.skill_cooldowns.get(sid, 0) > 0:
             fx.text(f"{a.get('name', sid)}: {s.skill_cooldowns[sid]:.1f}с", s.cx, s.y - 18)
             return
+        # Активные навыки расходуют ману; стоимость задаётся в data/skills.json.
+        cost = max(0.0, float(a.get("mana_cost", 20.0)))
+        if s.mana < cost:
+            s.mana_flash = .35
+            fx.text("Недостаточно маны", s.cx, s.y - 18)
+            return
         kind = a.get("type", "nova")
+        s.skill_cast = (sid, 0.0, float(a.get("cast_animation", 0.55)))
         if kind == "dash":
             s.vx = s.face * a.get("speed", 620); s.inv = max(s.inv, a.get("invulnerability", .18))
             fx.ring(s.cx + s.face * 20, s.cy, a.get("radius", 24))
@@ -128,12 +258,19 @@ class Player(Body):
             fx.ring(s.cx, s.cy, radius); fx.shake = max(fx.shake, .12)
             for m in mobs:
                 if (m.cx-s.cx)**2 + (m.cy-s.cy)**2 <= radius**2:
-                    m.hurt(damage * CFG["player"].get("dmg_mult", 1.0), s.face * a.get("knockback", 220), fx)
+                    m.hurt(damage * s.dmg_mult(), s.face * a.get("knockback", 220), fx)
         elif kind == "heal":
             amount = a.get("amount", 30); s.hp = min(s.maxhp, s.hp + amount)
             fx.ring(s.cx, s.cy, a.get("radius", 42))
+        elif kind == "shield":
+            s.shield_time = max(0.1, float(a.get("duration", 4.0)))
+            s.shield_hp = max(1.0, float(a.get("capacity", 60)))
+            s.shield_face = s.face
+            fx.ring(s.cx + s.shield_face * 26, s.cy, a.get("radius", 42))
+        s.mana -= cost
+        s.mana_t = CFG["player"].get("mana", {}).get("regen_delay", .9)
         s.skill_cooldowns[sid] = max(0.0, float(a.get("cooldown", 5.0)))
-        fx.text(a.get("name", sid), s.cx, s.y - 18)
+        fx.text(f"{a.get('name', sid)} (-{cost:g} маны)", s.cx, s.y - 18)
 
     def ledge(s, g):
         c = int((s.x + s.w + 2) // T) if s.wall > 0 else int((s.x - 2) // T); hr = int((s.y + 6) // T)
@@ -141,11 +278,19 @@ class Player(Body):
             nx, ny = c * T + (T - s.w) / 2, hr * T - s.h
             if free(g, pg.Rect(int(nx), int(ny), s.w, s.h)):
                 s.x, s.y, s.vy, s.vx, s.lock = nx, ny, 0, s.face * 20, .25
+    @in_char
     def update(s, dt, k, g, mobs, projs, fx):
         p = CFG["player"]; s.hitbox = None
         for b in s.buf: s.buf[b] = max(0, s.buf[b] - dt)
         s.inv -= dt; s.lock -= dt; s.drop_t -= dt; s.mana_t -= dt; s.mana_flash -= dt
         s.skill_notice = max(0.0, s.skill_notice - dt)
+        if s.skill_cast:
+            sid, elapsed, duration = s.skill_cast
+            elapsed += dt
+            s.skill_cast = (sid, elapsed, duration) if elapsed < duration else None
+        s.shield_time = max(0.0, s.shield_time - dt)
+        if s.shield_time <= 0: s.shield_hp = 0.0
+        else: s.shield_face = s.face  # ориентация защиты синхронизирована с игроком
         for skill_id in s.skill_cooldowns: s.skill_cooldowns[skill_id] = max(0.0, s.skill_cooldowns[skill_id] - dt)
         if s.ground: s.air_jumps = 0
         if s.buf.get("skill", 0) > 0:
@@ -158,10 +303,7 @@ class Player(Body):
         if s.hp_regen_timer >= hp_regen_delay and s.hp < s.maxhp and s.hp > 0 and hp_regen_rate > 0:
             s.hp = min(s.maxhp, s.hp + hp_regen_rate * dt)
         if s.mana_t <= 0 and s.mana < s.maxmana:
-            regen_mult = 1.0
-            for sid in s.skills:
-                passive = CFG.get("skills", {}).get(sid, {})
-                if passive.get("type") == "mana_regen": regen_mult *= float(passive.get("multiplier", 1.0))
+            regen_mult = s.passive_mult("mana_regen")
             s.mana = min(s.maxmana, s.mana + p.get("mana", {}).get("regen", 14) * regen_mult * dt)   # восстановление маны
         sl, stp, left = s.combo; s.combo = (sl, stp, left - dt)
         s.coy = p["coyote"] if s.ground else s.coy - dt
@@ -180,7 +322,7 @@ class Player(Body):
         elif st == "ladder":
             s.vx = 0; s.vy = (dn - up) * p["ladder_speed"]; s.x += (c0 * T + T / 2 - s.cx) * min(1, dt * 20)
             if here != "H" or (s.ground and dn and below != "H"): s.state = "move"
-            if s.buf["jump"]: s.buf["jump"] = 0; s.state = "move"; s.vy = -p["jump"] * .6; s.lock = .2; s.vx = d * p["speed"]
+            if s.buf["jump"]: s.buf["jump"] = 0; s.state = "move"; s.vy = -p["jump"] * .6; s.lock = .2; s.vx = d * s.speed()
         elif st == "attack":
             a = s.atk; a["t"] += dt; step = a["step"]; end = a["wu"] + a["ac"]
             if a["t"] >= a["wu"]:
@@ -194,7 +336,7 @@ class Player(Body):
             if s.stun > 0: s.stun -= dt
             else:
                 acc = (p["accel"] if d else p["friction"]) if s.ground else (p["air_accel"] if d else p["air_friction"])
-                s.vx = approach(s.vx, d * p["speed"], acc * dt)
+                s.vx = approach(s.vx, d * s.speed(), acc * dt)
                 if d: s.face = d
             if s.lock <= 0 and ((up and here == "H") or (dn and (here == "H" or below == "H"))):
                 s.state = "ladder"; s.vy = 0; s.buf["jump"] = 0
@@ -215,16 +357,50 @@ class Player(Body):
 
 def s_lock(): return CFG["maps"].get("lock", True)
 
+def award_xp(pl, amount, fx):
+    """Начислить опыт игроку pl. Возвращает [(новый уровень, id открытого навыка или None), ...].
+    Общая функция для одиночной игры и мультиплеера (там опыт получает каждый игрок)."""
+    with use_char(pl.char_id):
+        amount = max(0, int(amount))
+        pl.xp += amount
+        fx.text(f"+{amount} опыта", pl.cx, pl.y - 28)
+        ups = []
+        while pl.xp >= pl.xp_next:
+            pl.xp -= pl.xp_next
+            pl.level += 1
+            pl.xp_next = int(100 * (pl.level ** 1.35))
+            defs = CFG.get("skills", {})
+            slots = CFG.get("skill_tree", {}).get("slots", [])
+            # При повышении уровня автоматически открывается следующий навык по порядку.
+            unlocked_slot = next((slot for slot in slots
+                                  if slot.get("skill") in defs
+                                  and int(slot.get("unlock_level", 999)) <= pl.level
+                                  and slot.get("skill") not in pl.skills), None)
+            sid = None
+            if unlocked_slot:
+                sid = unlocked_slot["skill"]
+                pl.skills.append(sid)
+                pl.skill_cooldowns.setdefault(sid, 0.0)
+            ups.append((pl.level, sid))
+            pl.refresh_mana()
+        return ups
+
 class Game:
     show_world = False   # M: карта мира открыта (игра на паузе)
+    Player = Player       # мультиплеер создаёт игроков через этот класс
+    zoom = CAMERA_ZOOM
+    award_xp = staticmethod(award_xp)
     def __init__(s):
         pg.init(); pg.display.set_caption("DEAD ROOMS"); s.scr = pg.display.set_mode((W, H), pg.SCALED | (pg.FULLSCREEN if SETTINGS.get("fullscreen", True) else 0)); s.debug = False; s.cam = [0, 0]; s.view = pg.Surface((MW, MH))
         s.font = pg.font.SysFont("arial,dejavusans,freesans", 16, bold=True); s.big = pg.font.SysFont("arial,dejavusans,freesans", 44, bold=True)
         s.small = pg.font.SysFont("arial,dejavusans,freesans", 11, bold=True); s.grid = False
         s.show_world = False; s.controls_open = False; s.waiting_for_bind = None; s.hud_edit = False; s.hud_drag = None; s.hud_selected = "player"; s.veil = pg.Surface((W, VIEW_H), pg.SRCALPHA); s.veil.fill((6, 6, 12, 225))
+        # Мультиплеер (multiplayer.py): s.net — сессия хоста или клиента, None — одиночная игра.
+        s.net = None; s.mp_status = ""; s.mp_focus = None; s.mp_finder = None
+        s.mp_name = str(SETTINGS.get("player_name") or mp.default_name())[:16]; s.mp_ip = str(SETTINGS.get("mp_last_ip", ""))
         s.clock = pg.time.Clock(); s.new_game()
         # Стартовое меню; после Esc игровой мир сохраняется и ставится на паузу.
-        s.level_menu = False; s.level_choices = []; s.level_menu_level = 1
+        s.level_menu = False; s.level_choices = []; s.level_menu_level = 1; s.skill_unlock_anim = None
         s.menu_mode = "start"  # start | pause | None
         s.menu_selection = 0
         s.menu_edit = False
@@ -249,8 +425,11 @@ class Game:
         s.menu_veil = pg.Surface((W, VIEW_H), pg.SRCALPHA)
         s.menu_veil.fill((6, 6, 12, 72))
         pg.mouse.set_visible(False if s.menu_cursor is not None or SETTINGS.get("mouse_aim", True) else True)
-    def new_game(s, loop=0):
-        if loop == 0: s.pl = Player()
+    def new_game(s, loop=0, character=None):
+        if loop == 0:
+            if character is not None or CHAR["id"] is None:
+                apply_character(character if character is not None else SETTINGS.get("last_character")); clear_cache()
+            s.pl = Player()
         else: s.pl.hp = min(s.pl.maxhp, s.pl.hp + 30); s.pl.refresh_mana(True)
         s.camp = Campaign(loop); s.room = None; s.done = False; s.fx = FX(); s.projs = []; s.warn_t = 0
         s.warn(check())
@@ -269,12 +448,15 @@ class Game:
         r = s.room = camp.get(mid); r.visited = True; s.projs = []; r.corpses = []
         rect, ladder = r.arrival(frm, via, camp)
         s.place(rect, ladder); s.respawn = (rect, ladder); s.armed = False
-        if not r.spawned: r.spawn()
+        if not r.spawned:
+            r.spawn()
+            if r.cleared and s.camp.order and r.id == s.camp.order[-1] and not getattr(r, "boss_spawned", False):
+                r.cleared = False; s.clear(r)
     def place(s, rect, ladder):
         pl = s.pl
         if pl.h != pl.H0: pl.y -= pl.H0 - pl.h; pl.h = pl.H0
         pl.atk = None; pl.state = "ladder" if ladder else "move"
-        pl.x = max(0, min(MW - pl.w, rect.centerx - pl.w / 2)); pl.y = rect.bottom - pl.h; pl.vx = pl.vy = 0
+        pl.x = max(0, min((s.room.width_px if s.room else MW) - pl.w, rect.centerx - pl.w / 2)); pl.y = rect.bottom - pl.h; pl.vx = pl.vy = 0
     def take_exit(s, z):
         r = s.room; target = s.camp.resolve(r.id, z["entry"]["exit"])
         if target == END: s.done = True; return
@@ -283,33 +465,29 @@ class Game:
             return
         s.go(target, z["entry"])
     def clear(s, r):
+        # На последней карте каждого круга после обычных мобов появляется босс.
+        order = s.camp.order
+        if order and r.id == order[-1] and not getattr(r, "boss_spawned", False):
+            boss = spawn_boss(r, s.camp.scale(), 1)
+            if boss:
+                r.boss_spawned = True; r.mobs.append(boss); r.set_lock(True)
+                s.fx.text("БОСС ПРИБЫЛ!", s.cam[0] + W / 2, s.cam[1] + 120)
+                return
         r.cleared = True; r.set_lock(False); s.fx.text("Зачищено!", s.cam[0] + W / 2, s.cam[1] + 120)
         rw = r.d.get("reward")   # {"item": "random" | id оружия, "chance": 0.5} — выпадает у игрока
         if rw and random.random() < rw.get("chance", 1):
             wid = random_weapon() if rw.get("item", "random") == "random" else rw["item"]
             if wid in CFG["weapons"]: r.drops.append(Drop(s.pl.cx, s.pl.y + s.pl.h - 14, wid))
     def gain_xp(s, amount):
-        pl = s.pl; pl.xp += max(0, amount)
-        s.fx.text(f"+{amount} опыта", pl.cx, pl.y - 28)
-        while pl.xp >= pl.xp_next:
-            pl.xp -= pl.xp_next; pl.level += 1
-            pl.xp_next = int(100 * (pl.level ** 1.35))
-            s.level_menu = True; s.level_menu_level = pl.level
-            defs = CFG.get("skills", {})
-            tree = CFG.get("skill_tree", {})
-            slots = tree.get("slots", [])
-            # Открываем навыки строго по порядку слотов и уровню, заданному в assets/skill_tree.json.
-            unlocked = [slot.get("skill") for slot in slots
-                        if slot.get("skill") in defs and int(slot.get("unlock_level", 1)) <= pl.level]
-            for sid in unlocked:
-                if defs[sid].get("category", "active") == "passive" and sid not in pl.skills:
-                    pl.skills.append(sid)
-            pl.refresh_mana()
-            s.level_choices = [sid for sid in unlocked if sid not in pl.skills and defs[sid].get("category", "active") == "active"]
-            # Меню дерева показывается на новом уровне; если новый навык ещё не задан,
-            # меню всё равно отображает текущую сетку и позволяет экипировать открытый.
-            if not s.level_choices: s.level_choices = [sid for sid in unlocked if defs.get(sid, {}).get("category", "active") == "active" and sid in pl.skills]
-            break
+        for level, sid in award_xp(s.pl, amount, s.fx):
+            s.level_menu = True
+            s.level_menu_started = pg.time.get_ticks()
+            s.level_menu_level = level
+            if sid: s.skill_unlock_anim = {"skill": sid, "start": pg.time.get_ticks(), "duration": 1100}
+            s.level_choices = []
+        if s.level_menu:
+            pg.mouse.set_visible(True)
+
     def choose_level_skill(s, sid):
         if sid not in CFG.get("skills", {}) or CFG["skills"][sid].get("category", "active") != "active": return
         pl = s.pl
@@ -319,20 +497,51 @@ class Game:
         pl.skill_cooldowns.setdefault(sid, 0.0)
         s.level_menu = False
         pg.mouse.set_visible(not SETTINGS.get("mouse_aim", True))
-    def pickup(s):
-        pl = s.pl
-        for dr in s.room.drops:
-            if abs(dr.x - pl.cx) < 36 and abs(dr.y - pl.cy) < 50:
-                i = CFG["weapons"][dr.wid].get("slot", 1) - 1
-                pl.slots[i], dr.wid = dr.wid, pl.slots[i]; pl.combo = (None, 0, 0)
-                s.fx.text(CFG["weapons"][pl.slots[i]]["name"], pl.cx, pl.y - 10); break
+    def pickup(s, pl=None):
+        pl = pl or s.pl
+        with use_char(pl.char_id):   # у каждого героя свои правки оружия
+            for dr in s.room.drops:
+                if abs(dr.x - pl.cx) < 36 and abs(dr.y - pl.cy) < 50:
+                    if not pl.can_use(dr.wid):   # оружие не из списка allowed_weapons персонажа
+                        s.fx.text(CFG["weapons"][dr.wid]["name"] + ": не для этого героя", pl.cx, pl.y - 10); break
+                    i = CFG["weapons"][dr.wid].get("slot", 1) - 1
+                    pl.slots[i], dr.wid = dr.wid, pl.slots[i]; pl.combo = (None, 0, 0)
+                    s.fx.text(CFG["weapons"][pl.slots[i]]["name"], pl.cx, pl.y - 10); break
+    ACTIONS = ("jump", "roll", "a1", "a2", "skill", "next", "prev", "pickup")
+    def apply_action(s, pl, name):
+        """Действие игрока pl: прыжок, перекат, атаки, навык, смена навыка, подобрать предмет."""
+        if name in ("jump", "roll", "a1", "a2", "skill"): pl.press(name)
+        elif name == "next": pl.swap_skill(1)
+        elif name == "prev": pl.swap_skill(-1)
+        elif name == "pickup": s.pickup(pl)
+    def act(s, name):
+        """Действие своего игрока. В сетевой игре клиент отправляет его хосту."""
+        if s.net:
+            if s.net.in_game: s.net.local_action(name)
+            return
+        s.apply_action(s.pl, name)
+    def overlay_open(s):
+        """Открыто меню/карта/настройки — в сетевой игре свой персонаж в это время стоит на месте."""
+        return s.menu_mode is not None or s.show_world or s.controls_open or s.level_menu or s.hud_edit
+    def net_leave(s, message="", menu="mp"):
+        """Выйти из сетевой игры (или лобби) в меню мультиплеера; одиночный мир создаётся заново."""
+        if s.net: s.net.close()
+        s.net = None
+        s.new_game(character=SETTINGS.get("last_character"))
+        s.show_world = s.controls_open = s.level_menu = s.hud_edit = False
+        if menu == "connect": mp.open_connect(s)
+        else: mp.open_menu(s)
+        s.mp_status = message
     def step(s, dt):
+        mp.housekeeping(s)
+        if s.net:   # сетевая игра: хост считает мир, клиент получает его от хоста
+            s.net.update(dt); return
         fx, pl, r = s.fx, s.pl, s.room; sim = 0 if (fx.stop > 0 or s.show_world or s.controls_open or s.menu_mode is not None or s.level_menu) else dt   # меню ставит игру на паузу
         fx.stop = max(0, fx.stop - dt); fx.shake = max(0, fx.shake - dt)
         for it in fx.items: it[4] -= dt
         fx.items = [it for it in fx.items if it[4] > 0]
         if pl.hp <= 0: return
-        mp = pg.mouse.get_pos(); pl.aim = (mp[0] + s.cam[0], mp[1] + s.cam[1]) if SETTINGS.get("mouse_aim", True) else None
+        mpos = pg.mouse.get_pos(); pl.aim = (mpos[0] / CAMERA_ZOOM + s.cam[0], mpos[1] / CAMERA_ZOOM + s.cam[1]) if SETTINGS.get("mouse_aim", True) else None
         mb = pg.mouse.get_pressed()   # зажатая кнопка = непрерывные атаки / комбо
         if mb[0]: pl.press("a1")
         if mb[2]: pl.press("a2")
@@ -354,7 +563,7 @@ class Game:
         r.corpses = [c for c in r.corpses if not c.dead]
         r.mobs = [m for m in r.mobs if m.hp > 0]
         for m in r.mobs:   # упал за край карты — умер
-            if m.y > VH + 200 or m.y < -400 or m.x < -400 or m.x > MW + 400: m.hp = 0
+            if m.y > r.height_px + 200 or m.y < -400 or m.x < -400 or m.x > r.width_px + 400: m.hp = 0
         if r.spawned and not r.cleared and not r.mobs: s.clear(r)
         sc, sr = int(pl.cx // T), int((pl.y + pl.h - 2) // T)
         if tile(r.g, sc, sr) == "x": pl.hit(r.spike_damage(sc, sr), pl.cx, fx)
@@ -364,7 +573,7 @@ class Game:
             s.armed = True
             if r.mobs and r.d.get("lock", s_lock()): r.set_lock(True)   # двери закрываются, пока есть мобы
         elif s.armed and z is not None: s.take_exit(z); return
-        if pl.cx < 0 or pl.cx > MW or pl.cy < 0 or pl.cy > VH:   # за край карты
+        if pl.cx < 0 or pl.cx > r.width_px or pl.cy < 0 or pl.cy > r.height_px:   # за край текущей карты
             z = None if r.locked else (z or r.exit_near(pl.rect))
             if z: s.take_exit(z)
             if s.room is r and not s.done:   # выхода нет — пропасть: урон и назад к месту появления
@@ -383,19 +592,14 @@ class Game:
         except OSError as exc: print("Не удалось сохранить настройки:", exc)
     def key(s, k):
         if s.level_menu:
+            # Навыки больше не выбираются вручную: уровень автоматически открывает следующий.
             if k in (pg.K_ESCAPE, pg.K_RETURN, pg.K_SPACE):
-                if s.level_choices: s.choose_level_skill(s.level_choices[0])
-                else:
-                    s.level_menu = False
-                    pg.mouse.set_visible(not SETTINGS.get("mouse_aim", True))
-                return
-            if pg.K_1 <= k <= pg.K_8:
-                i = k - pg.K_1
-                slots = CFG.get("skill_tree", {}).get("slots", [])
-                if i < len(slots):
-                    sid = slots[i].get("skill")
-                    if sid in s.level_choices: s.choose_level_skill(sid)
+                s.level_menu = False
+                s.skill_unlock_anim = None
+                pg.mouse.set_visible(not SETTINGS.get("mouse_aim", True))
             return
+        if s.menu_mode in ("select", "lobby"): char_menu.key(s, k); return
+        if s.menu_mode in mp.MENU_MODES: mp.menu_key(s, k); return
         if s.menu_mode is not None:
             if k == pg.K_F3:
                 s.menu_edit = not s.menu_edit
@@ -438,18 +642,24 @@ class Game:
             except (ValueError, TypeError): return False
         # Все основные действия читаются из настроек управления.
         for action, buf in (("jump", "jump"), ("roll", "roll"), ("attack1", "a1"), ("attack2", "a2")):
-            if pressed(action): self_press = buf; s.pl.press(self_press); return
-        if pressed("pickup"): s.pickup()
-        elif pressed("skill"): s.pl.press("skill")
-        elif pressed("skill_next"): s.pl.swap_skill(1)
-        elif pressed("skill_prev"): s.pl.swap_skill(-1)
-        elif k == pg.K_F5: s.reload()
+            if pressed(action): s.act(buf); return
+        if pressed("pickup"): s.act("pickup")
+        elif pressed("skill"): s.act("skill")
+        elif pressed("skill_next"): s.act("next")
+        elif pressed("skill_prev"): s.act("prev")
+        elif k == pg.K_F5:
+            if s.net: s.fx.text("F5 не работает в сетевой игре", s.pl.cx, s.pl.y - 40)
+            else: s.reload()
         elif k == pg.K_F4: s.grid = not s.grid
         elif k == pg.K_m: s.show_world = not s.show_world
         elif k == pg.K_F11: pg.display.toggle_fullscreen()
         elif k == pg.K_F3: s.debug = not s.debug
-        elif k == pg.K_r: s.new_game()
-        elif k == pg.K_RETURN and s.done: s.new_game(s.camp.loop + 1)
+        elif k == pg.K_r:
+            if s.net: s.net.restart()   # хост: новый забег, когда погибли все
+            else: s.new_game()
+        elif k == pg.K_RETURN and s.done:
+            if s.net: s.net.next_loop()
+            else: s.new_game(s.camp.loop + 1)
         elif k == pg.K_ESCAPE:
             s.menu_mode = "pause"; s.menu_selection = 0
     def menu_action(s, action):
@@ -457,12 +667,14 @@ class Game:
             s.menu_mode = None
             pg.mouse.set_visible(not SETTINGS.get("mouse_aim", True))
         elif action == "new":
-            s.new_game()
-            s.menu_mode = None
-            pg.mouse.set_visible(not SETTINGS.get("mouse_aim", True))
+            if s.net: s.net_leave(); s.menu_mode = "start"   # в сетевой игре кнопка = «покинуть игру»
+            else: char_menu.open_select(s)   # перед забегом — выбор персонажа
+        elif action == "multiplayer":
+            mp.open_menu(s)
         elif action == "exit":
+            if s.net: s.net.close()
             pg.quit(); sys.exit()
-    MENU_BUTTONS = {"continue": "ПРОДОЛЖИТЬ", "new": "НОВАЯ ИГРА", "exit": "ВЫХОД"}
+    MENU_BUTTONS = {"continue": "ПРОДОЛЖИТЬ", "new": "НОВАЯ ИГРА", "multiplayer": "МУЛЬТИПЛЕЕР", "exit": "ВЫХОД"}
     def menu_layout(s):
         """Отдельные координаты для главного меню и паузы; сохраняются в data/settings.json."""
         is_pause = s.menu_mode == "pause"
@@ -478,6 +690,7 @@ class Game:
             # Запрошенные координаты главного меню: x, y, width, height.
             defaults = {
                 "new": [684, 291, 268, 36],
+                "multiplayer": [684, 337, 268, 36],
                 "exit": [787, 480, 172, 28],
             }
         for name, rect in defaults.items():
@@ -501,7 +714,9 @@ class Game:
         a[:] = [cx - nw // 2, cy - nh // 2, nw, nh]
     def menu_event(s, e):
         if s.menu_mode is None: return
-        options = ["continue", "new", "exit"] if s.menu_mode == "pause" else ["new", "exit"]
+        if s.menu_mode in ("select", "lobby"): char_menu.event(s, e); return
+        if s.menu_mode in mp.MENU_MODES: mp.menu_event(s, e); return
+        options = ["continue", "new", "exit"] if s.menu_mode == "pause" else ["new", "multiplayer", "exit"]
         cfg = s.menu_layout()
         if s.menu_edit:
             if e.type == pg.MOUSEBUTTONDOWN and e.button == 1:
@@ -542,6 +757,8 @@ class Game:
                 if pg.Rect(cfg[action]).collidepoint(mx, my):
                     s.menu_action(action); return
     def draw_menu(s):
+        if s.menu_mode in ("select", "lobby"): char_menu.draw(s); s.draw_cursor(); return
+        if s.menu_mode in mp.MENU_MODES: mp.draw_menu(s); s.draw_cursor(); return
         if s.menu_mode == "start":
             if s.menu_background:
                 s.scr.blit(pg.transform.smoothscale(s.menu_background, (W, VIEW_H)), (0, 0))
@@ -550,15 +767,10 @@ class Game:
             s.scr.blit(s.menu_veil, (0, 0))
         else:
             s.scr.blit(s.menu_veil, (0, 0))
-        # В главном меню не рисуем текстовый логотип и подзаголовок:
-        # оформление задаётся полностью изображениями из assets/menu.
-        # В меню паузы оставляем заголовок, чтобы отличать его от стартового экрана.
-        if s.menu_mode != "start":
-            title = s.big.render("DEAD ROOMS", True, (240, 235, 255))
-            s.scr.blit(title, title.get_rect(center=(W // 2, VIEW_H // 2 - 125)))
-            st = s.font.render("ПАУЗА", True, (175, 170, 205))
-            s.scr.blit(st, st.get_rect(center=(W // 2, VIEW_H // 2 - 75)))
-        options = [("НОВАЯ ИГРА", "new"), ("ВЫХОД", "exit")] if s.menu_mode == "start" else [("ПРОДОЛЖИТЬ", "continue"), ("НОВАЯ ИГРА", "new"), ("ВЫХОД", "exit")]
+        # В стартовом меню и меню паузы не рисуем лишние текстовые заголовки.
+        # Назначение экрана определяется фоном и набором кнопок.
+        options = ([("НОВАЯ ИГРА", "new"), ("МУЛЬТИПЛЕЕР", "multiplayer"), ("ВЫХОД", "exit")] if s.menu_mode == "start"
+                   else [("ПРОДОЛЖИТЬ", "continue"), ("ПОКИНУТЬ ИГРУ" if s.net else "НОВАЯ ИГРА", "new"), ("ВЫХОД", "exit")])
         cfg = s.menu_layout()
         mouse = pg.mouse.get_pos()
         for i, (label, action) in enumerate(options):
@@ -583,8 +795,8 @@ class Game:
             hint = "РЕДАКТОР КНОПОК: перетаскивай мышью · колесо или +/- — размер · F3/Esc — готово"
             ht = s.small.render(hint, True, (255, 225, 135))
             s.scr.blit(ht, ht.get_rect(center=(W // 2, VIEW_H - 28)))
-        elif s.menu_mode != "start":
-            s.txt("Мышь — выбор   Esc — назад   F3 — настройка кнопок", W // 2 - 170, VIEW_H - 28, (175, 170, 195), s.small)
+        s.draw_cursor()
+    def draw_cursor(s):
         if s.menu_cursor is not None:
             mx, my = pg.mouse.get_pos()
             cursor = s.menu_cursor
@@ -652,23 +864,44 @@ class Game:
         s.scr.blit((f or s.font).render(t, True, col), (x, y))
     def draw(s):
         v, r, pl = s.view, s.room, s.pl; v.blit(r.layer, (0, 0))
+        light_t, light_dt = lighting.frame_time()
+        lighting.draw_sources(v, r, light_t, light_dt)   # факелы, фонари, кристаллы — с живым пламенем и искрами
         for dr in r.drops:
             dr.draw(v)
             if abs(dr.x - pl.cx) < 36: v.blit(s.font.render("[E] " + CFG["weapons"][dr.wid]["name"], True, (255, 230, 120)), (dr.x - 60, dr.y - 34))
         for c in r.corpses: c.draw(v)
         for m in r.mobs: m.draw(v, s.debug)
         for q in s.projs: q.draw(v)
-        if pl.inv <= 0 or int(pg.time.get_ticks() / 60) % 2:
+        if s.net and s.net.in_game: mp.draw_players(s, v)   # все игроки, имена, павшие союзники
+        elif pl.inv <= 0 or int(pg.time.get_ticks() / 60) % 2:
             pl.draw(v)
-        if pl.hitbox and s.debug: pg.draw.rect(v, (255, 255, 255), pl.hitbox, 2)
+        if s.debug:
+            # Зелёный — физический хитбокс персонажа, белый — активная атакующая зона.
+            pg.draw.rect(v, (0, 255, 120), pl.rect, 2)
+            if pl.hitbox: pg.draw.rect(v, (255, 255, 255), pl.hitbox, 2)
         if s.grid: s.draw_grid(v)
         for kind, x, y, data, t in s.fx.items:
             if kind == "t": v.blit(s.font.render(data, True, (255, 240, 160)), (x - 14, y - (0.7 - t) * 40))
             else: pg.draw.circle(v, (255, 200, 120), (int(x), int(y)), int(data * (1 - t / .25) + 4), 2)
-        ox = oy = 0
-        if s.fx.shake > 0: ox, oy = random.randint(-4, 4), random.randint(-4, 4)
-        cx = int(max(0, min(MW - W, pl.cx - W / 2))); cy = int(max(0, min(MH - VIEW_H, pl.cy - VIEW_H / 2))); s.cam = [cx, cy]   # камера следует за игроком
-        s.scr.fill((10, 10, 16)); s.scr.blit(v, (ox, oy), pg.Rect(cx, cy, W, VIEW_H))
+        # Не сдвигаем готовый кадр относительно экрана: при таком shake
+        # по краям появлялись чёрные полосы. Камера ограничивается картой ниже.
+        # Небольшой отдалённый зум: видно больше уровня вокруг персонажа.
+        src_w, src_h = int(W / CAMERA_ZOOM), int(VIEW_H / CAMERA_ZOOM)
+        # Ограничиваем камеру границами ИМЕННО текущей карты, а не общей
+        # служебной поверхности v (MW x MH). У края карты камера перестаёт
+        # следовать за игроком, чтобы за границами локации не появлялась пустота.
+        room_w, room_h = r.width_px, r.height_px
+        cx = int(max(0, min(max(0, room_w - src_w), pl.cx - src_w / 2)))
+        cy = int(max(0, min(max(0, room_h - src_h), pl.cy - src_h / 2)))
+        s.cam = [cx, cy]
+        s.scr.fill((10, 10, 16))
+        crop_w, crop_h = min(src_w, room_w - cx), min(src_h, room_h - cy)
+        viewport = v.subsurface(pg.Rect(cx, cy, max(1, crop_w), max(1, crop_h)))
+        scaled_view = pg.transform.scale(viewport, (W, VIEW_H))
+        s.scr.blit(scaled_view, (0, 0))
+        # Темнота и мягкие пятна света поверх кадра (только на картах с темнотой или блоками света).
+        lit = s.net.player_list() if s.net and s.net.in_game else [pl]
+        lighting.apply(s.scr, r, s.cam, (max(1, crop_w), max(1, crop_h)), lit, r.mobs, s.projs, light_t)
         order = s.camp.order   # прогресс: квадратик на каждую карту из order
         for i, mid in enumerate(order):
             rm = s.camp.maps.get(mid); rc = (W - 18 * len(order) - 8 + i * 18, 8, 14, 10)
@@ -679,9 +912,12 @@ class Game:
         s.txt(label, W - 18 * len(order) - 16 - s.font.size(label)[0], 4, (220, 220, 235))
         if pg.time.get_ticks() < s.warn_until:
             for i, m in enumerate(s.warnings): s.txt("! " + m, 10, 8 + i * 20, (255, 140, 120))
-        hud.draw(s.scr, pl, s.small)   # иконки персонажа и оружия, под персонажем полоски HP и маны (поверх игры)
+        with use_char(pl.char_id):
+            hud.draw(s.scr, pl, s.small)   # иконки персонажа и оружия, под персонажем полоски HP и маны (поверх игры)
+        hud.draw_boss_bar(s.scr, r.mobs, s.font)
         if s.camp.loop: s.txt(f"Круг {s.camp.loop + 1}", W - 90, VIEW_H - 24, (180, 180, 200))
-        if pl.hp <= 0: s.txt("ТЫ УМЕР — R: заново", W // 2 - 220, 200, (255, 90, 90), s.big)
+        if s.net and s.net.in_game: mp.draw_overlay(s)   # союзники, сообщения о смерти/конце круга, уровень
+        elif pl.hp <= 0: s.txt("ТЫ УМЕР — R: заново", W // 2 - 220, 200, (255, 90, 90), s.big)
         elif s.done: s.txt("ВСЕ КАРТЫ ПРОЙДЕНЫ — Enter: ещё круг", W // 2 - 380, 200, (120, 255, 150), s.big)
         if s.level_menu: s.draw_level_menu()
         if s.show_world: s.draw_world()
@@ -689,59 +925,178 @@ class Game:
         if s.hud_edit: s.draw_hud_editor()
         if s.menu_mode is not None: s.draw_menu()
         if pl.aim and s.menu_mode is None:   # прицел
-            mx, my = pl.aim[0] - s.cam[0], pl.aim[1] - s.cam[1]; col = (255, 255, 255); pg.draw.circle(s.scr, col, (mx, my), 10, 1); pg.draw.circle(s.scr, col, (mx, my), 1)
+            mx, my = int((pl.aim[0] - s.cam[0]) * CAMERA_ZOOM), int((pl.aim[1] - s.cam[1]) * CAMERA_ZOOM); col = (255, 255, 255); pg.draw.circle(s.scr, col, (mx, my), 10, 1); pg.draw.circle(s.scr, col, (mx, my), 1)
             for a in ((-17, 0, -7, 0), (7, 0, 17, 0), (0, -17, 0, -7), (0, 7, 0, 17)): pg.draw.line(s.scr, col, (mx + a[0], my + a[1]), (mx + a[2], my + a[3]))
         pg.display.flip()
     def draw_level_menu(s):
-        veil = pg.Surface((W, VIEW_H), pg.SRCALPHA); veil.fill((5, 5, 14, 242)); s.scr.blit(veil, (0, 0))
-        title = s.big.render(f"НОВЫЙ УРОВЕНЬ: {s.level_menu_level}", True, (255, 220, 130))
-        s.scr.blit(title, title.get_rect(center=(W // 2, 48)))
-        sub = s.font.render("Дерево навыков — открываются по порядку. Выберите открытый навык.", True, (215, 215, 235))
-        s.scr.blit(sub, sub.get_rect(center=(W // 2, 88)))
-        defs = CFG.get("skills", {}); tree = CFG.get("skill_tree", {})
-        slots = list(tree.get("slots", []))[:8]
-        while len(slots) < 8: slots.append({"skill": None, "unlock_level": 999})
-        cols, rows = 4, 2
-        gap_x, gap_y = 14, 16
-        cell_w = min(180, (W - 70 - gap_x * (cols - 1)) // cols)
-        cell_h = 150
+        # Меню повышения уровня автоматически закрывается через 4 секунды.
+        if pg.time.get_ticks() - getattr(s, "level_menu_started", pg.time.get_ticks()) >= 4000:
+            s.level_menu = False
+            s.skill_unlock_anim = None
+            pg.mouse.set_visible(not SETTINGS.get("mouse_aim", True))
+            return
+        # Визуальное оформление меню навыков полностью настраивается через assets/skill_menu.json.
+        ui = CFG.get("skill_menu", {})
+        def color(key, default):
+            value = ui.get(key, default)
+            try:
+                return tuple(max(0, min(255, int(c))) for c in value[:3])
+            except (TypeError, ValueError):
+                return default
+        def image(path_value, size=None):
+            if not path_value:
+                return None
+            if not hasattr(s, "skill_menu_asset_cache"):
+                s.skill_menu_asset_cache = {}
+            path = ASSETS / str(path_value)
+            cache_key = (str(path), tuple(size) if size else None)
+            if cache_key not in s.skill_menu_asset_cache:
+                try:
+                    surf = pg.image.load(str(path)).convert_alpha()
+                    if size:
+                        surf = pg.transform.smoothscale(surf, size)
+                    s.skill_menu_asset_cache[cache_key] = surf
+                except (OSError, pg.error):
+                    s.skill_menu_asset_cache[cache_key] = None
+            return s.skill_menu_asset_cache[cache_key]
+        bg_path = ui.get("background_image")
+        bg = image(bg_path, (W, VIEW_H)) if bg_path else None
+        if bg:
+            s.scr.blit(bg, (0, 0))
+        else:
+            veil = pg.Surface((W, VIEW_H), pg.SRCALPHA)
+            veil.fill((*color("overlay_color", (5, 5, 14)), max(0, min(255, int(ui.get("overlay_alpha", 242))))))
+            s.scr.blit(veil, (0, 0))
+
+        title_text = str(ui.get("title", "НОВЫЙ УРОВЕНЬ: {level}")).format(level=s.level_menu_level)
+        title = s.big.render(title_text, True, color("title_color", (255, 220, 130)))
+        s.scr.blit(title, title.get_rect(center=(int(ui.get("title_x", W // 2)), int(ui.get("title_y", 48)))))
+        subtitle_text = str(ui.get("subtitle", "Дерево навыков — открываются по порядку. Выберите открытый навык."))
+        if ui.get("show_subtitle", True) and subtitle_text:
+            sub = s.font.render(subtitle_text, True, color("subtitle_color", (215, 215, 235)))
+            s.scr.blit(sub, sub.get_rect(center=(int(ui.get("subtitle_x", W // 2)), int(ui.get("subtitle_y", 88)))))
+
+        defs = CFG.get("skills", {})
+        tree = CFG.get("skill_tree", {})
+        slots = list(tree.get("slots", []))[:int(ui.get("max_slots", 8))]
+        max_slots = max(1, int(ui.get("max_slots", 8)))
+        while len(slots) < max_slots:
+            slots.append({"skill": None, "unlock_level": 999})
+        cols = max(1, int(ui.get("columns", tree.get("grid_columns", 4))))
+        rows = max(1, int(ui.get("rows", tree.get("grid_rows", 2))))
+        gap_x, gap_y = int(ui.get("gap_x", 14)), int(ui.get("gap_y", 16))
+        cell_w = int(ui.get("cell_width", min(180, (W - 70 - gap_x * (cols - 1)) // cols)))
+        cell_h = int(ui.get("cell_height", 150))
         total_w = cols * cell_w + (cols - 1) * gap_x
-        ox = (W - total_w) // 2; oy = 125
-        if not hasattr(s, "skill_icon_cache"): s.skill_icon_cache = {}
+        ox = int(ui.get("grid_x", (W - total_w) // 2))
+        oy = int(ui.get("grid_y", 125))
+        radius = max(0, int(ui.get("corner_radius", 10)))
+        border_width = max(0, int(ui.get("border_width", 3)))
+        icon_size = max(1, int(ui.get("icon_size", 52)))
+        icon_y = int(ui.get("icon_y", 42))
+        name_y = int(ui.get("name_y", 82))
+        status_y = int(ui.get("status_y", 106))
+        show_names = bool(ui.get("show_skill_names", True))
+        show_status = bool(ui.get("show_status", True))
+        show_slot_numbers = bool(ui.get("show_slot_numbers", True))
+        unlocked_bg = color("unlocked_bg", (35, 55, 50))
+        locked_bg = color("locked_bg", (29, 29, 42))
+        locked_border = color("locked_border", (95, 95, 115))
+        name_unlocked = color("name_unlocked_color", (255, 240, 190))
+        name_locked = color("name_locked_color", (145, 145, 165))
+        status_unlocked = color("status_unlocked_color", (175, 220, 190))
+        status_locked = color("status_locked_color", (125, 125, 145))
+        slot_base = ui.get("slot_image")
+        slot_unlocked = ui.get("slot_unlocked_image", slot_base)
+        slot_locked = ui.get("slot_locked_image", slot_base)
         for i, slot in enumerate(slots):
-            sid = slot.get("skill"); d = defs.get(sid, {}) if sid else {}
-            unlocked = bool(sid and sid in defs and int(slot.get("unlock_level", 999)) <= s.pl.level)
+            sid = slot.get("skill")
+            d = defs.get(sid, {}) if sid else {}
+            # Навык открыт только если он действительно добавлен персонажу.
+            # Уровень сам по себе не снимает замки со всех предыдущих/будущих ячеек.
+            # Анимация принадлежит только одному конкретному ID навыка,
+            # который открывается прямо сейчас. Остальные ячейки не получают
+            # ни fade, ни кадры/вспышку, даже если они уже разблокированы.
+            anim = getattr(s, "skill_unlock_anim", None)
+            is_animating_unlock = bool(sid and anim and anim.get("skill") == sid)
+            unlocked = bool(sid and sid in defs and (sid in s.pl.skills or is_animating_unlock))
             col, row = i % cols, i // cols
             rect = pg.Rect(ox + col * (cell_w + gap_x), oy + row * (cell_h + gap_y), cell_w, cell_h)
-            bg = (35, 55, 50) if unlocked else (29, 29, 42)
-            border = tuple(d.get("color", [100, 210, 150])) if unlocked else (95, 95, 115)
-            pg.draw.rect(s.scr, bg, rect, border_radius=10); pg.draw.rect(s.scr, border, rect, 3, border_radius=10)
-            icon_rel = d.get("icon") if unlocked else tree.get("lock_icon", "icons/skill_locked.png")
-            if icon_rel:
-                path = ASSETS / icon_rel
-                cache_key = str(path)
-                if cache_key not in s.skill_icon_cache:
-                    try: s.skill_icon_cache[cache_key] = pg.image.load(str(path)).convert_alpha()
-                    except (OSError, pg.error): s.skill_icon_cache[cache_key] = None
-                icon = s.skill_icon_cache[cache_key]
-                if icon:
-                    icon = pg.transform.smoothscale(icon, (52, 52))
-                    s.scr.blit(icon, icon.get_rect(center=(rect.centerx, rect.y + 42)))
-                elif not unlocked:
-                    # Визуальный резерв, если файл замка не найден.
-                    pg.draw.arc(s.scr, (190, 190, 210), (rect.centerx-10, rect.y+15, 20, 22), 0, 3.14, 3)
-                    pg.draw.rect(s.scr, (190, 190, 210), (rect.centerx-13, rect.y+28, 26, 20), 2, border_radius=3)
-            name = d.get("name", "Навык не задан" if not sid else sid) if unlocked else "ЗАБЛОКИРОВАНО"
-            if unlocked and d.get("category") == "passive": name = "[ПАССИВ] " + name
-            txt = s.small.render(name, True, (255, 240, 190) if unlocked else (145, 145, 165))
-            s.scr.blit(txt, txt.get_rect(center=(rect.centerx, rect.y + 82)))
-            level_txt = f"Уровень {int(slot.get('unlock_level', 999))}" if not unlocked else ("Пассив активен" if d.get("category") == "passive" and sid in s.pl.skills else ("Открыт" if sid in s.pl.skills else "Доступен"))
-            t2 = s.small.render(level_txt, True, (175, 220, 190) if unlocked else (125, 125, 145))
-            s.scr.blit(t2, t2.get_rect(center=(rect.centerx, rect.y + 106)))
-            if unlocked:
-                s.txt(f"[{i+1}]", rect.x + 8, rect.bottom - 23, (225, 225, 240), s.small)
-        s.txt("Активные навыки: Q — использовать, C/V — смена. Пассивные навыки включаются автоматически. Игра на паузе.",
-              W // 2 - 250, VIEW_H - 20, (210, 210, 225), s.small)
+            bg_col = unlocked_bg if unlocked else locked_bg
+            border_col = tuple(d.get("color", [100, 210, 150])) if unlocked else locked_border
+            texture = image(slot_unlocked if unlocked else slot_locked, (cell_w, cell_h))
+            if texture:
+                s.scr.blit(texture, rect)
+                if ui.get("tint_slot_images", False):
+                    tint = pg.Surface((cell_w, cell_h), pg.SRCALPHA)
+                    tint.fill((*bg_col, 90))
+                    s.scr.blit(tint, rect)
+                if border_width:
+                    pg.draw.rect(s.scr, border_col, rect, border_width, border_radius=radius)
+            else:
+                pg.draw.rect(s.scr, bg_col, rect, border_radius=radius)
+                if border_width:
+                    pg.draw.rect(s.scr, border_col, rect, border_width, border_radius=radius)
+
+            icon_rel = d.get("icon") if unlocked else slot.get("lock_icon", f"icons/locks/{sid}_lock.png" if sid else tree.get("lock_icon", "icons/skill_locked.png"))
+            icon = image(icon_rel, (icon_size, icon_size))
+            if icon:
+                icon_rect = icon.get_rect(center=(rect.centerx, rect.y + icon_y))
+                s.scr.blit(icon, icon_rect)
+                if is_animating_unlock and anim is not None:
+                    # Рисуем эффект строго внутри текущей ячейки открываемого навыка.
+                    elapsed = pg.time.get_ticks() - anim["start"]
+                    duration = max(1, int(anim.get("duration", tree.get("unlock_animation_duration", 1100))))
+                    progress = min(1.0, max(0.0, elapsed / duration))
+                    # Не открываем все навыки по уровню: только у открываемого сейчас
+                    # поверх его иконки постепенно исчезает замок.
+                    frame_paths = tree.get("unlock_animation_frames", [])
+                    if frame_paths:
+                        frame_index = min(len(frame_paths) - 1, int(progress * len(frame_paths)))
+                        frame = image(frame_paths[frame_index], (icon_size, icon_size))
+                        if frame:
+                            s.scr.blit(frame, icon_rect)
+                    else:
+                        lock_path = slot.get("lock_icon", f"icons/locks/{sid}_lock.png" if sid else tree.get("lock_icon", "icons/skill_locked.png"))
+                        lock_icon = image(lock_path, (icon_size, icon_size))
+                        if lock_icon and progress < 1.0:
+                            lock_icon.set_alpha(max(0, int(255 * (1 - progress))))
+                            s.scr.blit(lock_icon, icon_rect)
+                        # Вспышка открытия также настраивается ассетом.
+                        flash_path = tree.get("unlock_flash_image")
+                        if flash_path and progress < 1.0:
+                            flash_img = image(flash_path, (icon_size, icon_size))
+                            if flash_img:
+                                flash_img.set_alpha(int(220 * (1 - progress)))
+                                s.scr.blit(flash_img, icon_rect)
+                    if progress >= 1.0:
+                        s.skill_unlock_anim = None
+            elif not unlocked and ui.get("fallback_lock_draw", True):
+                pg.draw.arc(s.scr, (190, 190, 210), (rect.centerx-10, rect.y+15, 20, 22), 0, 3.14, 3)
+                pg.draw.rect(s.scr, (190, 190, 210), (rect.centerx-13, rect.y+28, 26, 20), 2, border_radius=3)
+
+            if show_names:
+                name = (d.get("name", "Навык не задан" if not sid else sid) if unlocked
+                        else str(ui.get("locked_name", "ЗАБЛОКИРОВАНО")))
+                if unlocked and d.get("category") == "passive" and ui.get("mark_passive", True):
+                    name = str(ui.get("passive_prefix", "[ПАССИВ] ")) + name
+                txt = s.small.render(str(name), True, name_unlocked if unlocked else name_locked)
+                s.scr.blit(txt, txt.get_rect(center=(rect.centerx, rect.y + name_y)))
+            if show_status:
+                level = int(slot.get("unlock_level", 999))
+                status = (str(ui.get("unlocked_passive_status", "Пассив активен"))
+                          if d.get("category") == "passive" and sid in s.pl.skills
+                          else str(ui.get("unlocked_status", "Открыт" if sid in s.pl.skills else "Доступен"))) if unlocked else str(ui.get("locked_status_format", "Уровень {level}")).format(level=level)
+                t2 = s.small.render(status, True, status_unlocked if unlocked else status_locked)
+                s.scr.blit(t2, t2.get_rect(center=(rect.centerx, rect.y + status_y)))
+            if unlocked and show_slot_numbers:
+                s.txt(f"[{i+1}]", rect.x + 8, rect.bottom - int(ui.get("slot_number_bottom_offset", 23)),
+                      color("slot_number_color", (225, 225, 240)), s.small)
+
+        footer_text = str(ui.get("footer", "Активные навыки: Q — использовать, C/V — смена. Пассивные навыки включаются автоматически. Игра на паузе."))
+        if ui.get("show_footer", True) and footer_text:
+            footer = s.small.render(footer_text, True, color("footer_color", (210, 210, 225)))
+            s.scr.blit(footer, footer.get_rect(center=(int(ui.get("footer_x", W // 2)), int(ui.get("footer_y", VIEW_H - 20)))))
     def draw_world(s):
         """M: сетка мира. Клетка = карта (её pos в data/maps/<id>.json), линия = переход между картами:
         серая — в обе стороны, оранжевая — только в одну. Красная клетка — карта не зачищена, зелёная — зачищена."""
@@ -769,33 +1124,25 @@ class Game:
         for r in range(ROWS): pg.draw.line(v, (110, 110, 140), (0, r * T), (W, r * T))
         for c in range(0, COLS, 2): v.blit(s.small.render(str(c), True, (255, 255, 120)), (c * T + 2, 2))
         for r in range(ROWS): v.blit(s.small.render(str(r), True, (255, 255, 120)), (2, r * T + 2))
-        mx, my = pg.mouse.get_pos(); c, r = (mx + s.cam[0]) // T, (my + s.cam[1]) // T
+        mx, my = pg.mouse.get_pos(); c, r = int(mx / CAMERA_ZOOM + s.cam[0]) // T, int(my / CAMERA_ZOOM + s.cam[1]) // T
         if 0 <= c < COLS and 0 <= r < ROWS:
             pg.draw.rect(v, (255, 255, 120), (c * T, r * T, T, T), 2)
-            v.blit(s.font.render(f"столбец {c}, строка {r}: '{s.room.chars[r][c]}'", True, (255, 255, 120)), (mx + s.cam[0] + 14, my + s.cam[1] + 14))
+            v.blit(s.font.render(f"столбец {c}, строка {r}: '{s.room.chars[r][c]}'", True, (255, 255, 120)), (int(mx / CAMERA_ZOOM + s.cam[0]) + 14, int(my / CAMERA_ZOOM + s.cam[1]) + 14))
     def run(s):
         while True:
             dt = min(s.clock.tick(60) / 1000, 1 / 30)
             # В меню используем курсор из assets; в забеге сохраняем обычное управление мышью.
             pg.mouse.set_visible(s.menu_mode is not None and s.menu_cursor is None or s.menu_mode is None and not SETTINGS.get("mouse_aim", True))
             for e in pg.event.get():
-                if e.type == pg.QUIT: return
+                if e.type == pg.QUIT:
+                    if s.net: s.net.close()
+                    return
                 if e.type == pg.KEYDOWN: s.key(e.key)
-                if s.level_menu and e.type == pg.MOUSEBUTTONDOWN and e.button == 1:
-                    mx, my = e.pos
-                    tree = CFG.get("skill_tree", {}); slots = list(tree.get("slots", []))[:8]
-                    cell_w = min(180, (W - 70 - 14 * 3) // 4); cell_h = 150; gap_x = gap_y = 14
-                    total_w = 4 * cell_w + 3 * gap_x; ox = (W - total_w) // 2; oy = 125
-                    col = (mx - ox) // (cell_w + gap_x); row = (my - oy) // (cell_h + gap_y)
-                    i = int(row) * 4 + int(col)
-                    if 0 <= col < 4 and 0 <= row < 2 and i < len(slots):
-                        sid = slots[i].get("skill")
-                        if sid in s.level_choices: s.choose_level_skill(sid)
                 if s.menu_mode is not None:
                     s.menu_event(e)
                 elif s.hud_edit: s.hud_event(e)
                 elif e.type == pg.MOUSEBUTTONDOWN and s.controls_open: s.controls_event(e)
-                elif e.type == pg.MOUSEBUTTONDOWN and e.button in (1, 3): s.pl.press("a1" if e.button == 1 else "a2")
+                elif e.type == pg.MOUSEBUTTONDOWN and e.button in (1, 3): s.act("a1" if e.button == 1 else "a2")
             s.step(dt); s.draw()
 
 if __name__ == "__main__":

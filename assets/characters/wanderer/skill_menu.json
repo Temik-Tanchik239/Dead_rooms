@@ -1,0 +1,10 @@
+{
+  "_help": "Экран получения навыков этого героя. Поля как в assets/skill_menu.json — здесь только то, что отличается.",
+  "background_image": "characters/wanderer/skill_menu_background.png",
+  "title": "СТРАННИК — НАВЫКИ",
+  "title_color": [
+    110,
+    170,
+    235
+  ]
+}

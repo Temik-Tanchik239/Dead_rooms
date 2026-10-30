@@ -13,7 +13,8 @@
       210,
       255
     ],
-    "unlock_level": 1
+    "unlock_level": 2,
+    "mana_cost": 15
   },
   "nova": {
     "name": "Импульс",
@@ -29,7 +30,8 @@
       150,
       70
     ],
-    "unlock_level": 2
+    "unlock_level": 9,
+    "mana_cost": 25
   },
   "heal": {
     "name": "Лечение",
@@ -44,7 +46,8 @@
       235,
       140
     ],
-    "unlock_level": 3
+    "unlock_level": 3,
+    "mana_cost": 30
   },
   "double_jump": {
     "name": "Двойной прыжок",
@@ -122,5 +125,68 @@
     ],
     "unlock_level": 8,
     "description": "Максимум маны увеличен на 25"
+  },
+  "shield": {
+    "name": "Магический щит",
+    "category": "active",
+    "type": "shield",
+    "cooldown": 10.0,
+    "duration": 4.0,
+    "capacity": 60,
+    "radius": 42,
+    "icon": "icons/skill_shield.png",
+    "visual": "skills/shield/shield_effect.png",
+    "visual_size": [
+      70,
+      78
+    ],
+    "visual_y_offset": 2,
+    "color": [
+      80,
+      175,
+      255
+    ],
+    "unlock_level": 1,
+    "description": "Создаёт перед игроком щит, поглощающий до 60 урона с фронтальной стороны",
+    "mana_cost": 20
+  },
+  "vitality": {
+    "name": "Живучесть",
+    "category": "passive",
+    "type": "max_hp",
+    "amount": 30,
+    "icon": "icons/skill_vitality.png",
+    "color": [
+      235,
+      90,
+      90
+    ],
+    "description": "Максимум здоровья увеличен на 30"
+  },
+  "fury": {
+    "name": "Ярость",
+    "category": "passive",
+    "type": "damage",
+    "multiplier": 1.15,
+    "icon": "icons/skill_fury.png",
+    "color": [
+      255,
+      130,
+      60
+    ],
+    "description": "Весь урон увеличен на 15%"
+  },
+  "swift": {
+    "name": "Лёгкий шаг",
+    "category": "passive",
+    "type": "move_speed",
+    "multiplier": 1.12,
+    "icon": "icons/skill_swift.png",
+    "color": [
+      150,
+      240,
+      170
+    ],
+    "description": "Скорость бега увеличена на 12%"
   }
 }

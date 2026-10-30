@@ -18,6 +18,45 @@ def wall_ahead(m, w, d): return not free(w.g, m.rect.move(d * 4, 0))
 def edge_ahead(m, w, d):
     ahead = int((m.cx + d * (m.w / 2 + 4)) // T); foot = int((m.y + m.h + 4) // T)
     return m.ground and tile(w.g, ahead, foot) not in "#=D"
+
+def jump_speed(m, p):
+    # Настройка в move.jump имеет приоритет; иначе используем безопасный прыжок,
+    # достаточный примерно для преодоления стены/разрыва в 1–2 клетки.
+    value = p.get("jump", m.d.get("jump", 0))
+    return float(value) if value else float(m.d.get("auto_jump", 470))
+
+def pit_landing(m, w, d, max_gap=3):
+    """Ищет пол за пропастью: моб не прыгает в бесконечную пустоту."""
+    foot = int((m.y + m.h + 3) // T)
+    start = int((m.cx + d * (m.w / 2 + 3)) // T)
+    for gap in range(1, max_gap + 2):
+        col = start + d * gap
+        support = tile(w.g, col, foot)
+        if support in "#=D":
+            # Проверяем, что корпус помещается в точке приземления.
+            landing_x = col * T + (T - m.w) / 2
+            landing = m.rect.copy()
+            landing.x = int(landing_x)
+            landing.y = int(foot * T - m.h)
+            if free(w.g, landing):
+                return gap
+        if support in "#D" and tile(w.g, col, foot - 1) in "#D":
+            break
+    return 0
+
+def try_ground_jump(m, p, w, d):
+    """Прыгает только с пола и только если впереди есть свободная площадка."""
+    if not m.ground or m.vy < -20:
+        return False
+    blocked = wall_ahead(m, w, d)
+    gap = pit_landing(m, w, d, int(p.get("jump_gap", 3))) if edge_ahead(m, w, d) else 0
+    if not blocked and not gap:
+        return False
+    # Для стены проверяем свободное пространство над мобом.
+    if blocked and not free(w.g, m.rect.move(d * 5, -T - 2)):
+        return False
+    m.vy = -jump_speed(m, p)
+    return True
 def speed_of(m, p): return p.get("speed", m.d.get("speed", 80))
 
 def steer(m, tx, ty, speed, accel, dt):
@@ -56,10 +95,11 @@ def chase(m, p, dt, w):
     if m.flies: return steer(m, w.pl.cx, w.pl.cy + p.get("offset_y", -10), sp, acc, dt)
     if abs(dx) < 6: m.vx = approach(m.vx, 0, acc * dt); return
     d = m.dir; go = True
-    if wall_ahead(m, w, d):
-        if p.get("jump") and m.ground and free(w.g, m.rect.move(d * 6, -T - 2)): m.vy = -p["jump"]
-        else: go = False
-    if edge_ahead(m, w, d) and not (p.get("drop", True) and dy > 40): go = False
+    obstacle = wall_ahead(m, w, d)
+    edge = edge_ahead(m, w, d)
+    if obstacle or (edge and not (p.get("drop", True) and dy > 40)):
+        if not try_ground_jump(m, p, w, d):
+            go = False
     m.vx = approach(m.vx, d * sp if go else 0, acc * dt)
 
 @movement("keep_distance")
@@ -76,7 +116,8 @@ def keep_distance(m, p, dt, w):
         tx = w.pl.cx - side * dist; tx = max(T + m.w, min(MW - T - m.w, tx))
         return steer(m, tx, w.pl.cy + p.get("height", -70) + math.sin(m.t * 2) * 12, sp, acc, dt)
     want = side if abs(dx) > dist + band else -side if abs(dx) < dist - band else 0
-    if want and (wall_ahead(m, w, want) or edge_ahead(m, w, want)): want = 0
+    if want and (wall_ahead(m, w, want) or edge_ahead(m, w, want)):
+        if not try_ground_jump(m, p, w, want): want = 0
     m.vx = approach(m.vx, want * sp, acc * dt)
 
 @movement("loop")
@@ -102,7 +143,8 @@ def loop(m, p, dt, w):
     if m.flies: steer(m, tx, ty, sp, acc, dt)
     else:
         dx = tx - m.cx; d = sign(dx) if abs(dx) > 4 else 0
-        if d and (wall_ahead(m, w, d) or edge_ahead(m, w, d)): d = 0
+        if d and (wall_ahead(m, w, d) or edge_ahead(m, w, d)):
+            if not try_ground_jump(m, p, w, d): d = 0
         m.vx = approach(m.vx, d * min(sp, abs(dx) * 4), acc * dt)
     if abs(m.vx) > 5: m.dir = sign(m.vx)
 

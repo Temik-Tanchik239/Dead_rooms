@@ -4,44 +4,52 @@
     "slot": 1,
     "combo": [
       {
-        "windup": 0.07,
-        "active": 0.08,
-        "recovery": 0.12,
+        "windup": 0.08,
+        "active": 0.1,
+        "recovery": 0.13,
         "damage": 24,
         "reach": [
           120,
           120
         ],
         "knockback": 180,
-        "lunge": 110
-      },
-      {
-        "windup": 0.06,
-        "active": 0.08,
-        "recovery": 0.12,
-        "damage": 14,
-        "reach": [
-          120,
-          120
-        ],
-        "knockback": 200,
-        "lunge": 130
-      },
-      {
-        "windup": 0.1,
-        "active": 0.1,
-        "recovery": 0.26,
-        "damage": 26,
-        "reach": [
-          120,
-          120
-        ],
-        "knockback": 380,
-        "lunge": 220,
+        "lunge": 90,
+        "style": "slash",
         "swing": [
-          110,
-          -70
+          100,
+          -85
         ]
+      },
+      {
+        "windup": 0.07,
+        "active": 0.1,
+        "recovery": 0.14,
+        "damage": 22,
+        "reach": [
+          120,
+          120
+        ],
+        "knockback": 210,
+        "lunge": 105,
+        "style": "slash",
+        "swing": [
+          -95,
+          80
+        ]
+      },
+      {
+        "windup": 0.11,
+        "active": 0.12,
+        "recovery": 0.24,
+        "damage": 30,
+        "reach": [
+          145,
+          42
+        ],
+        "knockback": 330,
+        "lunge": 250,
+        "style": "thrust",
+        "thrust_angle": 0
       }
     ],
     "skin": "weapons/sword.png",

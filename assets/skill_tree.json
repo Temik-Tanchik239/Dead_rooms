@@ -1,39 +1,55 @@
 {
   "lock_icon": "icons/skill_locked.png",
-  "grid_columns": 4,
-  "grid_rows": 2,
+  "grid_columns": 3,
+  "grid_rows": 3,
   "slots": [
     {
       "skill": "dash",
-      "unlock_level": 1
+      "unlock_level": 1,
+      "lock_icon": "icons/locks/dash_lock.png"
     },
     {
       "skill": "nova",
-      "unlock_level": 2
+      "unlock_level": 2,
+      "lock_icon": "icons/locks/nova_lock.png"
     },
     {
       "skill": "heal",
-      "unlock_level": 3
+      "unlock_level": 3,
+      "lock_icon": "icons/locks/heal_lock.png"
     },
     {
       "skill": "double_jump",
-      "unlock_level": 4
+      "unlock_level": 4,
+      "lock_icon": "icons/locks/double_jump_lock.png"
     },
     {
       "skill": "mana_blades",
-      "unlock_level": 5
+      "unlock_level": 5,
+      "lock_icon": "icons/locks/mana_blades_lock.png"
     },
     {
       "skill": "mana_ranged",
-      "unlock_level": 6
+      "unlock_level": 6,
+      "lock_icon": "icons/locks/mana_ranged_lock.png"
     },
     {
       "skill": "mana_regen",
-      "unlock_level": 7
+      "unlock_level": 7,
+      "lock_icon": "icons/locks/mana_regen_lock.png"
     },
     {
       "skill": "mana_reserve",
-      "unlock_level": 8
+      "unlock_level": 8,
+      "lock_icon": "icons/locks/mana_reserve_lock.png"
+    },
+    {
+      "skill": "shield",
+      "unlock_level": 9,
+      "lock_icon": "icons/locks/shield_lock.png"
     }
-  ]
+  ],
+  "unlock_animation_duration": 1100,
+  "unlock_animation_frames": [],
+  "unlock_flash_image": ""
 }

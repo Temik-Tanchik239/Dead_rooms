@@ -41,10 +41,22 @@ def held_pose(pl):
         if t < wu + ac:
             ang = a0 + (a1 - a0) * (t - wu) / max(ac, 1e-6); return wid, ang, 0, (a0, ang)
         return wid, a1 + (r0 - a1) * ease((t - wu - ac) / rec), 0, None
-    wid = pl.slots[0]; return wid, rest(wid), 0, None
+    wid = getattr(pl, "last_weapon", pl.slots[0]);
+    if wid not in W: wid = pl.slots[0]
+    # Вне атаки оружие плавно ориентируется в сторону прицела.
+    # Для предметов с rotate=false сохраняем фиксированный угол.
+    w = W[wid]
+    aim = pl.aim_deg() if w.get("rotate", True) else None
+    if aim is not None:
+        return wid, aim, 0, None
+    return wid, rest(wid), 0, None
 
 def draw_held(v, pl, hand):
-    """Рисует оружие в кисти hand (мир. координаты). Вызывается после спрайта игрока."""
+    """Рисует оружие только на время активного удара/выстрела."""
+    # Не показываем оружие в руках в состоянии покоя: оно появляется лишь
+    # пока проигрывается активная анимация атаки.
+    if getattr(pl, "state", None) != "attack" or not getattr(pl, "atk", None):
+        return
     wid, ang, dx, trail = held_pose(pl); path, dw, dh, (gx, gy) = info(wid); f = pl.face
     hx, hy = hand[0] + f * dx, hand[1]
     q = round((ang if f > 0 else -ang) / 5) * 5

@@ -137,10 +137,10 @@
         }
       },
       "weapon_overrides": {},
-      "model_scale": 1.5,
+      "model_scale": 1.0,
       "hitbox": [
-        30,
-        50
+        20,
+        34
       ]
     },
     "ranger": {

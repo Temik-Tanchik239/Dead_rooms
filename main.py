@@ -19,6 +19,8 @@ import lighting
 # Навыки по умолчанию, если у персонажа в data/characters.json нет base_skills.
 BASE_SKILLS = ["dash"]
 DEFAULT_WEAPONS = ["rusty_sword", "short_bow"]
+AIR_ANIM_DELAY = 0.10   # сколько секунд герой должен быть в воздухе, чтобы включилась анимация прыжка (падение)
+AIR_ANIM_RISE = 40      # скорость взлёта (px/с), с которой прыжок включается сразу
 
 def in_char(fn):
     """Метод игрока выполняется с данными ЕГО героя (в мультиплеере у игроков разные персонажи)."""
@@ -43,11 +45,13 @@ class Player(Body):
         s.face, s.state = 1, "move"
         s.hp_regen_timer = 0.0
         s.inv = s.coy = s.st = s.lock = s.drop_t = s.stun = 0
+        s.grab = None   # схвачен рукой Моргарта: {"hand", "t" (сколько ещё держат), "tick", "struggle", "prev"} — см. boss_hands.py
         s.atk, s.combo, s.hitbox = None, (None, 0, 0), None
         s.buf = dict(jump=0, roll=0, a1=0, a2=0, skill=0)
         # Стартовое оружие персонажа (data/characters.json -> weapons: [оружие ЛКМ, оружие ПКМ]).
         s.slots = [w if w in CFG["weapons"] else DEFAULT_WEAPONS[i] for i, w in enumerate((list(ch.get("weapons", [])) + DEFAULT_WEAPONS[len(ch.get("weapons", [])):])[:2])]
         s.anim, s.anim_t, s.anim_p = "idle", 0.0, None
+        s.air_t = 0.0   # сколько секунд подряд герой не касается земли (для анимации прыжка)
         s.aim = None   # куда смотрит курсор (координаты комнаты) или None
         s.level = 1; s.xp = 0; s.xp_next = 100
         # Базовые навыки персонажа выдаются сразу и не требуют повышения уровня.
@@ -84,7 +88,9 @@ class Player(Body):
             return (["shoot", "attack"] if "projectile" in a["step"] else ["attack"]), prog
         if s.state == "ladder": return ["ladder"], None
         if s.stun > 0: return ["hurt"], None
-        if not s.ground: return ["jump"], None
+        # Флаг ground у стоящего героя «мигает» (физика каждый кадр на долю пикселя проваливается в пол и тут же
+        # возвращается), поэтому прыжок показываем только при реальном взлёте или если герой в воздухе дольше AIR_ANIM_DELAY.
+        if not s.ground and (s.vy < -AIR_ANIM_RISE or s.air_t > AIR_ANIM_DELAY): return ["jump"], None
         return (["move"] if abs(s.vx) > 25 else ["idle"]), None
     def facing(s, d):
         """Куда повернуться при ударе: к курсору (если есть) или по движению."""
@@ -100,6 +106,7 @@ class Player(Body):
         return (a + 180) % 360 - 180
     @in_char
     def update_anim(s, dt):
+        s.air_t = 0.0 if s.ground else s.air_t + dt
         st, p = s.anim_states(); key = "|".join(st)
         if key != s.anim: s.anim, s.anim_t = key, 0.0
         else: s.anim_t += dt
@@ -215,7 +222,7 @@ class Player(Body):
         a = s.atk; st = a["step"]; rw, rh = st["reach"]
         s.hitbox = pg.Rect(int(s.x + s.w if s.face > 0 else s.x - rw), int(s.cy - rh / 2), rw, rh)
         for m in mobs:
-            if id(m) not in a["hit"] and s.hitbox.colliderect(m.rect):
+            if id(m) not in a["hit"] and (m.collides_rect(s.hitbox) if hasattr(m, "collides_rect") else s.hitbox.colliderect(m.rect)):
                 a["hit"].add(id(m)); m.hurt(st["damage"] * s.dmg_mult(), s.face * st["knockback"], fx)
                 s.mana = min(s.maxmana, s.mana + weapon.mana_hit(a["w"], st))   # попадание возвращает ману
     def fire(s, projs, st):
@@ -257,8 +264,8 @@ class Player(Body):
             radius, damage = a.get("radius", 100), a.get("damage", 25)
             fx.ring(s.cx, s.cy, radius); fx.shake = max(fx.shake, .12)
             for m in mobs:
-                if (m.cx-s.cx)**2 + (m.cy-s.cy)**2 <= radius**2:
-                    m.hurt(damage * s.dmg_mult(), s.face * a.get("knockback", 220), fx)
+                near = m.collides_circle(s.cx, s.cy, radius) if hasattr(m, "collides_circle") else (m.cx-s.cx)**2 + (m.cy-s.cy)**2 <= radius**2
+                if near: m.hurt(damage * s.dmg_mult(), s.face * a.get("knockback", 220), fx)
         elif kind == "heal":
             amount = a.get("amount", 30); s.hp = min(s.maxhp, s.hp + amount)
             fx.ring(s.cx, s.cy, a.get("radius", 42))
@@ -278,6 +285,16 @@ class Player(Body):
             nx, ny = c * T + (T - s.w) / 2, hr * T - s.h
             if free(g, pg.Rect(int(nx), int(ny), s.w, s.h)):
                 s.x, s.y, s.vy, s.vx, s.lock = nx, ny, 0, s.face * 20, .25
+    GRAB_KEYS = (pg.K_a, pg.K_d, pg.K_w, pg.K_s, pg.K_LEFT, pg.K_RIGHT, pg.K_UP, pg.K_DOWN, pg.K_SPACE)
+    def update_grab(s, dt, k):
+        """Игрок в руке босса: стоит на месте (позицию задаёт рука), ничего не может. Каждое НОВОЕ нажатие
+        клавиши движения/прыжка сокращает удержание на grab['struggle'] секунд — можно вырваться."""
+        g = s.grab; cur = tuple(bool(k[key]) for key in s.GRAB_KEYS); prev = g.get("prev") or (False,) * len(cur)
+        g["t"] -= sum(1 for a, b in zip(cur, prev) if a and not b) * g.get("struggle", .18); g["prev"] = cur
+        for b in s.buf: s.buf[b] = 0
+        s.vx = s.vy = 0.0; s.atk = None; s.skill_cast = None; s.hitbox = None; s.hp_regen_timer = 0.0
+        s.stun = max(s.stun, .1)      # поза «hurt»
+        if s.state in ("attack", "ladder", "roll"): s.state = "move"
     @in_char
     def update(s, dt, k, g, mobs, projs, fx):
         p = CFG["player"]; s.hitbox = None
@@ -292,6 +309,8 @@ class Player(Body):
         if s.shield_time <= 0: s.shield_hp = 0.0
         else: s.shield_face = s.face  # ориентация защиты синхронизирована с игроком
         for skill_id in s.skill_cooldowns: s.skill_cooldowns[skill_id] = max(0.0, s.skill_cooldowns[skill_id] - dt)
+        if s.grab:
+            s.update_grab(dt, k); return
         if s.ground: s.air_jumps = 0
         if s.buf.get("skill", 0) > 0:
             s.buf["skill"] = 0
@@ -385,13 +404,18 @@ def award_xp(pl, amount, fx):
             pl.refresh_mana()
         return ups
 
+def set_app_icon():
+    """Иконка окна и панели задач из assets/app/icon.png (заменили файл, перезапустили игру — пересборка не нужна)."""
+    try: pg.display.set_icon(pg.image.load(str(ASSETS / "app" / "icon.png")))
+    except Exception as e: print("иконка окна не загружена:", e)
+
 class Game:
     show_world = False   # M: карта мира открыта (игра на паузе)
     Player = Player       # мультиплеер создаёт игроков через этот класс
     zoom = CAMERA_ZOOM
     award_xp = staticmethod(award_xp)
     def __init__(s):
-        pg.init(); pg.display.set_caption("DEAD ROOMS"); s.scr = pg.display.set_mode((W, H), pg.SCALED | (pg.FULLSCREEN if SETTINGS.get("fullscreen", True) else 0)); s.debug = False; s.cam = [0, 0]; s.view = pg.Surface((MW, MH))
+        pg.init(); set_app_icon(); pg.display.set_caption("DEAD ROOMS"); s.scr = pg.display.set_mode((W, H), pg.SCALED | (pg.FULLSCREEN if SETTINGS.get("fullscreen", True) else 0)); s.debug = False; s.cam = [0, 0]; s.view = pg.Surface((MW, MH))
         s.font = pg.font.SysFont("arial,dejavusans,freesans", 16, bold=True); s.big = pg.font.SysFont("arial,dejavusans,freesans", 44, bold=True)
         s.small = pg.font.SysFont("arial,dejavusans,freesans", 11, bold=True); s.grid = False
         s.show_world = False; s.controls_open = False; s.waiting_for_bind = None; s.hud_edit = False; s.hud_drag = None; s.hud_selected = "player"; s.veil = pg.Surface((W, VIEW_H), pg.SRCALPHA); s.veil.fill((6, 6, 12, 225))
@@ -455,7 +479,7 @@ class Game:
     def place(s, rect, ladder):
         pl = s.pl
         if pl.h != pl.H0: pl.y -= pl.H0 - pl.h; pl.h = pl.H0
-        pl.atk = None; pl.state = "ladder" if ladder else "move"
+        pl.atk = None; pl.grab = None; pl.state = "ladder" if ladder else "move"
         pl.x = max(0, min((s.room.width_px if s.room else MW) - pl.w, rect.centerx - pl.w / 2)); pl.y = rect.bottom - pl.h; pl.vx = pl.vy = 0
     def take_exit(s, z):
         r = s.room; target = s.camp.resolve(r.id, z["entry"]["exit"])
@@ -549,7 +573,9 @@ class Game:
         w = SimpleNamespace(g=r.g, pl=pl, mobs=r.mobs, projs=s.projs, fx=fx)   # «мир» для мобов и пуль
         for m in r.mobs:
             m.update(sim, w)
-            if m.d.get("contact") and pl.rect.colliderect(m.rect): pl.hit(m.d["contact"], m.cx, fx)
+            if m.d.get("contact") and (m.touches_rect(pl.rect) if hasattr(m, "touches_rect") else pl.rect.colliderect(m.rect)): pl.hit(m.d["contact"], m.cx, fx)
+            xp = m.pop_xp() if hasattr(m, "pop_xp") else 0
+            if xp: s.gain_xp(xp)          # опыт за уничтоженные руки босса
         for q in s.projs: q.update(sim, w)
         s.projs = [q for q in s.projs if not q.dead]
         for m in r.mobs:
@@ -875,6 +901,8 @@ class Game:
         if s.net and s.net.in_game: mp.draw_players(s, v)   # все игроки, имена, павшие союзники
         elif pl.inv <= 0 or int(pg.time.get_ticks() / 60) % 2:
             pl.draw(v)
+        for m in r.mobs:
+            if hasattr(m, "draw_front"): m.draw_front(v)      # рука, держащая игрока, поверх него
         if s.debug:
             # Зелёный — физический хитбокс персонажа, белый — активная атакующая зона.
             pg.draw.rect(v, (0, 255, 120), pl.rect, 2)

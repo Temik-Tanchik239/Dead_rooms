@@ -62,7 +62,7 @@ class Proj:
         if s.aoe:
             w.fx.shake = .15; w.fx.ring(s.x, s.y, s.aoe)
             for m in s.targets(w):
-                if circle_hits_rect(s.x, s.y, s.aoe, m.rect): s.damage(m, w, sign(m.cx - s.x) or 1)
+                if (m.collides_circle(s.x, s.y, s.aoe) if hasattr(m, "collides_circle") else circle_hits_rect(s.x, s.y, s.aoe, m.rect)): s.damage(m, w, sign(m.cx - s.x) or 1)
         for key, fn in DEATH.items():
             if key in s.d: fn(s, s.d[key], w)
     def update(s, dt, w):
@@ -85,7 +85,7 @@ class Proj:
         if s.life <= 0: return s.die(w)
         box = pg.Rect(int(s.x - s.r), int(s.y - s.r), 2 * s.r, 2 * s.r)
         for m in s.targets(w):
-            if id(m) in s.hit or not box.colliderect(m.rect): continue
+            if id(m) in s.hit or not (m.collides_rect(box) if hasattr(m, "collides_rect") else box.colliderect(m.rect)): continue
             if not s.friendly and getattr(m, "state", "") == "roll": continue   # перекат проходит сквозь пули
             s.hit.add(id(m))
             if not s.aoe: s.damage(m, w, sign(s.vx) or 1)

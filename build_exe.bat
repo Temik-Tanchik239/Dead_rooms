@@ -18,7 +18,13 @@ if errorlevel 1 (
 uv sync
 if errorlevel 1 goto :err
 
-uv run pyinstaller --noconfirm --clean --onefile --windowed --name DEAD_ROOMS --add-data "data;data" --add-data "assets;assets" main.py
+rem Иконка EXE: assets\app\icon.png (или icon.ico). make_icon.py кладёт готовый .ico в build_icon\ (папка build\ чистится PyInstaller).
+set "ICON_ARG="
+uv run python make_icon.py
+if errorlevel 1 goto :err
+if exist "build_icon\DEAD_ROOMS.ico" set "ICON_ARG=--icon build_icon\DEAD_ROOMS.ico"
+
+uv run pyinstaller --noconfirm --clean --onefile --windowed --name DEAD_ROOMS %ICON_ARG% --add-data "data;data" --add-data "assets;assets" main.py
 if errorlevel 1 goto :err
 
 rem Копируем редактируемые ресурсы рядом с EXE: замена PNG после сборки сразу видна в игре.
@@ -35,6 +41,7 @@ echo   "%~dp0dist\DEAD_ROOMS.exe"
 echo.
 echo Изменяемые картинки меню лежат в dist\assets\menu\.
 echo Можно заменять PNG после сборки — пересобирать EXE не нужно.
+echo Иконка EXE и ярлыка: assets\app\icon.png (при смене пересоберите EXE).
 pause
 exit /b 0
 

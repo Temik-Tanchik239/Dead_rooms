@@ -211,7 +211,7 @@ def preview(scr, cid, area, moving):
     """Анимированная фигурка героя (анимации — из assets/characters/<id>/)."""
     u, p, look = ui(), char_player_cfg(cid), char_look(cid)
     sel = look.get("select", {})
-    state = sel.get("selected", u.get("preview_anim_selected", "move")) if moving else sel.get("idle", u.get("preview_anim", "idle"))
+    state = sel.get("selected", u.get("preview_anim_selected", "idle")) if moving else sel.get("idle", u.get("preview_anim", "idle"))
     fps = sel.get("fps", u.get("preview_fps", 6))
     d = {**p, "anim_fps": fps}
     path = mob_frame(f"player:{cid}", d, [state], pg.time.get_ticks() / 1000, None, folder=p.get("folder", "player"))

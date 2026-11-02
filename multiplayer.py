@@ -558,7 +558,7 @@ class HostSession(Session):
             if p.hp <= 0: s.revive(p, CLEAR_REVIVE_HP)
 
     def down(s, p):
-        p.downed = True; p.revive = 0.0; p.state = "move"; p.atk = None; p.skill_cast = None
+        p.downed = True; p.revive = 0.0; p.state = "move"; p.atk = None; p.skill_cast = None; p.grab = None
         p.shield_time = 0.0; p.shield_hp = 0.0; p.hitbox = None; p.vx = 0
         if p.h != p.H0: p.y -= p.H0 - p.h; p.h = p.H0
         s.g.fx.text(f"{p.name} пал!", p.cx - 20, p.y - 30)
@@ -597,7 +597,7 @@ class HostSession(Session):
                 # Движение своего героя клиент считает сам (без задержки сети); хост между пакетами
                 # продолжает его по последним клавишам, а пришедшее положение принимает как точное.
                 x, y, vx, vy, h, face, tp = inp.pose; inp.pose = None
-                if int(tp) == p.tp:
+                if int(tp) == p.tp and not p.grab:      # схваченного героя держит рука босса — позу клиента не принимаем
                     p.x, p.y, p.vx, p.vy = x, y, vx, vy
                     p.h = int(max(4, min(p.H0, h))); p.face = 1 if face >= 0 else -1
         alive = [p for p in players if p.hp > 0]
@@ -608,7 +608,10 @@ class HostSession(Session):
                 m.update(dt, w)
                 if m.d.get("contact"):
                     for p in alive:
-                        if p.hp > 0 and p.rect.colliderect(m.rect): p.hit(m.d["contact"], m.cx, fx)
+                        if p.hp > 0 and (m.touches_rect(p.rect) if hasattr(m, "touches_rect") else p.rect.colliderect(m.rect)): p.hit(m.d["contact"], m.cx, fx)
+                xp = m.pop_xp() if hasattr(m, "pop_xp") else 0
+                for p in players:
+                    if xp: g.award_xp(p, xp, fx)          # опыт за уничтоженные руки босса
             for q in g.projs: q.update(dt, w)
         g.projs = [q for q in g.projs if not q.dead]
         for m in r.mobs:
@@ -681,7 +684,8 @@ class HostSession(Session):
                 if "c" in a: act.append(["c", R(a["c"][0]), R(a["c"][1])])
                 if "to" in a: act.append(["to", R(a["to"][0]), R(a["to"][1])])
             mobs.append([m.nid, m.kind, R(m.x), R(m.y), m.dir, R(m.hp), R(m.maxhp), round(max(0, m.flash), 2),
-                         m.anim, round(m.anim_t, 3), None if m.anim_p is None else round(m.anim_p, 3), act])
+                         m.anim, round(m.anim_t, 3), None if m.anim_p is None else round(m.anim_p, 3), act,
+                         m.hands.net_pack() if getattr(m, "hands", None) else None])
         pls = []
         for p in s.players.values():
             atk = [p.atk["w"], p.atk["n"], round(p.atk["t"], 3)] if p.state == "attack" and p.atk else None
@@ -694,7 +698,7 @@ class HostSession(Session):
                         "sh": [round(p.shield_time, 2), p.shield_face, R(p.shield_hp)],
                         "sk": list(p.skills), "si": p.skill_index, "cd": {k: round(v, 2) for k, v in p.skill_cooldowns.items() if v > 0},
                         "lv": p.level, "xp": p.xp, "xn": p.xp_next, "rv": round(p.revive, 2),
-                        "tp": p.tp, "hc": p.hitc, "kb": [R(p.kb[0]), R(p.kb[1])]})
+                        "tp": p.tp, "hc": p.hitc, "kb": [R(p.kb[0]), R(p.kb[1])], "gr": 1 if p.grab else 0})
         return {"t": "snap", "ht": round(time.monotonic(), 4), "room": r.id, "loop": g.camp.loop,
                 "spawned": bool(r.spawned), "locked": r.locked, "cleared": r.cleared,
                 "prog": {mid: [m.visited, m.cleared] for mid, m in g.camp.maps.items()},
@@ -733,7 +737,7 @@ def anchor_rect(p):
 def place(p, rect, ladder, room, dx=0):
     """Поставить игрока p в точку появления rect (как Game.place, но для любого игрока; dx — сдвиг, чтобы не стоять друг в друге)."""
     if p.h != p.H0: p.y -= p.H0 - p.h; p.h = p.H0
-    p.atk = None; p.state = "ladder" if ladder and p.hp > 0 else "move"
+    p.atk = None; p.grab = None; p.state = "ladder" if ladder and p.hp > 0 else "move"
     lim = lambda x: max(0, min(room.width_px - p.w, x))
     x = lim(rect.centerx - p.w / 2 + dx); p.y = rect.bottom - p.h; p.vx = p.vy = 0
     if dx and not free(room.g, pg.Rect(int(x), int(p.y), p.w, p.h)): x = lim(rect.centerx - p.w / 2)
@@ -982,7 +986,7 @@ class ClientSession(Session):
 
     def apply_self(s, p, ps):
         alive = ps["hp"] > 0
-        if not alive:   # павший: показываем как у хоста, ничего не предсказываем
+        if not alive or ps.get("gr"):   # павший или схваченный рукой босса: показываем как у хоста, ничего не предсказываем
             s.predicting = False
             s.apply_pose(p, ps); s.apply_stats(p, ps); p.aim = None
             s.local_hc = ps.get("hc", 0); return
@@ -1019,11 +1023,11 @@ class ClientSession(Session):
     def apply_mobs(s, r, a, b, k, ahead):
         rows_b = {row[0]: row for row in b.get("mobs", [])} if b else {}
         out, seen = [], set()
-        for nid, kind, x, y, d, hp, mhp, fl, an, at, ap, act in a.get("mobs", []):
+        for nid, kind, x, y, d, hp, mhp, fl, an, at, ap, act, *extra in a.get("mobs", []):
             if kind not in CFG["mobs"]: continue
             m = s.mobs.get(nid)
             if m is None or m.kind != kind:
-                m = s.mobs[nid] = Mob(kind, x, y, 1.0)
+                m = s.mobs[nid] = Mob(kind, x, y, 1.0, r)      # r — комната: от неё Моргарт берёт раскладку рук
             seen.add(nid)
             nb = rows_b.get(nid)
             if nb and abs(nb[2] - x) < 150 and abs(nb[3] - y) < 150:
@@ -1032,6 +1036,10 @@ class ClientSession(Session):
             else: at += ahead
             m.x, m.y, m.dir, m.hp, m.maxhp, m.flash = x, y, d, hp, mhp, fl
             m.anim, m.anim_t, m.anim_p = an, at, ap
+            if getattr(m, "hands", None) and extra and extra[0]:
+                nbh = nb[12] if nb and len(nb) > 12 else None
+                m.hands.net_apply(extra[0], nbh, k, ahead)
+                m.alone = not m.hands.alive_count()
             m.act = None
             if act:
                 i, ph, t = act[0], act[1], act[2]

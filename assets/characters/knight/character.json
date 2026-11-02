@@ -10,6 +10,10 @@
   "icon": "characters/knight/icon.png",
   "anim_fps": 3,
   "anims": {
+    "idle": {
+      "frames": "characters/knight/idle",
+      "fps": 6
+    },
     "move": {
       "frames": "characters/knight/move",
       "fps": 8
@@ -55,7 +59,7 @@
   },
   "select": {
     "idle": "idle",
-    "selected": "move",
-    "fps": 8
+    "selected": "idle",
+    "fps": 6
   }
 }

@@ -2,10 +2,11 @@
 Всё задаётся в data/mobs.json, код трогать не нужно."""
 import math, random
 import pygame as pg
-from core import CFG, Body, sign, approach
+from core import CFG, Body, sign, approach, MW, MH, T, circle_hits_rect
 from movement import MOVES, look
-from attacks import ATTACKS
+from attacks import ATTACKS, players_of
 from anim import sprite, mob_frame, anim_length
+from boss_hands import HandSet, head_point, draw_boss
 
 def normalize(d):
     """Старый формат ("ai": walker | flyer | shooter) -> новый ("move" + "attacks")."""
@@ -18,8 +19,9 @@ def normalize(d):
     else: d["move"] = {"type": "chase"}
     return d
 
+
 class Mob(Body):
-    def __init__(s, kind, x, y, scale):
+    def __init__(s, kind, x, y, scale, room=None):
         s.kind = kind; s.d = d = normalize(CFG["mobs"][kind]); super().__init__(x, y, d["w"], d["h"])
         s.hp = s.maxhp = d["hp"] * scale; s.dmg_scale = d.get("dmg_scale", 1)
         s.flies = d.get("flies", False); s.dir = random.choice((-1, 1)); s.home = (s.cx, s.cy)
@@ -28,9 +30,66 @@ class Mob(Body):
         s.stun = s.flash = 0; s.t = 0.0; s.aggro = False; s.act = None; s.grav = None
         s.loop_t = random.random() * s.mv.get("period", 4); s.wp = 0
         s.anim, s.anim_t, s.anim_p = "idle", 0.0, None
+        s.hands = None; s.alone = False; s._parts = None; s._shield_msg = -9.0
+        if d.get("boss_visual") == "morgart": s.setup_morgart(room, scale)
+
+    # ---------- Моргарт: голова = сам моб, руки — отдельные части (boss_hands.py) ----------
+    def setup_morgart(s, room, scale):
+        """Руки строятся от центра головы (центр физического ядра) по настройкам карты morgart_layout."""
+        layout = room.d.get("morgart_layout", {}) if room is not None else {}
+        world = (room.width_px, room.height_px) if room is not None else (MW, MH)
+        s.world = world
+        s.hands = HandSet(layout, world, (s.cx, s.cy), scale, s.dmg_scale)
+        s.alone = not s.hands.list         # рук на карте нет — сразу «только голова»
+
+    def hands_alive(s): return s.hands.alive_count() if s.hands else 0
+    def head_shielded(s):
+        """Пока жива хоть одна рука, голова неуязвима (assets/boss/boss.json -> mob.hands_gate_head)."""
+        return bool(s.d.get("hands_gate_head", True)) and s.hands_alive() > 0
+    def pop_xp(s): return s.hands.pop_xp() if s.hands else 0
+
+    def head_rect(s):
+        return pg.Rect(int(s.cx) - 78, int(s.cy) - 72 + int(math.sin(s.t * 11.0) * 2.5 * .35), 156, 144)
+
+    def collision_rects(s):
+        """Мировые хитбоксы Моргарта: голова + каждая живая рука (там, где она сейчас находится)."""
+        if s.d.get("boss_visual") != "morgart": return [s.rect]
+        return [s.head_rect()] + (s.hands.rects() if s.hands else [])
+
+    def parts_where(s, test):
+        """Какие части задевает проверка test(rect): None — голова, Hand — рука. Запоминается для hurt()."""
+        parts = [None] if test(s.head_rect()) else []
+        if s.hands: parts += s.hands.parts_at(test)
+        s._parts = parts or None
+        return bool(parts)
+
+    def touches_rect(s, rect):
+        """Контактный урон: касается только голова; руки бьют своими атаками."""
+        if s.d.get("boss_visual") != "morgart": return s.collides_rect(rect)
+        return s.head_rect().colliderect(rect)
+
+    def collides_rect(s, rect):
+        if s.d.get("boss_visual") != "morgart": return s.rect.colliderect(rect)
+        return s.parts_where(rect.colliderect)
+
+    def collides_circle(s, x, y, radius):
+        if s.d.get("boss_visual") != "morgart": return circle_hits_rect(x, y, radius, s.rect)
+        return s.parts_where(lambda r: circle_hits_rect(x, y, radius, r))
+
+    def hurt_morgart(s, dmg, fx):
+        """Урон получают те части, которых коснулась проверка попадания (collides_rect/circle); голова — только без рук."""
+        parts, s._parts = s._parts, None
+        for part in (parts or [None]):
+            if part is not None: part.hurt(dmg, fx); s.aggro = True; continue
+            if s.head_shielded():
+                if s.t - s._shield_msg > .8:
+                    s._shield_msg = s.t; fx.text("Щит! Сначала руки", s.cx, s.cy - 100); fx.ring(s.cx, s.cy, 70)
+                continue
+            s.hp -= dmg; s.flash = .1; s.aggro = True; fx.stop = .05; fx.text(str(int(dmg)), s.cx, s.cy - 80)
 
     # ---------- урон ----------
     def hurt(s, dmg, kb, fx):
+        if s.d.get("boss_visual") == "morgart": return s.hurt_morgart(dmg, fx)   # голова/руки — раздельно
         s.hp -= dmg; s.flash = .1; s.aggro = True
         fx.stop = .05; fx.text(str(int(dmg)), s.cx, s.y)
         act = s.act
@@ -60,13 +119,31 @@ class Mob(Body):
     def choose_attack(s, w):
         if s.gap > 0 or not s.aggro: return
         for i, a in enumerate(s.attacks):
+            if a.get("requires") == "alone" and s.hands_alive(): continue    # атаки «когда осталась только голова»
             if s.cds[i] <= 0 and ATTACKS[a["type"]].can_use(s, a, w): return s.start_attack(i, w)
 
     # ---------- кадр ----------
     def update(s, dt, w):
         d = s.d; s.t += dt; s.flash -= dt; s.gap -= dt
         s.cds = [c - dt for c in s.cds]
+        is_morgart = d.get("boss_visual") == "morgart"
         move = MOVES[s.mv.get("type", "chase")]
+        if is_morgart:
+            # Физическое тело — неподвижное ядро босса. Его rect является
+            # стабильным хитбоксом: гравитация, отбрасывание и chase не двигают его.
+            s.vx = s.vy = 0.0
+            s.stun = 0.0
+            s.dir = sign(w.pl.cx - s.cx) or s.dir
+            if not s.aggro and any(math.hypot(p.cx - s.cx, p.cy - s.cy) <= s.mv.get("sight", 900) for p in players_of(w)): s.aggro = True
+            if s.hands:
+                s.hands.update(dt, w, s.aggro)
+                if not s.alone and not s.hands.alive_count(): s.on_alone(w)      # уничтожена последняя рука
+            if s.act:
+                s.tick_attack(dt, w)
+            else:
+                s.choose_attack(w)
+            s.update_anim(dt)
+            return
         look(s, w, s.mv)
         if s.stun > 0:
             s.stun -= dt; s.vx = approach(s.vx, 0, 900 * dt)
@@ -84,6 +161,13 @@ class Mob(Body):
         if not s.flies or s.grav: s.vy = min(s.vy + (s.grav or d.get("gravity", 1800)) * dt, 900)
         s.move(w.g, dt)
         s.update_anim(dt)
+
+    def on_alone(s, w):
+        """Все руки уничтожены: щит с головы снят, дальше бой идёт только с ней."""
+        s.alone = True; s.aggro = True
+        w.fx.ring(s.cx, s.cy, 140); w.fx.shake = max(w.fx.shake, .45)
+        w.fx.text("Руки уничтожены! Голова беззащитна", s.cx - 90, s.cy - 130)
+        for i in range(len(s.cds)): s.cds[i] = min(s.cds[i], .8)
 
     # ---------- анимация ----------
     def anim_states(s):
@@ -109,54 +193,51 @@ class Mob(Body):
         dw, dh = d.get("draw", [s.w, s.h]); r = s.rect
         top = r.centery - dh // 2 if s.flies else r.bottom - dh
         if s.act: s.act["h"].draw(s, s.act["a"], s.act, v)
-        img = sprite(mob_frame(s.kind, d, s.anim.split("|"), s.anim_t, s.anim_p), dw, dh, s.dir < 0, bool(hot))
-        if img: v.blit(img, (r.centerx - dw // 2, top))
+        if d.get("boss_visual") == "morgart":
+            draw_boss(v, (s.cx, s.cy), s.hands, s.t, bool(hot), appearing=True, act=s.act)
         else:
-            pg.draw.rect(v, (255, 255, 255) if hot else d.get("color", [200, 200, 200]), r, border_radius=5)
-            pg.draw.rect(v, (20, 10, 10), (r.centerx + s.dir * 5 - 2, r.top + 6, 4, 4))
+            img = sprite(mob_frame(s.kind, d, s.anim.split("|"), s.anim_t, s.anim_p), dw, dh, s.dir < 0, bool(hot))
+            if img: v.blit(img, (r.centerx - dw // 2, top))
+            else:
+                pg.draw.rect(v, (255, 255, 255) if hot else d.get("color", [200, 200, 200]), r, border_radius=5)
+                pg.draw.rect(v, (20, 10, 10), (r.centerx + s.dir * 5 - 2, r.top + 6, 4, 4))
         if debug:
             pg.draw.rect(v, (0, 255, 0), r, 1)
+            if d.get("boss_visual") == "morgart":
+                for hb in s.collision_rects(): pg.draw.rect(v, (255, 70, 210), hb, 2)
+                if s.hands:
+                    for hd in s.hands.alive_hands(): pg.draw.circle(v, (90, 220, 255), (int(hd.home[0]), int(hd.home[1])), 6, 2)
             if s.act and "box" in s.act: pg.draw.rect(v, (255, 0, 255), s.act["box"], 1)
         if not d.get("boss"):
             pg.draw.rect(v, (60, 20, 20), (r.centerx - 14, top - 8, 28, 3))
             pg.draw.rect(v, (220, 60, 60), (r.centerx - 14, top - 8, 28 * max(0, s.hp) / s.maxhp, 3))
 
-def spawn_boss(room, scale=1.0, player_count=1):
-    """Создать босса на ближайшей свободной площадке; вызывается только авторитетным миром/хостом."""
+def _draw_front(s, v):
+    """Руки, державшие игрока, рисуются поверх него (вызывается после отрисовки игроков)."""
+    if s.hands: s.hands.draw_front(v)
+Mob.draw_front = _draw_front
+
+def spawn_boss(room, scale=1.0, player_count=1, position=None):
+    """Создать Моргарта; вызывается только авторитетным миром/хостом.
+    Центр головы (он же центр физического ядра): якорь головы из карты (morgart_layout) > точка маркера C/B
+    (position — низ клетки маркера, голова ставится в её центр) > стандартное место. Руки ставятся от головы."""
     cfg = CFG.get("boss", {})
     if "__boss__" not in CFG.get("mobs", {}): return None
     d = normalize(CFG["mobs"]["__boss__"])
-    # Ищем пол в центральной части комнаты, чтобы босс не появлялся внутри стены.
-    candidates = []
-    center = room.width_px / 2
-    for c in range(room.width):
-        x = c * 32 + 16
-        floor_y = None
-        for rr in range(room.height):
-            if room.chars[rr][c] in "#D=":
-                floor_y = rr * 32
-                break
-        if floor_y is None: continue
-        rect = pg.Rect(0, floor_y - d.get("h", 72), d.get("w", 56), d.get("h", 72))
-        rect.centerx = int(x)
-        # Проверяем свободное место под тело; площадка сама остаётся под ногами.
-        from core import free
-        if free(room.g, rect): candidates.append((abs(x - center), x, floor_y))
-    if candidates:
-        _, x, floor_y = min(candidates)
-        y = floor_y - d.get("h", 72)
-    else:
-        x = room.width_px / 2 - d.get("w", 56) / 2
-        y = max(0, room.height_px - 3 * 32 - d.get("h", 72))
     per_player = max(0.0, float(cfg.get("health_per_player", 0.45)))
     hp_scale = scale * (1.0 + per_player * max(0, int(player_count) - 1))
-    return Mob("__boss__", x, y, hp_scale)
+    world = (room.width_px, room.height_px)
+    marker = (position[0], position[1] - T / 2) if position is not None else None
+    hx, hy = head_point(room.d.get("morgart_layout", {}), world, marker)
+    w, h = d.get("w", 56), d.get("h", 72)
+    return Mob("__boss__", hx - w / 2, hy - h / 2, hp_scale, room)
 
 
 class Corpse:
     """Проигрывает анимацию death (если она есть) на месте погибшего моба и исчезает."""
     def __init__(s, m):
         s.kind, s.d, s.dir, s.rect, s.flies = m.kind, m.d, m.dir, m.rect, m.flies
+        s.hands = getattr(m, "hands", None)      # у Моргарта — оставшиеся руки растворяются вместе с головой
         s.t = 0.0; s.dur = anim_length(m.kind, m.d, "death") + s.d.get("corpse_time", 0)
     @property
     def dead(s): return s.t >= s.dur
@@ -164,5 +245,8 @@ class Corpse:
     def draw(s, v):
         dw, dh = s.d.get("draw", [s.rect.w, s.rect.h]); r = s.rect
         top = r.centery - dh // 2 if s.flies else r.bottom - dh
+        if s.d.get("boss_visual") == "morgart":
+            draw_boss(v, r.center, getattr(s, "hands", None), s.t, fade=max(0.0, 1.0 - s.t / max(s.dur, 0.01)), appearing=False)
+            return
         img = sprite(mob_frame(s.kind, s.d, ["death"], s.t), dw, dh, s.dir < 0)
         if img: v.blit(img, (r.centerx - dw // 2, top))

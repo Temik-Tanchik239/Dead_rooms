@@ -1,0 +1,18 @@
+{
+  "name": "Моргарт",
+  "description": "Отдельные прозрачные текстуры головы и четырёх когтистых рук Моргарта.",
+  "shared_health": true,
+  "assets": {
+    "head": "morgart_head.png",
+    "upper_left_hand": "morgart_hand_upper_left.png",
+    "upper_right_hand": "morgart_hand_upper_right.png",
+    "lower_left_hand": "morgart_hand_lower_left.png",
+    "lower_right_hand": "morgart_hand_lower_right.png"
+  },
+  "animation": {
+    "appearance": "fast fade/scale-in (0.48s)",
+    "idle": "short head and hand pulses",
+    "attack": "0.16s windup, 0.10s strike, 0.20s recovery",
+    "death": "0.65s dissolve"
+  }
+}

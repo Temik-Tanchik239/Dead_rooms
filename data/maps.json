@@ -95,6 +95,15 @@
     },
     "%": {
       "light": "orb"
+    },
+    "B": {
+      "type": "empty",
+      "boss": true
+    },
+    "C": {
+      "type": "empty",
+      "boss": true,
+      "boss_type": "morgart"
     }
   },
   "_help_lighting": "Освещение. Блоки света в легенде: * факел, o фонарь, + кристалл, % магическая сфера (поле light). lights — заготовки света (цвет, радиус, мерцание, как рисовать). lighting — общие настройки: default_darkness — темнота карты с блоками света, если у карты нет своего darkness; ambient — оттенок темноты; player_light — свет вокруг игрока; projectile_light — светятся ли снаряды; resolution — качество (1 — лучше, 4 — быстрее). У карты: \"darkness\": 0..1 и \"ambient\": [r, g, b]. Подробно — lighting.py и README.",

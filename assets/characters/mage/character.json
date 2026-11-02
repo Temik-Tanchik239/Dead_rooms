@@ -10,6 +10,10 @@
   "icon": "characters/mage/icon.png",
   "anim_fps": 3,
   "anims": {
+    "idle": {
+      "frames": "characters/mage/idle",
+      "fps": 6
+    },
     "move": {
       "frames": "characters/mage/move",
       "fps": 8
@@ -55,7 +59,7 @@
   },
   "select": {
     "idle": "idle",
-    "selected": "move",
-    "fps": 8
+    "selected": "idle",
+    "fps": 6
   }
 }

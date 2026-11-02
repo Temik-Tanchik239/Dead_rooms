@@ -187,3 +187,16 @@ def draw_boss_bar(scr, mobs, font):
     if cfg.get("show_numbers", True):
         nums = font.render(f"{max(0, int(boss.hp))} / {int(boss.maxhp)}", True, tuple(cfg.get("number_color", [255, 255, 255])))
         scr.blit(nums, nums.get_rect(center=(x + w // 2, y + h // 2)))
+    # Моргарт: пока живы руки, голова под щитом; под её полосой — общая полоса здоровья рук.
+    hands = getattr(boss, "hands", None)
+    if hands is not None and hands.list:
+        left = hands.alive_count()
+        if left and boss.head_shielded():
+            shade = pg.Surface((w, h), pg.SRCALPHA); shade.fill((90, 90, 110, 150)); scr.blit(shade, (x, y))
+        if left:
+            hy = y + h + 6; hh = max(8, h // 2)
+            pg.draw.rect(scr, tuple(cfg.get("back", [35, 18, 25])), (x, hy, w, hh), border_radius=4)
+            pg.draw.rect(scr, (255, 170, 60), (x, hy, int(w * hands.hp_ratio()), hh), border_radius=4)
+            pg.draw.rect(scr, tuple(cfg.get("border", [235, 190, 150])), (x, hy, w, hh), 1, border_radius=4)
+            txt = font.render(f"РУКИ {left}/{len(hands.list)}" + ("  —  голова под щитом" if boss.head_shielded() else ""), True, (255, 235, 200))
+            scr.blit(txt, txt.get_rect(center=(x + w // 2, hy + hh // 2)))

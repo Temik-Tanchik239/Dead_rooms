@@ -12,7 +12,7 @@ data/maps/<id>.json — одна карта: сетка произвольног
             "left" | "right" | "up" | "down" (соседняя карта по сетке мира, см. pos) | [x, y] (карта в этой клетке сетки)
   arrive  — (у выхода) символ, у которого появиться на целевой карте
   player  — true: точка старта игрока
-  mob     — id моба из mobs.json или "random"
+  mob     — id моба из mobs.json или "random"\n  boss    — true: точка появления обычного босса (B) или Моргарта (C; boss_type=morgart)
   item    — id оружия или "random": оружие лежит на полу
   sprite  — картинка клетки из assets (иначе стандартная отрисовка типа), draw [w, h], offset [x, y], color [r, g, b]
   damage  — урон шипов
@@ -24,7 +24,7 @@ from core import CFG, T, COLS, ROWS, MW
 from anim import sprite, image
 import weapon
 import lighting
-from mob import Mob
+from mob import Mob, spawn_boss
 
 END = "__end__"
 PHYS = {"empty": ".", "wall": "#", "platform": "=", "ladder": "H", "spikes": "x"}
@@ -324,6 +324,13 @@ class GameMap:
         if not pool: pool = {n: CFG["mobs"][n].get("weight", 1) for n in names}
         pool = {n: w for n, w in pool.items() if n in CFG["mobs"]}
         for c, r, e in s.cells():
+            if e.get("boss") and not s.boss_spawned:
+                # B и C — два варианта маркера появления Моргарта; оба используют assets/boss/boss.json.
+                boss = spawn_boss(s, s.scale, 1, (c * T + T / 2, (r + 1) * T))
+                if boss:
+                    s.mobs.append(boss)
+                    s.boss_spawned = True
+                continue
             kind = e.get("mob")
             if not kind: continue
             if kind == "random":
@@ -423,6 +430,7 @@ def check():
         for ch, e in lg.items():
             if e["type"] not in PHYS: out.append(f"{mid}: '{ch}' — неизвестный type {e['type']}")
             if e.get("mob") not in (None, "random") and e["mob"] not in CFG["mobs"]: out.append(f"{mid}: '{ch}' — нет моба {e['mob']}")
+            if e.get("boss") and "__boss__" not in CFG.get("mobs", {}): out.append(f"{mid}: '{ch}' — не настроен босс (__boss__ в data/mobs.json)")
             if e.get("item") not in (None, "random") and e["item"] not in CFG["weapons"]: out.append(f"{mid}: '{ch}' — нет оружия {e['item']}")
             ex = e.get("exit")
             if ex is not None and not valid_exit(ex, defs): out.append(f"{mid}: '{ch}' ведёт на несуществующую карту {ex}")

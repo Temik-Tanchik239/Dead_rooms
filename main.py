@@ -9,6 +9,7 @@ CAMERA_ZOOM = 0.92  # меньше 1.0 — камера дальше, видно
 from anim import clear_cache, sprite, mob_frame
 import weapon
 import hud
+import spells
 from projectiles import volley
 from mob import Mob, Corpse, spawn_boss
 import characters as char_menu
@@ -21,6 +22,30 @@ BASE_SKILLS = ["dash"]
 DEFAULT_WEAPONS = ["rusty_sword", "short_bow"]
 AIR_ANIM_DELAY = 0.10   # сколько секунд герой должен быть в воздухе, чтобы включилась анимация прыжка (падение)
 AIR_ANIM_RISE = 40      # скорость взлёта (px/с), с которой прыжок включается сразу
+
+# ---------- отрисовка эффектов заклинаний (молнии, удар сверху, вспышка) ----------
+def _beam_points(x1, y1, x2, y2, segs=7, jitter=9):
+    """Ломаная «молния» между точками с поперечным дрожанием (пересчитывается каждый кадр — мерцает)."""
+    dx, dy = x2 - x1, y2 - y1; L = math.hypot(dx, dy) or 1.0; nx, ny = -dy / L, dx / L
+    pts = [(x1, y1)]
+    for i in range(1, segs):
+        f = i / segs; off = random.uniform(-jitter, jitter)
+        pts.append((x1 + dx * f + nx * off, y1 + dy * f + ny * off))
+    pts.append((x2, y2))
+    return [(int(a), int(b)) for a, b in pts]
+
+def _draw_beam(v, x1, y1, x2, y2, col, k):
+    """k — доля оставшейся жизни (1..0): цвет гаснет к чёрному фону (альфа без отдельной поверхности)."""
+    c = tuple(int(ch * k) for ch in col[:3]); core = tuple(min(255, int(ch + (255 - ch) * .45)) for ch in c)
+    pts = _beam_points(x1, y1, x2, y2)
+    pg.draw.lines(v, c, False, pts, 5); pg.draw.lines(v, core, False, pts, 2)
+
+def _draw_bolt(v, x, y, col, k):
+    _draw_beam(v, x, y - 300, x, y, col, k)
+    c = tuple(int(ch * k) for ch in col[:3]); pg.draw.circle(v, c, (int(x), int(y)), int(12 + 46 * (1 - k)), 3)
+
+def _draw_flash(v, x, y, r, col, k):
+    c = tuple(int(ch * k) for ch in col[:3]); pg.draw.circle(v, c, (int(x), int(y)), int(r * (1 - k) + 6), 3)
 
 def in_char(fn):
     """Метод игрока выполняется с данными ЕГО героя (в мультиплеере у игроков разные персонажи)."""
@@ -238,46 +263,9 @@ class Player(Body):
         s.skill_index = (s.skill_index + direction) % len(active_skills)
         s.skill_notice = 1.0
     @in_char
-    def use_skill(s, mobs, fx):
-        """Использует активный скилл из data/skills.json; новые скиллы добавляются в JSON."""
-        defs = CFG.get("skills", {})
-        active_skills = [sid for sid in s.skills if defs.get(sid, {}).get("category", "active") == "active"]
-        if not active_skills: return
-        sid = active_skills[s.skill_index % len(active_skills)]
-        a = defs.get(sid)
-        if not a: return
-        if s.skill_cooldowns.get(sid, 0) > 0:
-            fx.text(f"{a.get('name', sid)}: {s.skill_cooldowns[sid]:.1f}с", s.cx, s.y - 18)
-            return
-        # Активные навыки расходуют ману; стоимость задаётся в data/skills.json.
-        cost = max(0.0, float(a.get("mana_cost", 20.0)))
-        if s.mana < cost:
-            s.mana_flash = .35
-            fx.text("Недостаточно маны", s.cx, s.y - 18)
-            return
-        kind = a.get("type", "nova")
-        s.skill_cast = (sid, 0.0, float(a.get("cast_animation", 0.55)))
-        if kind == "dash":
-            s.vx = s.face * a.get("speed", 620); s.inv = max(s.inv, a.get("invulnerability", .18))
-            fx.ring(s.cx + s.face * 20, s.cy, a.get("radius", 24))
-        elif kind == "nova":
-            radius, damage = a.get("radius", 100), a.get("damage", 25)
-            fx.ring(s.cx, s.cy, radius); fx.shake = max(fx.shake, .12)
-            for m in mobs:
-                near = m.collides_circle(s.cx, s.cy, radius) if hasattr(m, "collides_circle") else (m.cx-s.cx)**2 + (m.cy-s.cy)**2 <= radius**2
-                if near: m.hurt(damage * s.dmg_mult(), s.face * a.get("knockback", 220), fx)
-        elif kind == "heal":
-            amount = a.get("amount", 30); s.hp = min(s.maxhp, s.hp + amount)
-            fx.ring(s.cx, s.cy, a.get("radius", 42))
-        elif kind == "shield":
-            s.shield_time = max(0.1, float(a.get("duration", 4.0)))
-            s.shield_hp = max(1.0, float(a.get("capacity", 60)))
-            s.shield_face = s.face
-            fx.ring(s.cx + s.shield_face * 26, s.cy, a.get("radius", 42))
-        s.mana -= cost
-        s.mana_t = CFG["player"].get("mana", {}).get("regen_delay", .9)
-        s.skill_cooldowns[sid] = max(0.0, float(a.get("cooldown", 5.0)))
-        fx.text(f"{a.get('name', sid)} (-{cost:g} маны)", s.cx, s.y - 18)
+    def use_skill(s, mobs, projs, fx):
+        """Использует текущий активный навык/заклинание. Эффекты — реестр @spell в spells.py."""
+        spells.cast(s, mobs, projs, fx)
 
     def ledge(s, g):
         c = int((s.x + s.w + 2) // T) if s.wall > 0 else int((s.x - 2) // T); hr = int((s.y + 6) // T)
@@ -314,7 +302,14 @@ class Player(Body):
         if s.ground: s.air_jumps = 0
         if s.buf.get("skill", 0) > 0:
             s.buf["skill"] = 0
-            s.use_skill(mobs, fx)
+            s.use_skill(mobs, projs, fx)
+        # Маг (spellcaster) не использует оружие: ЛКМ кастует текущее заклинание, ПКМ не нужна.
+        # Кастуем только когда заклинание готово — иначе зажатая ЛКМ спамила бы сообщениями.
+        if CFG.get("character", {}).get("spellcaster"):
+            if s.buf.get("a1", 0) > 0 and spells.ready(s):
+                s.buf["a1"] = 0
+                s.use_skill(mobs, projs, fx)
+            s.buf["a2"] = 0
         # Регенерация здоровья: начинается после hp_regen_delay секунд без полученного урона.
         s.hp_regen_timer += dt
         hp_regen_delay = max(0.0, float(p.get("hp_regen_delay", 5.0)))
@@ -524,6 +519,8 @@ class Game:
     def pickup(s, pl=None):
         pl = pl or s.pl
         with use_char(pl.char_id):   # у каждого героя свои правки оружия
+            if CFG.get("character", {}).get("spellcaster"):   # маг не подбирает и не носит оружие
+                s.fx.text("Маг не использует оружие", pl.cx, pl.y - 10); return
             for dr in s.room.drops:
                 if abs(dr.x - pl.cx) < 36 and abs(dr.y - pl.cy) < 50:
                     if not pl.can_use(dr.wid):   # оружие не из списка allowed_weapons персонажа
@@ -910,7 +907,10 @@ class Game:
         if s.grid: s.draw_grid(v)
         for kind, x, y, data, t in s.fx.items:
             if kind == "t": v.blit(s.font.render(data, True, (255, 240, 160)), (x - 14, y - (0.7 - t) * 40))
-            else: pg.draw.circle(v, (255, 200, 120), (int(x), int(y)), int(data * (1 - t / .25) + 4), 2)
+            elif kind == "r": pg.draw.circle(v, (255, 200, 120), (int(x), int(y)), int(data * (1 - t / .25) + 4), 2)
+            elif kind == "beam": _draw_beam(v, x, y, data[0], data[1], data[2], max(0.0, min(1.0, t / .22)))
+            elif kind == "bolt": _draw_bolt(v, x, y, data, max(0.0, min(1.0, t / .3)))
+            elif kind == "flash": _draw_flash(v, x, y, data[0], data[1], max(0.0, min(1.0, t / .25)))
         # Не сдвигаем готовый кадр относительно экрана: при таком shake
         # по краям появлялись чёрные полосы. Камера ограничивается картой ниже.
         # Небольшой отдалённый зум: видно больше уровня вокруг персонажа.

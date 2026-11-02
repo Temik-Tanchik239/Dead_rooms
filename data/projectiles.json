@@ -178,5 +178,59 @@
       58,
       8
     ]
+  },
+  "fire_bolt": {
+    "speed": 440,
+    "size": 6,
+    "color": [
+      255,
+      140,
+      50
+    ],
+    "life": 1.6,
+    "aoe": 48,
+    "knockback": 180,
+    "draw": [
+      30,
+      20
+    ]
+  },
+  "ice_bolt": {
+    "speed": 420,
+    "size": 6,
+    "color": [
+      150,
+      225,
+      255
+    ],
+    "life": 1.6,
+    "knockback": 120,
+    "effect": {
+      "freeze": 2.0
+    },
+    "draw": [
+      28,
+      16
+    ]
+  },
+  "arcane_bolt": {
+    "speed": 360,
+    "size": 6,
+    "color": [
+      190,
+      130,
+      255
+    ],
+    "life": 2.5,
+    "pierce": 2,
+    "knockback": 100,
+    "homing": {
+      "rate": 2.0,
+      "delay": 0.2
+    },
+    "draw": [
+      28,
+      24
+    ]
   }
 }

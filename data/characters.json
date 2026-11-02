@@ -226,8 +226,9 @@
     "mage": {
       "name": "Чародей",
       "role": "Маг",
-      "description": "Хрупкий, но с огромным запасом маны и быстрой регенерацией. Посох-искатель сам находит цель, а усиленный Импульс раскидывает толпу.",
+      "description": "Чистый заклинатель: оружия нет, вместо него книга заклинаний. ЛКМ или Q — применить выбранное заклинание в курсор, C/V — листать книгу (показаны предыдущее, текущее и следующее). Огромный запас маны и быстрая регенерация, но мало здоровья.",
       "assets": "characters/mage",
+      "spellcaster": true,
       "stats": {
         "hp": 75,
         "speed": 200,
@@ -244,56 +245,39 @@
         "rusty_sword",
         "seeker_staff"
       ],
-      "allowed_weapons": [
-        "rusty_sword",
-        "twin_daggers",
-        "seeker_staff",
-        "fire_flask"
-      ],
+      "allowed_weapons": [],
       "base_skills": [
-        "nova"
+        "chain_lightning",
+        "fireball",
+        "ice_shard",
+        "thunderstrike",
+        "arcane_orb",
+        "frost_nova",
+        "meteor"
       ],
       "skill_tree": [
         {
-          "skill": "nova",
-          "unlock_level": 1
-        },
-        {
-          "skill": "mana_reserve",
+          "skill": "mana_regen",
           "unlock_level": 2
         },
         {
-          "skill": "mana_ranged",
+          "skill": "mana_reserve",
           "unlock_level": 3
         },
         {
-          "skill": "heal",
+          "skill": "fury",
           "unlock_level": 4
         },
         {
-          "skill": "mana_regen",
+          "skill": "vitality",
           "unlock_level": 5
         },
         {
-          "skill": "shield",
-          "unlock_level": 6
-        },
-        {
           "skill": "double_jump",
-          "unlock_level": 7
-        },
-        {
-          "skill": "fury",
-          "unlock_level": 8
+          "unlock_level": 6
         }
       ],
-      "skill_overrides": {
-        "nova": {
-          "damage": 36,
-          "radius": 125,
-          "cooldown": 5.0
-        }
-      },
+      "skill_overrides": {},
       "weapon_overrides": {},
       "model_scale": 1.0,
       "hitbox": [

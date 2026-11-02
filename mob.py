@@ -7,6 +7,7 @@ from movement import MOVES, look
 from attacks import ATTACKS, players_of
 from anim import sprite, mob_frame, anim_length
 from boss_hands import HandSet, head_point, draw_boss
+import status
 
 def normalize(d):
     """Старый формат ("ai": walker | flyer | shooter) -> новый ("move" + "attacks")."""
@@ -31,6 +32,7 @@ class Mob(Body):
         s.loop_t = random.random() * s.mv.get("period", 4); s.wp = 0
         s.anim, s.anim_t, s.anim_p = "idle", 0.0, None
         s.hands = None; s.alone = False; s._parts = None; s._shield_msg = -9.0
+        status.init(s)   # статусные таймеры: заморозка / горение (status.py)
         if d.get("boss_visual") == "morgart": s.setup_morgart(room, scale)
 
     # ---------- Моргарт: голова = сам моб, руки — отдельные части (boss_hands.py) ----------
@@ -126,6 +128,7 @@ class Mob(Body):
     def update(s, dt, w):
         d = s.d; s.t += dt; s.flash -= dt; s.gap -= dt
         s.cds = [c - dt for c in s.cds]
+        status.tick(s, dt, w)   # заморозка тает, горение наносит урон
         is_morgart = d.get("boss_visual") == "morgart"
         move = MOVES[s.mv.get("type", "chase")]
         if is_morgart:
@@ -201,6 +204,10 @@ class Mob(Body):
             else:
                 pg.draw.rect(v, (255, 255, 255) if hot else d.get("color", [200, 200, 200]), r, border_radius=5)
                 pg.draw.rect(v, (20, 10, 10), (r.centerx + s.dir * 5 - 2, r.top + 6, 4, 4))
+        tcol = status.tint(s)   # заморожен — синий, горит — оранжевый
+        if tcol and not d.get("boss"):
+            glow = pg.Surface((max(1, dw), max(1, dh)), pg.SRCALPHA); glow.fill(tcol)
+            v.blit(glow, (r.centerx - dw // 2, top))
         if debug:
             pg.draw.rect(v, (0, 255, 0), r, 1)
             if d.get("boss_visual") == "morgart":

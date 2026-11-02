@@ -14,6 +14,7 @@ import math
 import pygame as pg
 from core import CFG, T, solid, sign, circle_hits_rect
 from anim import sprite, frames
+import status
 
 BEHAVIORS, DEATH = {}, {}
 def behavior(key):
@@ -54,7 +55,10 @@ class Proj:
         sp = s.speed if speed is None else speed; s.vx, s.vy = math.cos(angle) * sp, math.sin(angle) * sp
     def targets(s, w): return w.mobs if s.friendly else (getattr(w, "players", None) or [w.pl])   # мультиплеер: все живые игроки
     def damage(s, target, w, kb_dir):
-        if s.friendly: target.hurt(s.dmg, kb_dir * s.kb, w.fx)
+        if s.friendly:
+            target.hurt(s.dmg, kb_dir * s.kb, w.fx)
+            eff = s.d.get("effect")   # напр. {"freeze": 2.0} у ледяной пули — применяется только к мобам
+            if eff and hasattr(target, "frozen"): status.apply(target, eff, w.fx)
         else: target.hit(s.dmg, s.x, w.fx, s.kb)
     def die(s, w):
         if s.dead: return

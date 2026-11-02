@@ -163,6 +163,10 @@ class FX:
     def __init__(s): s.shake = s.stop = 0; s.items = []
     def text(s, t, x, y): s.items.append(["t", x, y, t, .7])
     def ring(s, x, y, r): s.items.append(["r", x, y, r, .25])
+    # Эффекты заклинаний. data — JSON-дружелюбные списки/числа (сериализуются в мультиплеере).
+    def beam(s, x1, y1, x2, y2, col=(170, 210, 255)): s.items.append(["beam", x1, y1, [x2, y2, list(col)[:3]], .22])
+    def bolt(s, x, y, col=(200, 230, 255)): s.items.append(["bolt", x, y, list(col)[:3], .3])
+    def flash(s, x, y, r, col=(255, 255, 255)): s.items.append(["flash", x, y, [r, list(col)[:3]], .25])
 
 class Body:
     def __init__(s, x, y, w, h):

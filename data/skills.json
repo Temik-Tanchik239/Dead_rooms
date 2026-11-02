@@ -188,5 +188,134 @@
       170
     ],
     "description": "Скорость бега увеличена на 12%"
+  },
+  "chain_lightning": {
+    "name": "Удар молнией",
+    "category": "active",
+    "type": "chain_lightning",
+    "cooldown": 2.2,
+    "damage": 24,
+    "range": 340,
+    "chain_range": 150,
+    "chains": 3,
+    "falloff": 0.75,
+    "knockback": 120,
+    "icon": "icons/skill_chain_lightning.png",
+    "color": [
+      140,
+      200,
+      255
+    ],
+    "mana_cost": 14,
+    "description": "Бьёт по цели и перескакивает на ближайших врагов"
+  },
+  "thunderstrike": {
+    "name": "Мощный удар молнией",
+    "category": "active",
+    "type": "strike_area",
+    "cooldown": 6.0,
+    "radius": 90,
+    "damage": 46,
+    "stun": 2.0,
+    "knockback": 200,
+    "icon": "icons/skill_thunderstrike.png",
+    "color": [
+      180,
+      170,
+      255
+    ],
+    "mana_cost": 32,
+    "description": "Молния бьёт сверху в выбранную область и оглушает врагов на 2 секунды"
+  },
+  "fireball": {
+    "name": "Огненный выстрел",
+    "category": "active",
+    "type": "projectile",
+    "projectile": "fire_bolt",
+    "cooldown": 0.9,
+    "damage": 22,
+    "icon": "icons/skill_fireball.png",
+    "color": [
+      255,
+      140,
+      50
+    ],
+    "mana_cost": 12,
+    "description": "Огненный снаряд, взрывается при попадании"
+  },
+  "ice_shard": {
+    "name": "Ледяной выстрел",
+    "category": "active",
+    "type": "projectile",
+    "projectile": "ice_bolt",
+    "cooldown": 1.3,
+    "damage": 16,
+    "icon": "icons/skill_ice_shard.png",
+    "color": [
+      120,
+      220,
+      255
+    ],
+    "mana_cost": 16,
+    "description": "Замораживает врага при попадании"
+  },
+  "arcane_orb": {
+    "name": "Чародейская сфера",
+    "category": "active",
+    "type": "projectile",
+    "projectile": "arcane_bolt",
+    "cooldown": 2.0,
+    "damage": 20,
+    "icon": "icons/skill_arcane_orb.png",
+    "color": [
+      190,
+      130,
+      255
+    ],
+    "mana_cost": 18,
+    "description": "Самонаводящаяся сфера, пробивает несколько врагов"
+  },
+  "frost_nova": {
+    "name": "Морозная волна",
+    "category": "active",
+    "type": "nova",
+    "cooldown": 7.0,
+    "radius": 120,
+    "damage": 18,
+    "knockback": 160,
+    "effect": {
+      "freeze": 1.6
+    },
+    "icon": "icons/skill_frost_nova.png",
+    "color": [
+      150,
+      230,
+      255
+    ],
+    "mana_cost": 26,
+    "description": "Взрыв холода вокруг игрока, замораживает врагов рядом"
+  },
+  "meteor": {
+    "name": "Метеор",
+    "category": "active",
+    "type": "strike_area",
+    "cooldown": 10.0,
+    "radius": 120,
+    "damage": 60,
+    "knockback": 240,
+    "effect": {
+      "burn": {
+        "time": 3,
+        "dps": 10
+      }
+    },
+    "icon": "icons/skill_meteor.png",
+    "color": [
+      255,
+      120,
+      50
+    ],
+    "mana_cost": 42,
+    "description": "Падает метеор: большой урон по области и поджигает врагов"
   }
 }

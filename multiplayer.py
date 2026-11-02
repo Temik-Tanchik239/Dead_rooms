@@ -705,7 +705,7 @@ class HostSession(Session):
                 "done": g.done, "over": s.game_over, "pl": pls, "mobs": mobs,
                 "corpses": [[c.kind, c.dir, c.rect.x, c.rect.y, c.rect.w, c.rect.h, round(c.t, 3)] for c in r.corpses],
                 "projs": projs, "styles": styles, "drops": [[R(d.x), R(d.y), d.wid] for d in r.drops],
-                "fx": [[k, R(x), R(y), d if isinstance(d, str) else R(d), round(t, 3)] for k, x, y, d, t in g.fx.items]}
+                "fx": [[k, R(x), R(y), R(d) if isinstance(d, (int, float)) else d, round(t, 3)] for k, x, y, d, t in g.fx.items]}
 
     _nid = 0
     def next_nid(s):

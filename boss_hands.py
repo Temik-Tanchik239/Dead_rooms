@@ -561,12 +561,17 @@ class HandSet:
             if name and name in s.cfg["attacks"] and st == 0:
                 a = s.attack_params(name); H = HAND_ATTACKS.get(a["type"])
                 h.act = {"name": name, "a": a, "h": H, "phase": ph, "t": t + ahead, "from": (fx_, fy_), "to": (tx, ty), "shared": {}} if H else None
+                # Поля, которые хост держит только у себя и не пересылает, восстанавливаем из переданных:
+                # точка удара slam лежит на полу под «to» (to = g - половина высоты руки), её рисует телеграф.
+                if h.act and a.get("type") == "slam": h.act["g"] = (tx, ty + h.box[1] / 2)
             else: h.act = None
 
     # ---------- рисование ----------
     def draw_telegraphs(s, v):
         for h in s.alive_hands():
-            if h.act and h.act.get("h"): h.act["h"].draw(h, h.act["a"], h.act, v)
+            if h.act and h.act.get("h"):
+                try: h.act["h"].draw(h, h.act["a"], h.act, v)
+                except (KeyError, TypeError, ValueError): pass      # телеграф без нужных данных (клиент в сети) — просто пропускаем, а не роняем кадр
     def draw(s, v, alpha=255, scale=1.0, hot=False):
         for h in s.list: h.draw(v, alpha, scale, False, bar=False)   # каждая рука мигает сама (h.flash), не вместе с головой
         for h in s.alive_hands(): h.draw_bar(v, alpha)

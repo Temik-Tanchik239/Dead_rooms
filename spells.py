@@ -14,8 +14,52 @@ import pygame as pg
 from core import CFG, sign
 from projectiles import volley
 import status
+from anim import frames, ASSETS_EXISTS
 
 SPELLS = {}
+
+# Поля навыка, которые переопределяют вид снаряда заклинания (имя в skills.json -> поле пули в projectiles.json).
+# Пример: "projectile": "fire_bolt", "projectile_skin": "projectiles/my_fire.png", "projectile_draw": [40, 24]
+PROJECTILE_FIELDS = {
+    "projectile_skin": "skin", "projectile_frames": "frames", "projectile_fps": "fps",
+    "projectile_draw": "draw", "projectile_rotate": "rotate", "projectile_size": "size",
+    "projectile_color": "color", "projectile_speed": "speed",
+}
+
+
+def icon_path(sid, a=None):
+    """Путь к иконке заклинания (относительно assets/). Порядок поиска:
+    1) поле \"icon\" навыка, если файл существует; 2) icons/skill_<id>.png; 3) icons/<id>.png.
+    Ничего не нашлось -> None (HUD нарисует кружок цвета заклинания)."""
+    a = a if a is not None else CFG.get("skills", {}).get(sid, {})
+    cands = [a.get("icon"), f"icons/skill_{sid}.png", f"icons/{sid}.png"]
+    for c in cands:
+        if c and ASSETS_EXISTS(c):
+            return c
+    return None
+
+
+def projectile_spec(a):
+    """Описание снаряда заклинания: тип из \"projectile\" + правки из полей projectile_* навыка.
+    Если правок нет, но лежит assets/projectiles/<id заклинания>.png (или папка с кадрами
+    assets/projectiles/<id заклинания>/) — берётся он. Результат понимает projectiles.resolve()."""
+    base = a.get("projectile", "bolt")
+    over = {dst: a[src] for src, dst in PROJECTILE_FIELDS.items() if src in a}
+    sid = a.get("_sid")
+    if sid and not ({"skin", "frames", "sprite"} & set(over)):
+        if frames(f"projectiles/{sid}"):
+            fr = frames(f"projectiles/{sid}")
+            if len(fr) > 1 or not ASSETS_EXISTS(f"projectiles/{sid}.png"):
+                over["frames"] = f"projectiles/{sid}"
+            else:
+                over["skin"] = f"projectiles/{sid}.png"
+        elif ASSETS_EXISTS(f"projectiles/{sid}.png"):
+            over["skin"] = f"projectiles/{sid}.png"
+    if not over:
+        return base
+    if isinstance(base, dict):
+        d = dict(base); d.update(over); return d
+    d = {"type": base}; d.update(over); return d
 
 
 def spell(kind):
@@ -85,7 +129,7 @@ def cast(pl, mobs, projs, fx):
         fx.text(f"неизвестное заклинание: {kind}", pl.cx, pl.y - 18)
         return
     pl.skill_cast = (sid, 0.0, float(a.get("cast_animation", 0.55)))
-    fn(pl, a, mobs, projs, fx)
+    fn(pl, dict(a, _sid=sid), mobs, projs, fx)
     pl.mana -= cost
     pl.mana_t = CFG["player"].get("mana", {}).get("regen_delay", .9)
     pl.skill_cooldowns[sid] = max(0.0, float(a.get("cooldown", 5.0)))
@@ -142,8 +186,7 @@ def _shield(pl, a, mobs, projs, fx):
 def _projectile(pl, a, mobs, projs, fx):
     """Выстрел снарядом в курсор. "projectile" — тип/описание пули; эффект пули (поле "effect"
     у типа в data/projectiles.json, напр. заморозка) применяется при попадании внутри projectiles.py."""
-    pr = a.get("projectile", "bolt")
-    o = pr if isinstance(pr, dict) else {}
+    pr = projectile_spec(a)
     hx, hy = pl.hand("shoot")
     ang = 0 if pl.face > 0 else math.pi
     if pl.aim:

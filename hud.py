@@ -143,7 +143,8 @@ def spell_cell(scr, pl, sid, x, y, size, font, active=False):
     color = tuple(sk.get("color", [150, 130, 220]))
     r = pg.Rect(int(x), int(y), int(size), int(size))
     pg.draw.rect(scr, (28, 26, 42) if active else (18, 17, 28), r, border_radius=8)
-    img = sprite(sk.get("icon"), r.w - 6, r.h - 6) if sk.get("icon") else None
+    ip = spells.icon_path(sid, sk)
+    img = sprite(ip, r.w - 6, r.h - 6) if ip else None
     if img: scr.blit(img, img.get_rect(center=r.center))
     else: pg.draw.circle(scr, color, r.center, max(4, size // 2 - 5))
     if not active:   # предыдущее/следующее — приглушены
@@ -202,7 +203,7 @@ def icons(scr, pl, font):
         pl.skill_index %= len(active_skills)
         sid = active_skills[pl.skill_index]
         skill = defs.get(sid, {"name": sid, "color": [150, 130, 220], "cooldown": 1})
-        r = slot(scr, 3, skill.get("icon"), lambda r: pg.draw.circle(scr, skill.get("color", [150, 130, 220]), r.center, 13), border=tuple(skill.get("color", [150, 130, 220])), layout_key="skill")
+        r = slot(scr, 3, spells.icon_path(sid, skill), lambda r: pg.draw.circle(scr, skill.get("color", [150, 130, 220]), r.center, 13), border=tuple(skill.get("color", [150, 130, 220])), layout_key="skill")
         label(scr, font, "Q", r.x + 4, r.y + 3, (255, 230, 150))
         left = max(0.0, getattr(pl, "skill_cooldowns", {}).get(sid, 0.0))
         if left > 0:

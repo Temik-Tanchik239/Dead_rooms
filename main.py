@@ -1066,7 +1066,7 @@ class Game:
                 if border_width:
                     pg.draw.rect(s.scr, border_col, rect, border_width, border_radius=radius)
 
-            icon_rel = d.get("icon") if unlocked else slot.get("lock_icon", f"icons/locks/{sid}_lock.png" if sid else tree.get("lock_icon", "icons/skill_locked.png"))
+            icon_rel = (spells.icon_path(sid, d) if sid else d.get("icon")) if unlocked else slot.get("lock_icon", f"icons/locks/{sid}_lock.png" if sid else tree.get("lock_icon", "icons/skill_locked.png"))
             icon = image(icon_rel, (icon_size, icon_size))
             if icon:
                 icon_rect = icon.get_rect(center=(rect.centerx, rect.y + icon_y))

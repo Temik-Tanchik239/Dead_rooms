@@ -33,6 +33,12 @@ def sprite(path, w, h, flip=False, white=False, angle=0):
         _IMG[key] = img
     return _IMG[key]
 
+def ASSETS_EXISTS(path):
+    """Есть ли файл/папка assets/<path> (для необязательных картинок). Без кэша не ходим в диск каждый кадр."""
+    key = (path, "exists")
+    if key not in _IMG: _IMG[key] = bool(path) and (ASSETS / path).exists()
+    return _IMG[key]
+
 def image(path):
     """Картинка из assets/<path> в родном размере (для фонов). Нет файла -> None."""
     key = (path, "raw")

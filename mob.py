@@ -240,6 +240,20 @@ def spawn_boss(room, scale=1.0, player_count=1, position=None):
     return Mob("__boss__", hx - w / 2, hy - h / 2, hp_scale, room)
 
 
+def scale_boss_for_players(mob, player_count):
+    """Босс, появившийся с маркера карты (B/C), создаётся на одного игрока. В мультиплеере (хост) дорастить здоровье
+    головы и рук под число игроков так же, как это делает spawn_boss(). Повторный вызов ничего не меняет."""
+    if not mob.d.get("boss") or getattr(mob, "_players_scaled", False): return
+    mob._players_scaled = True
+    per = max(0.0, float(CFG.get("boss", {}).get("health_per_player", 0.45)))
+    k = 1.0 + per * max(0, int(player_count) - 1)
+    if k == 1.0: return
+    mob.hp *= k; mob.maxhp *= k
+    if mob.hands:
+        for h in mob.hands.list: h.hp *= k; h.maxhp *= k
+        mob.hands.total_max = sum(h.maxhp for h in mob.hands.list)
+
+
 class Corpse:
     """Проигрывает анимацию death (если она есть) на месте погибшего моба и исчезает."""
     def __init__(s, m):

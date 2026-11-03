@@ -25,7 +25,7 @@ import pygame as pg
 from core import CFG, SETTINGS, T, W, VIEW_H, CHAR, use_char, apply_character, char_ids, char_def, approach, tile, free, FX
 import characters as char_menu
 from maps import Campaign, Drop, END, random_weapon
-from mob import Mob, Corpse, normalize, spawn_boss
+from mob import Mob, Corpse, normalize, spawn_boss, scale_boss_for_players
 from projectiles import Proj
 from attacks import ATTACKS
 from anim import sprite, mob_frame
@@ -513,6 +513,7 @@ class HostSession(Session):
         if not r.spawned:
             r.mobs = []
             r.spawn()
+            for mob in r.mobs: scale_boss_for_players(mob, len(s.players))   # босс с маркера B/C: здоровье растёт с числом игроков
             if r.cleared and camp.order and r.id == camp.order[-1] and not getattr(r, "boss_spawned", False):
                 r.cleared = False
                 players = list(s.players.values())
@@ -885,7 +886,7 @@ class ClientSession(Session):
         a, b, k = s.pick(s.render_time(now, dt))
         ahead = max(0.0, min(.1, (b["ht"] - a["ht"]) * k if b else 0.0))   # сколько прошло после снимка a
         s.apply_players(a, b, k, ahead)
-        s.apply_mobs(g.room, a, b, k, ahead)
+        s.apply_mobs(g.room, a, b, k, ahead, dt)
         corpses = []
         for kind, d, x, y, w, h, t in a.get("corpses", []):
             if kind in CFG["mobs"]: corpses.append(NetCorpse(kind, normalize(CFG["mobs"][kind]), d, pg.Rect(x, y, w, h), t + ahead))
@@ -1020,7 +1021,7 @@ class ClientSession(Session):
         s.scratch_projs.clear(); s.scratch_fx.items.clear()
 
     # ---------- мобы ----------
-    def apply_mobs(s, r, a, b, k, ahead):
+    def apply_mobs(s, r, a, b, k, ahead, dt=0.0):
         rows_b = {row[0]: row for row in b.get("mobs", [])} if b else {}
         out, seen = [], set()
         for nid, kind, x, y, d, hp, mhp, fl, an, at, ap, act, *extra in a.get("mobs", []):
@@ -1036,6 +1037,7 @@ class ClientSession(Session):
             else: at += ahead
             m.x, m.y, m.dir, m.hp, m.maxhp, m.flash = x, y, d, hp, mhp, fl
             m.anim, m.anim_t, m.anim_p = an, at, ap
+            m.t += dt      # у клиентского моба нет update(): без этого «часы» Моргарта стоят на 0 и босс рисуется полностью прозрачным
             if getattr(m, "hands", None) and extra and extra[0]:
                 nbh = nb[12] if nb and len(nb) > 12 else None
                 m.hands.net_apply(extra[0], nbh, k, ahead)

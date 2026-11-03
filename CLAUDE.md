@@ -26,7 +26,7 @@
 |---|---|---|
 | `main.py` | ~1130 | Класс `Player` (физика/бой/мана/опыт; `use_skill` делегирует в `spells.cast`), класс `Game` (главный цикл, состояния, меню, рендер, ввод, хелперы `_draw_beam/_draw_bolt/_draw_flash` для эффектов заклинаний). Точка входа. |
 | `core.py` | ~195 | Фундамент: пути (`DATA`/`ASSETS`), глобальный `CFG`, `reload_data()`, система персонажей (`apply_character`/`use_char`), базовое физ-тело `Body`, `FX` (включая `beam`/`bolt`/`flash` для молний), мелкие утилиты (`sign`, `tile`, `solid`...). |
-| `spells.py` | ~230 | Заклинания/активные навыки игрока. Реестр `@spell("тип")`: `dash`, `nova`, `heal`, `shield`, `projectile`, `chain_lightning`, `strike_area`. `cast()` — проверка маны/кулдауна + вызов эффекта; `spellbook()`/`active_skills()`/`ready()` — для окна мага. |
+| `spells.py` | ~270 | Заклинания/активные навыки игрока. Реестр `@spell("тип")`: `dash`, `nova`, `heal`, `shield`, `projectile`, `chain_lightning`, `strike_area`. `cast()` — проверка маны/кулдауна + вызов эффекта (в `a` добавляется `_sid` — id навыка); `spellbook()`/`active_skills()`/`ready()` — для окна мага. `icon_path(sid, a)` — поиск иконки (поле `icon` → `icons/skill_<id>.png` → `icons/<id>.png`), используется в `hud.py` и экране навыков. `projectile_spec(a)` — вид снаряда заклинания: тип + поля `projectile_*` (`PROJECTILE_FIELDS`) + автоподхват `assets/projectiles/<id навыка>.png` или папки кадров. |
 | `status.py` | ~75 | Статусные эффекты мобов: `freeze`/`stun`/`burn`. `apply(mob, eff, fx)`, `tick(mob, dt, w)`, `tint(mob)`. Эффект = словарь `{"freeze":2.0}` / `{"stun":2.0}` / `{"burn":{"time":3,"dps":10}}`. Боссы иммунны к контролю (`cc_immune`). |
 | `maps.py` | 454 | Загрузка карт, сетка мира (`pos`/`world_links`), класс `GameMap` (сетка, спавн, выходы, фон), `Campaign` (круги/масштаб), `check()` — валидация карт. |
 | `mob.py` | 252 | Класс `Mob` (= тело + движение + атаки + анимации), `spawn_boss`, `Corpse`. |
@@ -37,11 +37,12 @@
 | `characters.py` | 345 | Экран выбора героя и лобби мультиплеера (UI из `assets/character_select.json`). |
 | `hud.py` | ~260 | Нижний HUD: иконки (герой/оружие1/оружие2 + активный навык), полоски HP/маны, индикатор опыта, полоса босса. У мага (`spellcaster`) вместо оружия — окно `spellbook()` из трёх заклинаний (пред./текущее/след.). |
 | `lighting.py` | 266 | Освещение: источники света на картах, темнота/ambient, мягкие пятна, мерцание, искры, ореолы. Реестр пресетов света. |
-| `anim.py` | 105 | Загрузка PNG и серий-анимаций с кэшем (`_IMG`/`_FRAMES`/`_ANIM`). `sprite()`, `frames()`, `mob_frame()`. `clear_cache()` на F5. |
+| `anim.py` | ~110 | Загрузка PNG и серий-анимаций с кэшем (`_IMG`/`_FRAMES`/`_ANIM`). `sprite()`, `frames()`, `mob_frame()`, `ASSETS_EXISTS()` (есть ли необязательный файл). `clear_cache()` на F5. |
 | `boss_hands.py` | 605 | Босс Моргарт: голова + 4 руки (`Hand`/`HandSet`). Реестр атак рук `@hand_attack("имя")`: `thrust`, `slam`, `sweep`, `grab`, `clap`. Отрисовка босса. |
 | `multiplayer.py` | 1347 | LAN до 4 игроков. `Server`/`Conn`/`Finder` (сеть), `HostSession` (считает весь мир) / `ClientSession` (шлёт ввод, рисует снимки с интерполяцией), меню мультиплеера. |
 | `map_editor.py` | 631 | Отдельное tkinter-приложение. Рисование карт, панель света, панель рук Моргарта. Пишет `data/maps/<id>.json` + `order`. |
 | `make_icon.py` | 56 | Сборка `.ico` из PNG для EXE. |
+| `make_spell_textures.py` | ~190 | Генератор временных текстур заклинаний мага (Pillow): иконки `icons/skill_<id>.png` и снаряды-анимации `projectiles/<id>/1..4.png`. Без `--force` не трогает существующие файлы. |
 
 ## Как всё связано (центральные механизмы)
 

@@ -205,10 +205,91 @@ def arcane_bolt(frame):
     return scaled(with_outline(g), 4)
 
 
+# ------------------------------------------------------------------ навыки телекинеза инженера
+TK_PURPLE, TK_BLUE, TK_MAG = (150, 110, 255), (120, 170, 255), (200, 120, 255)
+
+
+def icon_telekinesis():
+    g = new(32, 32); d = ImageDraw.Draw(g); c = (16, 16)
+    for k, rad in enumerate((11, 7)):
+        a0 = k * 60; d.arc((c[0] - rad, c[1] - rad, c[0] + rad, c[1] + rad), a0, a0 + 230, fill=(205, 175, 255, 255), width=2)
+    d.polygon([(27, 16), (22, 12), (22, 20)], fill=(235, 215, 255, 255))     # стрелка-отталкивание
+    d.polygon([(5, 16), (10, 12), (10, 20)], fill=(235, 215, 255, 255))      # стрелка-притяжение
+    circle(d, c, 3, (235, 220, 255, 255)); d.point((15, 15), fill=(255, 255, 255, 255))
+    return finish_icon(TK_PURPLE, g)
+
+
+def icon_telekinesis_cone():
+    g = new(32, 32); d = ImageDraw.Draw(g); o = (6, 16)
+    for off, ln in ((-18, 20), (0, 25), (18, 20)):
+        a = math.radians(off); d.line([o, (o[0] + math.cos(a) * ln, o[1] + math.sin(a) * ln)], fill=(150, 200, 255, 255), width=2)
+    for rr in (12, 18, 24): d.arc((o[0] - rr, o[1] - rr, o[0] + rr, o[1] + rr), -46, 46, fill=(205, 228, 255, 255), width=1)
+    circle(d, o, 2.6, (235, 245, 255, 255))
+    return finish_icon(TK_BLUE, g)
+
+
+def icon_telekinesis_hold():
+    g = new(32, 32); d = ImageDraw.Draw(g); c = (18, 16)
+    for rr in (6, 10): d.ellipse((c[0] - rr, c[1] - rr, c[0] + rr, c[1] + rr), outline=(210, 170, 255, 255), width=1)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            cx, cy = c[0] + sx * 12, c[1] + sy * 12
+            d.line([(cx, cy), (cx - sx * 5, cy)], fill=(240, 215, 255, 255), width=1)
+            d.line([(cx, cy), (cx, cy - sy * 5)], fill=(240, 215, 255, 255), width=1)
+    d.line([(3, 16), (c[0] - 6, 16)], fill=(200, 140, 255, 255), width=1); circle(d, c, 2, (255, 255, 255, 255))
+    return finish_icon(TK_MAG, g)
+
+
+# Анимации применения (смотрят вправо, 6 кадров). Мягкие эффекты — без тёмного контура.
+def cast_telekinesis(frame, n=6):
+    S = 72; g = new(S, S); d = ImageDraw.Draw(g); c = (S / 2, S / 2); t = frame / n
+    for ring, rad in enumerate((26, 20, 14)):
+        pr = rad + math.sin((t + ring * .25) * math.tau) * 4
+        col = mix((45, 22, 95), TK_PURPLE, .5 + ring * .18)
+        for seg in range(3):
+            a0 = math.degrees(t * math.tau * (1 if ring % 2 == 0 else -1)) + seg * 120 + ring * 40
+            d.arc((c[0] - pr, c[1] - pr, c[0] + pr, c[1] + pr), a0, a0 + 72, fill=rgba(col), width=2)
+    for i in range(8):
+        a = i / 8 * math.tau + t * 2; rr = 30 * (1 - t) + 6
+        p = (c[0] + math.cos(a) * rr, c[1] + math.sin(a) * rr)
+        sparkle(d, round(p[0]), round(p[1]), (230, 210, 255, 255), i % 2 == 0)
+    circle(d, c, 5 + math.sin(t * math.tau) * 2, (235, 220, 255, 255)); circle(d, c, 2.5, (255, 255, 255, 255))
+    return scaled(g, 2)
+
+
+def cast_telekinesis_cone(frame, n=6):
+    W, H = 90, 72; g = new(W, H); d = ImageDraw.Draw(g); t = frame / n; o = (10, H / 2); reach = 30 + 46 * t
+    for off in (-2, -1, 0, 1, 2):
+        a = math.radians(off * 22); col = mix((30, 50, 110), TK_BLUE, 1 - abs(off) * .17)
+        d.line([o, (o[0] + math.cos(a) * reach, o[1] + math.sin(a) * reach)], fill=rgba(col, int(130 + 125 * (1 - t))), width=max(1, 3 - abs(off)))
+    for k in range(3):
+        rr = reach - k * 6
+        if rr > 5: d.arc((o[0] - rr, o[1] - rr, o[0] + rr, o[1] + rr), -62, 62, fill=rgba(mix(TK_BLUE, (255, 255, 255), .3), int(210 * (1 - t))), width=2)
+    circle(d, o, 4, (225, 240, 255, 255))
+    return scaled(g, 2)
+
+
+def cast_telekinesis_hold(frame, n=6):
+    S = 72; g = new(S, S); d = ImageDraw.Draw(g); t = frame / n; c = (S * .62, S / 2); rad = 28 - 16 * t
+    for k in range(3):
+        rr = rad + k * 7
+        if rr > 2: d.ellipse((c[0] - rr, c[1] - rr, c[0] + rr, c[1] + rr), outline=rgba(mix((60, 20, 110), TK_MAG, .6 + k * .14), max(60, int(220 - k * 55))), width=2)
+    br = rad + 22
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            cr = (c[0] + sx * br, c[1] + sy * br)
+            d.line([cr, (cr[0] - sx * 11, cr[1])], fill=(245, 220, 255, 255), width=2); d.line([cr, (cr[0], cr[1] - sy * 11)], fill=(245, 220, 255, 255), width=2)
+    d.line([(4, S / 2), (c[0] - rad, c[1])], fill=rgba(TK_MAG, int(120 + 110 * abs(math.sin(t * math.tau)))), width=2)
+    circle(d, c, 3, (255, 255, 255, 255))
+    return scaled(g, 2)
+
+
 # ------------------------------------------------------------------ запись файлов
 ICONS = {"fireball": icon_fireball, "ice_shard": icon_ice_shard, "arcane_orb": icon_arcane_orb, "frost_nova": icon_frost_nova,
-         "chain_lightning": icon_chain_lightning, "thunderstrike": icon_thunderstrike, "meteor": icon_meteor}
+         "chain_lightning": icon_chain_lightning, "thunderstrike": icon_thunderstrike, "meteor": icon_meteor,
+         "telekinesis": icon_telekinesis, "telekinesis_cone": icon_telekinesis_cone, "telekinesis_hold": icon_telekinesis_hold}
 PROJECTILES = {"fireball": fire_bolt, "ice_shard": ice_bolt, "arcane_orb": arcane_bolt}
+CASTS = {"telekinesis": cast_telekinesis, "telekinesis_cone": cast_telekinesis_cone, "telekinesis_hold": cast_telekinesis_hold}
 
 
 def save(img, path, force):
@@ -220,6 +301,8 @@ def main(force=False):
     for sid, fn in ICONS.items(): save(fn(), ASSETS / "icons" / f"skill_{sid}.png", force)
     for sid, fn in PROJECTILES.items():
         for i in range(4): save(fn(i), ASSETS / "projectiles" / sid / f"{i + 1}.png", force)
+    for sid, fn in CASTS.items():
+        for i in range(6): save(fn(i), ASSETS / "skills" / sid / "cast" / f"{i + 1}.png", force)
 
 
 if __name__ == "__main__":

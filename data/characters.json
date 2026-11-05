@@ -144,9 +144,9 @@
       ]
     },
     "ranger": {
-      "name": "Следопыт",
-      "role": "Стрелок",
-      "description": "Быстрый и прыгучий: с самого начала умеет делать двойной прыжок и рывок. Держит врагов на расстоянии луком, вблизи — кинжалы.",
+      "name": "Инженер",
+      "role": "Телекинетик",
+      "description": "Управляет полем телекинеза: притягивает и отталкивает врагов и предметы, сносит толпу конусом перед собой и держит одного врага в захвате. Быстрый и прыгучий — с самого начала умеет двойной прыжок и рывок.",
       "assets": "characters/ranger",
       "stats": {
         "hp": 95,
@@ -170,10 +170,25 @@
         "seeker_staff"
       ],
       "base_skills": [
+        "telekinesis",
+        "telekinesis_cone",
+        "telekinesis_hold",
         "dash",
         "double_jump"
       ],
       "skill_tree": [
+        {
+          "skill": "telekinesis",
+          "unlock_level": 1
+        },
+        {
+          "skill": "telekinesis_cone",
+          "unlock_level": 1
+        },
+        {
+          "skill": "telekinesis_hold",
+          "unlock_level": 1
+        },
         {
           "skill": "dash",
           "unlock_level": 1

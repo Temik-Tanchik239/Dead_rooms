@@ -26,7 +26,7 @@
 |---|---|---|
 | `main.py` | ~1130 | Класс `Player` (физика/бой/мана/опыт; `use_skill` делегирует в `spells.cast`), класс `Game` (главный цикл, состояния, меню, рендер, ввод, хелперы `_draw_beam/_draw_bolt/_draw_flash` для эффектов заклинаний). Точка входа. |
 | `core.py` | ~195 | Фундамент: пути (`DATA`/`ASSETS`), глобальный `CFG`, `reload_data()`, система персонажей (`apply_character`/`use_char`), базовое физ-тело `Body`, `FX` (включая `beam`/`bolt`/`flash` для молний), мелкие утилиты (`sign`, `tile`, `solid`...). |
-| `spells.py` | ~270 | Заклинания/активные навыки игрока. Реестр `@spell("тип")`: `dash`, `nova`, `heal`, `shield`, `projectile`, `chain_lightning`, `strike_area`. `cast()` — проверка маны/кулдауна + вызов эффекта (в `a` добавляется `_sid` — id навыка); `spellbook()`/`active_skills()`/`ready()` — для окна мага. `icon_path(sid, a)` — поиск иконки (поле `icon` → `icons/skill_<id>.png` → `icons/<id>.png`), используется в `hud.py` и экране навыков. `projectile_spec(a)` — вид снаряда заклинания: тип + поля `projectile_*` (`PROJECTILE_FIELDS`) + автоподхват `assets/projectiles/<id навыка>.png` или папки кадров. |
+| `spells.py` | ~390 | Заклинания/активные навыки игрока. Реестр `@spell("тип")`: `dash`, `nova`, `heal`, `shield`, `projectile`, `chain_lightning`, `strike_area`, а также телекинез инженера `telekinesis` (притянуть дальних / оттолкнуть ближних врагов и предметы в области), `telekinesis_cone` (оттолкнуть всех в конусе перед собой), `telekinesis_hold` (оглушить и держать ближайшего к курсору). Телекинез дотягивается до предметов через `pl.drops` (ставится в `Game.step`/`HostSession.step`); `_shove()` толкает моба без урона. `cast()` — проверка маны/кулдауна + вызов эффекта (в `a` добавляется `_sid` — id навыка); `spellbook()`/`active_skills()`/`ready()` — для окна мага. `icon_path(sid, a)` — поиск иконки (поле `icon` → `icons/skill_<id>.png` → `icons/<id>.png`). `cast_frames(sid, a)` — кадры анимации применения навыка (поле `cast_anim` → `skills/<id>/cast` → `skills/<id>/cast.png`), рисуются в `Player.draw`; нет кадров — процедурная вспышка. `projectile_spec(a)` — вид снаряда заклинания: тип + поля `projectile_*` (`PROJECTILE_FIELDS`) + автоподхват `assets/projectiles/<id навыка>.png` или папки кадров. |
 | `status.py` | ~75 | Статусные эффекты мобов: `freeze`/`stun`/`burn`. `apply(mob, eff, fx)`, `tick(mob, dt, w)`, `tint(mob)`. Эффект = словарь `{"freeze":2.0}` / `{"stun":2.0}` / `{"burn":{"time":3,"dps":10}}`. Боссы иммунны к контролю (`cc_immune`). |
 | `maps.py` | 454 | Загрузка карт, сетка мира (`pos`/`world_links`), класс `GameMap` (сетка, спавн, выходы, фон), `Campaign` (круги/масштаб), `check()` — валидация карт. |
 | `mob.py` | 252 | Класс `Mob` (= тело + движение + атаки + анимации), `spawn_boss`, `Corpse`. |
@@ -42,7 +42,7 @@
 | `multiplayer.py` | 1347 | LAN до 4 игроков. `Server`/`Conn`/`Finder` (сеть), `HostSession` (считает весь мир) / `ClientSession` (шлёт ввод, рисует снимки с интерполяцией), меню мультиплеера. |
 | `map_editor.py` | 631 | Отдельное tkinter-приложение. Рисование карт, панель света, панель рук Моргарта. Пишет `data/maps/<id>.json` + `order`. |
 | `make_icon.py` | 56 | Сборка `.ico` из PNG для EXE. |
-| `make_spell_textures.py` | ~190 | Генератор временных текстур заклинаний мага (Pillow): иконки `icons/skill_<id>.png` и снаряды-анимации `projectiles/<id>/1..4.png`. Без `--force` не трогает существующие файлы. |
+| `make_spell_textures.py` | ~290 | Генератор временных текстур навыков (Pillow): иконки `icons/skill_<id>.png`, снаряды-анимации `projectiles/<id>/1..4.png` и анимации каста `skills/<id>/cast/1..6.png` (телекинез инженера). Без `--force` не трогает существующие файлы. Запуск: `uv run --with pillow make_spell_textures.py`. |
 
 ## Как всё связано (центральные механизмы)
 
@@ -85,8 +85,10 @@
 `player.json` (физика, мана, регенерация, полоски) · `weapons.json` (combo, projectile, slot, mana) ·
 `mobs.json` (hp, move, attacks, anims, xp, light; `cc_immune` — иммунитет к заморозке/оглушению) ·
 `projectiles.json` (у типа пули можно задать `effect`, напр. `{"freeze":2.0}` — накладывается при попадании) ·
-`skills.json` (активные: dash/nova/heal/shield + заклинания мага chain_lightning/strike_area/projectile;
-пассивки max_hp/damage/move_speed; `mana_cost`, `cooldown`, `effect`, `color`, `icon`) ·
+`skills.json` (активные: dash/nova/heal/shield + заклинания мага chain_lightning/strike_area/projectile
++ телекинез инженера telekinesis/telekinesis_cone/telekinesis_hold; пассивки max_hp/damage/move_speed;
+`mana_cost`, `cooldown`, `effect`, `color`, `icon`; у активного навыка можно задать анимацию каста:
+`cast_anim` — папка/файл кадров, `cast_size` [ш,в], `cast_offset` [dx,dy], `cast_animation` — длительность, сек) ·
 `characters.json` (5 героев: stats/weapons/skills/tree/overrides; `spellcaster: true` — чистый заклинатель:
 нет оружия/подбора, ЛКМ или Q кастует текущее заклинание, C/V листают книгу из трёх; у мага это включено) ·
 `maps.json` (order, общая legend, настройки, lighting, world) · `maps/<id>.json` (rows, pos, legend,

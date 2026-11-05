@@ -39,6 +39,20 @@ def icon_path(sid, a=None):
     return None
 
 
+def cast_frames(sid, a=None):
+    """Кадры анимации применения навыка (overlay поверх игрока во время каста). Порядок поиска:
+    1) поле \"cast_anim\" навыка (папка с кадрами 1.png, 2.png… либо один PNG / шаблон *.png);
+    2) папка assets/skills/<id>/cast/; 3) файл assets/skills/<id>/cast.png.
+    Ничего не нашлось -> [] (рисуется запасная процедурная вспышка цвета навыка)."""
+    a = a if a is not None else CFG.get("skills", {}).get(sid, {})
+    for cand in (a.get("cast_anim"), f"skills/{sid}/cast", f"skills/{sid}/cast.png"):
+        if cand:
+            fr = frames(cand)
+            if fr:
+                return fr
+    return []
+
+
 def projectile_spec(a):
     """Описание снаряда заклинания: тип из \"projectile\" + правки из полей projectile_* навыка.
     Если правок нет, но лежит assets/projectiles/<id заклинания>.png (или папка с кадрами
@@ -262,3 +276,98 @@ def _strike_area(pl, a, mobs, projs, fx):
             m.hurt(dmg, (sign(m.cx - ox) or 1) * kb, fx)
             if eff:
                 status.apply(m, eff, fx)
+
+
+# ---------------- телекинез (инженер) ----------------
+
+def _shove(m, vx, vy=-200.0, stun=0.3):
+    """Толкнуть/притянуть моба без урона (не ломает броню, но прерывает его атаку)."""
+    m.vx = vx
+    m.vy = min(getattr(m, "vy", 0.0), vy) if not getattr(m, "flies", False) else vy
+    m.stun = max(getattr(m, "stun", 0.0), stun)
+    m.act = None
+    m.grav = None
+    m.aggro = True
+
+
+@spell("telekinesis")
+def _telekinesis(pl, a, mobs, projs, fx):
+    """Поле телекинеза по области вокруг точки прицеливания: что дальше \"grip\" от игрока —
+    притягивается к нему, что ближе — отталкивается. Действует и на врагов, и на предметы (оружие на полу)."""
+    ox, oy = aim_point(pl, 60)
+    reach = a.get("range", 280)
+    radius = a.get("radius", 72)
+    force = a.get("force", 460)
+    grip = a.get("grip", 96)
+    dmg = a.get("damage", 0) * pl.dmg_mult()
+    color = list(a.get("color", [150, 110, 255]))
+    fx.beam(pl.cx, pl.cy, ox, oy, color)
+    fx.ring(ox, oy, radius)
+    for m in mobs:
+        if m.hp <= 0 or math.hypot(m.cx - pl.cx, m.cy - pl.cy) > reach or not _near(m, ox, oy, radius):
+            continue
+        pull = math.hypot(m.cx - pl.cx, m.cy - pl.cy) > grip
+        dirx = (sign(m.cx - pl.cx) or pl.face) * (-1 if pull else 1)   # притянуть -> к игроку, оттолкнуть -> от игрока
+        if dmg and not pull:
+            m.hurt(dmg, dirx * force, fx)
+        else:
+            _shove(m, dirx * force, -force * (0.2 if pull else 0.35))
+    for dr in getattr(pl, "drops", []):
+        if math.hypot(dr.x - ox, dr.y - oy) > radius or math.hypot(dr.x - pl.cx, dr.y - pl.cy) > reach:
+            continue
+        if math.hypot(dr.x - pl.cx, dr.y - pl.cy) > grip:
+            dr.x += (pl.cx - dr.x) * 0.6; dr.y += (pl.cy - dr.y) * 0.6     # притянуть предмет к игроку
+        else:
+            dr.x += (sign(dr.x - pl.cx) or pl.face) * 56                    # оттолкнуть предмет
+
+
+@spell("telekinesis_cone")
+def _telekinesis_cone(pl, a, mobs, projs, fx):
+    """Телекинетическая волна: отталкивает всех врагов в конусе перед игроком (по направлению взгляда/курсора)."""
+    reach = a.get("range", 230)
+    half = math.radians(a.get("angle", 55))
+    kb = a.get("knockback", 540)
+    dmg = a.get("damage", 0) * pl.dmg_mult()
+    color = list(a.get("color", [120, 170, 255]))
+    ox, oy = aim_point(pl, 60)
+    base = math.atan2(oy - pl.cy, ox - pl.cx)
+    fx.ring(pl.cx, pl.cy, 30)
+    fx.flash(pl.cx + math.cos(base) * reach * 0.45, pl.cy + math.sin(base) * reach * 0.45, reach * 0.5, color)
+    fx.shake = max(fx.shake, .2)
+    for m in mobs:
+        dx, dy = m.cx - pl.cx, m.cy - pl.cy
+        dist = math.hypot(dx, dy)
+        if m.hp <= 0 or dist > reach or dist < 1:
+            continue
+        if abs((math.atan2(dy, dx) - base + math.pi) % math.tau - math.pi) > half:
+            continue
+        push = (sign(dx) or pl.face) * kb
+        if dmg:
+            m.hurt(dmg, push, fx)
+        else:
+            _shove(m, push, -kb * 0.4)
+
+
+@spell("telekinesis_hold")
+def _telekinesis_hold(pl, a, mobs, projs, fx):
+    """Телекинетический захват: останавливает ближайшего к курсору врага и держит его в стане \"duration\" секунд."""
+    reach = a.get("range", 340)
+    dur = float(a.get("duration", 2.5))
+    color = list(a.get("color", [200, 120, 255]))
+    ox, oy = aim_point(pl, 50)
+    target, best = None, reach
+    for m in mobs:
+        if m.hp <= 0 or math.hypot(m.cx - pl.cx, m.cy - pl.cy) > reach:
+            continue
+        d_aim = math.hypot(m.cx - ox, m.cy - oy)
+        if d_aim < best:
+            best, target = d_aim, m
+    if target is None:
+        fx.text("нет цели для захвата", pl.cx, pl.y - 18)
+        return
+    fx.beam(pl.cx, pl.cy, target.cx, target.cy, color)
+    fx.ring(target.cx, target.cy, 38)
+    target.vx = 0.0
+    if getattr(target, "flies", False):
+        target.vy = 0.0
+    status.apply(target, {"stun": dur}, fx)   # боссы (cc_immune) не поддаются — см. status.py

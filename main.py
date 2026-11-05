@@ -147,7 +147,8 @@ class Player(Body):
             pg.draw.rect(v, (200, 160, 70) if s.state == "roll" else (240, 200, 90), r, border_radius=4)
             ex = r.right - 6 if s.face > 0 else r.left + 3; pg.draw.rect(v, (30, 20, 20), (ex, r.top + 6, 3, 5))
         if st[0] not in ("roll", "ladder"): weapon.draw_held(v, s, s.hand(st[0]))
-        # У каждого активного навыка своя короткая процедурная анимация применения.
+        # Анимация применения навыка: сначала кадры из ассета (skills/<id>/cast — можно заменить
+        # своими PNG), иначе — процедурная анимация для встроенных навыков / запасная вспышка.
         cast = s.skill_cast
         if cast:
             sid, elapsed, duration = cast
@@ -155,32 +156,49 @@ class Player(Body):
             cx, cy = int(r.centerx + s.face * 20), int(r.centery)
             defs = CFG.get("skills", {}); sk = defs.get(sid, {})
             color = tuple(sk.get("color", [100, 190, 255]))
-            overlay = pg.Surface(v.get_size(), pg.SRCALPHA)
-            if sid == "dash":
-                # Быстрые следы за персонажем.
-                for i in range(4):
-                    alpha = int(110 * (1-t) * (1-i/4))
-                    x = int(r.centerx - s.face * (12 + i*9))
-                    pg.draw.line(overlay, (*color, alpha), (x, r.top+5+i*3), (x-s.face*15, r.bottom-4-i*2), 3)
-            elif sid == "nova":
-                rad = int(10 + 95*t)
-                pg.draw.circle(overlay, (*color, int(180*(1-t))), (int(r.centerx), int(r.centery)), rad, max(2, int(6*(1-t))))
-                for i in range(8):
-                    ang = i * math.tau/8 + t*0.8
-                    x2, y2 = int(r.centerx + math.cos(ang)*rad), int(r.centery + math.sin(ang)*rad)
-                    pg.draw.circle(overlay, (*color, int(210*(1-t))), (x2,y2), max(1, int(4*(1-t))))
-            elif sid == "heal":
-                rad = int(12 + 26*t)
-                pg.draw.circle(overlay, (*color, int(190*(1-t))), (int(r.centerx), int(r.centery)), rad, 3)
-                for i in range(5):
-                    yy = r.bottom - int((t*38 + i*9) % 45)
-                    xx = r.centerx + int(math.sin(t*8+i*1.7)*18)
-                    pg.draw.circle(overlay, (*color, int(180*(1-t))), (xx, yy), 2)
-            elif sid == "shield":
-                # Короткий всплеск вокруг щита при создании.
-                rad = int(16 + 24*t)
-                pg.draw.circle(overlay, (*color, int(190*(1-t))), (cx,cy), rad, 3)
-            v.blit(overlay, (0,0))
+            cframes = spells.cast_frames(sid, sk)
+            if cframes:
+                # Кадры из ассета прокручиваются ровно за время каста и отражаются по направлению игрока.
+                cw, ch = sk.get("cast_size", [96, 96]); cw, ch = max(1, int(cw)), max(1, int(ch))
+                ox, oy = sk.get("cast_offset", [24, 0])
+                frame = cframes[min(len(cframes) - 1, int(t * len(cframes)))]
+                img = sprite(frame, cw, ch, s.face < 0)
+                if img: v.blit(img, (int(r.centerx + s.face * ox - cw / 2), int(r.centery + oy - ch / 2)))
+            else:
+                overlay = pg.Surface(v.get_size(), pg.SRCALPHA)
+                if sid == "dash":
+                    # Быстрые следы за персонажем.
+                    for i in range(4):
+                        alpha = int(110 * (1-t) * (1-i/4))
+                        x = int(r.centerx - s.face * (12 + i*9))
+                        pg.draw.line(overlay, (*color, alpha), (x, r.top+5+i*3), (x-s.face*15, r.bottom-4-i*2), 3)
+                elif sid == "nova":
+                    rad = int(10 + 95*t)
+                    pg.draw.circle(overlay, (*color, int(180*(1-t))), (int(r.centerx), int(r.centery)), rad, max(2, int(6*(1-t))))
+                    for i in range(8):
+                        ang = i * math.tau/8 + t*0.8
+                        x2, y2 = int(r.centerx + math.cos(ang)*rad), int(r.centery + math.sin(ang)*rad)
+                        pg.draw.circle(overlay, (*color, int(210*(1-t))), (x2,y2), max(1, int(4*(1-t))))
+                elif sid == "heal":
+                    rad = int(12 + 26*t)
+                    pg.draw.circle(overlay, (*color, int(190*(1-t))), (int(r.centerx), int(r.centery)), rad, 3)
+                    for i in range(5):
+                        yy = r.bottom - int((t*38 + i*9) % 45)
+                        xx = r.centerx + int(math.sin(t*8+i*1.7)*18)
+                        pg.draw.circle(overlay, (*color, int(180*(1-t))), (xx, yy), 2)
+                elif sid == "shield":
+                    # Короткий всплеск вокруг щита при создании.
+                    rad = int(16 + 24*t)
+                    pg.draw.circle(overlay, (*color, int(190*(1-t))), (cx,cy), rad, 3)
+                else:
+                    # Запасная вспышка для навыков без своей анимации (например телекинеза без ассета).
+                    rad = int(14 + 70*t)
+                    pg.draw.circle(overlay, (*color, int(150*(1-t))), (cx, cy), rad, max(2, int(6*(1-t))))
+                    for i in range(6):
+                        ang = i * math.tau/6 - t*1.2
+                        x2, y2 = int(cx + math.cos(ang)*rad), int(cy + math.sin(ang)*rad)
+                        pg.draw.circle(overlay, (*color, int(190*(1-t))), (x2, y2), max(1, int(3*(1-t))))
+                v.blit(overlay, (0,0))
         if s.shield_time > 0:
             shield_def = CFG.get("skills", {}).get("shield", {})
             rel = shield_def.get("visual", "skills/shield/shield_effect.png")
@@ -566,6 +584,7 @@ class Game:
         mb = pg.mouse.get_pressed()   # зажатая кнопка = непрерывные атаки / комбо
         if mb[0]: pl.press("a1")
         if mb[2]: pl.press("a2")
+        pl.drops = r.drops   # телекинез дотягивается до предметов на полу текущей комнаты
         pl.update(sim, pg.key.get_pressed(), r.g, r.mobs, s.projs, fx); pl.update_anim(sim)
         w = SimpleNamespace(g=r.g, pl=pl, mobs=r.mobs, projs=s.projs, fx=fx)   # «мир» для мобов и пуль
         for m in r.mobs:

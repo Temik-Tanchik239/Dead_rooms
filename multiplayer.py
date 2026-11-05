@@ -593,6 +593,7 @@ class HostSession(Session):
             p.aim = inp.aim
             if inp.mb[0]: p.press("a1")
             if inp.mb[1]: p.press("a2")
+            p.drops = r.drops   # телекинез дотягивается до предметов на полу
             p.update(dt, inp.keys, r.g, r.mobs, g.projs, fx); p.update_anim(dt)
             if inp.pose and p.pid != s.my_id:
                 # Движение своего героя клиент считает сам (без задержки сети); хост между пакетами

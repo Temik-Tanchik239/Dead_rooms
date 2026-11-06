@@ -1,0 +1,530 @@
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 77cbf58..5b865f2 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -24,9 +24,9 @@
+ 
+ | Файл | Строк | За что отвечает |
+ |---|---|---|
+-| `main.py` | ~1130 | Класс `Player` (физика/бой/мана/опыт; `use_skill` делегирует в `spells.cast`), класс `Game` (главный цикл, состояния, меню, рендер, ввод, хелперы `_draw_beam/_draw_bolt/_draw_flash` для эффектов заклинаний). Точка входа. |
++| `main.py` | ~1130 | Класс `Player` (физика/бой/мана/опыт; `use_skill` делегирует в `spells.cast`; `channel`/`skill_held`/`move_input`/`airborne()` — для удерживаемых заклинаний; `Game.skill_held()` — зажата ли клавиша навыка), класс `Game` (главный цикл, состояния, меню, рендер, ввод, хелперы `_draw_beam/_draw_bolt/_draw_flash` для эффектов заклинаний). Точка входа. |
+ | `core.py` | ~195 | Фундамент: пути (`DATA`/`ASSETS`), глобальный `CFG`, `reload_data()`, система персонажей (`apply_character`/`use_char`), базовое физ-тело `Body`, `FX` (включая `beam`/`bolt`/`flash` для молний), мелкие утилиты (`sign`, `tile`, `solid`...). |
+-| `spells.py` | ~390 | Заклинания/активные навыки игрока. Реестр `@spell("тип")`: `dash`, `nova`, `heal`, `shield`, `projectile`, `chain_lightning`, `strike_area`, а также телекинез инженера `telekinesis` (притянуть дальних / оттолкнуть ближних врагов и предметы в области), `telekinesis_cone` (оттолкнуть всех в конусе перед собой), `telekinesis_hold` (оглушить и держать ближайшего к курсору). Телекинез дотягивается до предметов через `pl.drops` (ставится в `Game.step`/`HostSession.step`); `_shove()` толкает моба без урона. `cast()` — проверка маны/кулдауна + вызов эффекта (в `a` добавляется `_sid` — id навыка); `spellbook()`/`active_skills()`/`ready()` — для окна мага. `icon_path(sid, a)` — поиск иконки (поле `icon` → `icons/skill_<id>.png` → `icons/<id>.png`). `cast_frames(sid, a)` — кадры анимации применения навыка (поле `cast_anim` → `skills/<id>/cast` → `skills/<id>/cast.png`), рисуются в `Player.draw`; нет кадров — процедурная вспышка. `projectile_spec(a)` — вид снаряда заклинания: тип + поля `projectile_*` (`PROJECTILE_FIELDS`) + автоподхват `assets/projectiles/<id навыка>.png` или папки кадров. |
++| `spells.py` | ~390 | Заклинания/активные навыки игрока. Реестр `@spell("тип")`: `dash`, `nova`, `heal`, `shield`, `projectile`, `chain_lightning`, `strike_area`, а также телекинез инженера `telekinesis` (притянуть дальних / оттолкнуть ближних врагов и предметы в области), `telekinesis_cone` (оттолкнуть всех в конусе перед собой), `telekinesis_hold` (оглушить и держать ближайшего к курсору; удерживаемый каст — см. ниже). Телекинез дотягивается до предметов через `pl.drops` (ставится в `Game.step`/`HostSession.step`); `_shove()` толкает моба без урона. `cast()` — проверка маны/кулдауна + вызов эффекта (в `a` добавляется `_sid` — id навыка); `spellbook()`/`active_skills()`/`ready()` — для окна мага. `icon_path(sid, a)` — поиск иконки (поле `icon` → `icons/skill_<id>.png` → `icons/<id>.png`). `cast_frames(sid, a)` — кадры анимации применения навыка (поле `cast_anim` → `skills/<id>/cast` → `skills/<id>/cast.png`), рисуются в `Player.draw`; нет кадров — процедурная вспышка. `projectile_spec(a)` — вид снаряда заклинания: тип + поля `projectile_*` (`PROJECTILE_FIELDS`) + автоподхват `assets/projectiles/<id навыка>.png` или папки кадров. **Удерживаемые заклинания (`"channel": true` в skills.json, как ульта Bane в Dota 2):** `cast()` лишь запускает каст (`begin_channel` → `pl.channel = {sid, t, max, ...}`), перезарядка стартует в `channel_stop()`, а не при нажатии; пока герой колдует, `Player.update` зовёт `channel_update()` — она проверяет прерывания (`_channel_break`: отпущена клавиша навыка `pl.skill_held`, A/D, S/↓, прыжок, перекат, атака, падение/лестница/захват) и лимит `duration`, затем хук `tick`. Урон прерывает каст из `Player.hit`. `@spell`-функция удерживаемого заклинания возвращает `False` (не вышло — мана и КД не тратятся) или словарь стартового состояния; хуки регистрируются `channel("тип", tick=..., end=...)` (`CHANNELS`). Старт требует стоять на земле без нажатых A/D/S (`_channel_blocker`). Пока идёт каст, `cast()`/`ready()` игнорируют новые нажатия, а `swap_skill` заблокирован. |
+ | `status.py` | ~75 | Статусные эффекты мобов: `freeze`/`stun`/`burn`. `apply(mob, eff, fx)`, `tick(mob, dt, w)`, `tint(mob)`. Эффект = словарь `{"freeze":2.0}` / `{"stun":2.0}` / `{"burn":{"time":3,"dps":10}}`. Боссы иммунны к контролю (`cc_immune`). |
+ | `maps.py` | 454 | Загрузка карт, сетка мира (`pos`/`world_links`), класс `GameMap` (сетка, спавн, выходы, фон), `Campaign` (круги/масштаб), `check()` — валидация карт. |
+ | `mob.py` | 252 | Класс `Mob` (= тело + движение + атаки + анимации), `spawn_boss`, `Corpse`. |
+@@ -35,7 +35,7 @@
+ | `projectiles.py` | 145 | Класс `Proj`, типы из `projectiles.json`. Реестры `@behavior("ключ")` (каждый кадр) и `@on_death("ключ")`: `homing`, `accel`, `wave`, `split`. `volley()` — веер. |
+ | `weapon.py` | 90 | Отрисовка оружия в руке (`held_pose`/`draw_held`), иконки, цена маны (`mana_cost`/`mana_hit`). |
+ | `characters.py` | 345 | Экран выбора героя и лобби мультиплеера (UI из `assets/character_select.json`). |
+-| `hud.py` | ~260 | Нижний HUD: иконки (герой/оружие1/оружие2 + активный навык), полоски HP/маны, индикатор опыта, полоса босса. У мага (`spellcaster`) вместо оружия — окно `spellbook()` из трёх заклинаний (пред./текущее/след.). |
++| `hud.py` | ~260 | Нижний HUD: иконки (герой/оружие1/оружие2 + активный навык), полоски HP/маны, индикатор опыта, полоса босса. У мага (`spellcaster`) вместо оружия — окно `spellbook()` из трёх заклинаний (пред./текущее/след.). `channel_overlay()` рисует на иконке колдуемого удерживаемого заклинания убывающий сектор, оставшиеся секунды и пульсирующую рамку (вместо кулдауна). |
+ | `lighting.py` | 266 | Освещение: источники света на картах, темнота/ambient, мягкие пятна, мерцание, искры, ореолы. Реестр пресетов света. |
+ | `anim.py` | ~110 | Загрузка PNG и серий-анимаций с кэшем (`_IMG`/`_FRAMES`/`_ANIM`). `sprite()`, `frames()`, `mob_frame()`, `ASSETS_EXISTS()` (есть ли необязательный файл). `clear_cache()` на F5. |
+ | `boss_hands.py` | 605 | Босс Моргарт: голова + 4 руки (`Hand`/`HandSet`). Реестр атак рук `@hand_attack("имя")`: `thrust`, `slam`, `sweep`, `grab`, `clap`. Отрисовка босса. |
+@@ -79,7 +79,7 @@
+ 
+ **Мультиплеер.** Хост считает ВСЁ (мир, мобов, пули, всех игроков). Клиенты шлют только ввод,
+ получают снимки и интерполируют чужих (свой герой считается локально для отзывчивости).
+-`content_sig()` сверяет, что у всех одинаковые `data/`. Порты: TCP 5555 (игра), UDP 5556 (поиск).
++`content_sig()` сверяет, что у всех одинаковые `data/`. Порты: TCP 5555 (игра), UDP 5556 (поиск). Ввод игрока — `NetKeys` из 6 бит `[влево, вправо, вверх, вниз, пробел, клавиша навыка зажата]`; удерживаемый каст целиком считает хост, в снимке он едет как `"ch": [sid, t, max]`, а у клиента `Player.channel` — только картинка (`"view": True`) для HUD/анимации.
+ 
+ ## Данные (`data/`)
+ `player.json` (физика, мана, регенерация, полоски) · `weapons.json` (combo, projectile, slot, mana) ·
+@@ -107,7 +107,7 @@ last_character, player_name). `maps/_*.json` — заготовки, не чит
+ 
+ ## Управление (для тестов)
+ A/D бег · Space/W прыжок · S+Space спрыгнуть · ЛКМ оружие1 / ПКМ оружие2 (зажать — комбо) ·
+-K/Shift перекат (неуязвим) · E подобрать · Q навык, C/V смена навыка · E подобрать · R рестарт ·
++K/Shift перекат (неуязвим) · E подобрать · Q навык (удерживаемые, напр. захват инженера, работают, пока Q зажата и герой стоит на месте), C/V смена навыка · E подобрать · R рестарт ·
+ M карта мира · **F5 перезагрузка данных** · F4 сетка клеток · F3 хитбоксы / редактор кнопок меню ·
+ F11 полный экран. Персонаж целится в курсор (`mouse_aim` в settings.json).
+ 
+diff --git a/README.md b/README.md
+index 7f84478..f948a0d 100644
+--- a/README.md
++++ b/README.md
+@@ -308,7 +308,8 @@ speed, vy, gravity, life, size, color, knockback, damage (если урон не
+ - `Q` — использовать выбранный навык (у каждого своя перезарядка).
+ - `C` / `V` — переключить навык вперёд / назад.
+ - Активный навык отображается отдельной иконкой рядом с иконкой героя; затемнение и цифра показывают перезарядку.
+-- Новые навыки добавляются в `data/skills.json`. Готовые типы (`type`): `dash`, `nova`, `heal`, `shield`, `projectile` (выстрел снарядом в курсор), `chain_lightning` (молния с перескоком на соседей), `strike_area` (удар сверху по области, можно `stun`/`effect`), а также телекинез инженера: `telekinesis` (в области у курсора дальних врагов и предметы притягивает к себе, ближних — отталкивает; поля `range`, `radius`, `force`, `grip` — порог притягивания/отталкивания, `damage`), `telekinesis_cone` (отталкивает всех врагов в конусе перед собой; поля `range`, `angle` — половина угла конуса в градусах, `knockback`, `damage`), `telekinesis_hold` (останавливает и держит в стане ближайшего к курсору врага; поля `range`, `duration`). Чтобы сделать совсем новый эффект — добавьте функцию с декоратором `@spell("тип")` в `spells.py`.
++- Новые навыки добавляются в `data/skills.json`. Готовые типы (`type`): `dash`, `nova`, `heal`, `shield`, `projectile` (выстрел снарядом в курсор), `chain_lightning` (молния с перескоком на соседей), `strike_area` (удар сверху по области, можно `stun`/`effect`), а также телекинез инженера: `telekinesis` (в области у курсора дальних врагов и предметы притягивает к себе, ближних — отталкивает; поля `range`, `radius`, `force`, `grip` — порог притягивания/отталкивания, `damage`), `telekinesis_cone` (отталкивает всех врагов в конусе перед собой; поля `range`, `angle` — половина угла конуса в градусах, `knockback`, `damage`), `telekinesis_hold` (останавливает и держит в стане ближайшего к курсору врага; поля `range`, `duration` — максимум времени удержания; с `"channel": true` это удерживаемое заклинание, см. ниже). Чтобы сделать совсем новый эффект — добавьте функцию с декоратором `@spell("тип")` в `spells.py`.
++- **Удерживаемые заклинания (`"channel": true`).** Работают как ульта Bane в Dota 2: нажми клавишу навыка и **держи** её — герой стоит на месте и колдует, пока клавиша зажата, но не дольше `duration` секунд. На иконке навыка в HUD виден индикатор: иконка затемняется по часовой стрелке по мере расхода времени, в центре — оставшиеся секунды. Каст **прерывается**, и навык уходит в перезарядку (`cooldown` стартует именно в этот момент), если герой: отпустил клавишу, пошёл (A/D), пригнулся (S/↓), прыгнул, перекатился, атаковал или получил урон; также каст заканчивается, когда истёк лимит времени, цель погибла или вырвалась дальше `break_range` (по умолчанию `range × 1.5`). Начать каст можно только стоя на земле и не нажимая A/D/S; если цели нет или она невосприимчива к контролю (`cc_immune`), мана и перезарядка не тратятся. Сейчас так работает «Телекинетический захват» инженера; включить режим другому навыку можно полем `"channel": true` (нужен `@spell` с хуками `channel(...)` в `spells.py`). Без `channel` захват работает как раньше — разовый стан на `duration` секунд.
+ - **Своя анимация применения навыка.** Во время каста поверх героя проигрывается анимация. Игра ищет кадры по порядку: поле `cast_anim` навыка в `data/skills.json` → папка `assets/skills/<id навыка>/cast/` с кадрами `1.png, 2.png, …` → файл `assets/skills/<id навыка>/cast.png`. Кадры рисуются носом вправо (игра отражает сама) и прокручиваются ровно за время каста. Размер и смещение задаются полями `cast_size` [ширина, высота], `cast_offset` [dx, dy] (dx — вперёд по направлению героя), длительность — `cast_animation` (секунды). Нет кадров — рисуется процедурная вспышка цвета навыка. Чтобы сменить анимацию — просто положи свои PNG в ту же папку и нажми F5.
+ - **Чародей (маг)** — чистый заклинатель: оружия и подбора нет, вместо иконок оружия показана книга из трёх заклинаний (предыдущее · текущее · следующее). `ЛКМ` или `Q` — применить текущее заклинание в курсор, `C`/`V` — листать книгу. Любому герою можно включить такой режим полем `"spellcaster": true` в `data/characters.json`.
+ - Заклинания могут накладывать статусы на врагов: заморозку (синий оттенок, стоит на месте), оглушение и горение (урон со временем). Это задаётся полем `effect` у навыка или у типа пули, либо полем `stun` у удара по области.
+diff --git a/data/skills.json b/data/skills.json
+index 4548811..4aa0440 100644
+--- a/data/skills.json
++++ b/data/skills.json
+@@ -357,6 +357,7 @@
+     "category": "active",
+     "type": "telekinesis_hold",
+     "cooldown": 7.0,
++    "channel": true,
+     "range": 340,
+     "duration": 2.5,
+     "damage": 0,
+@@ -377,7 +378,7 @@
+       255
+     ],
+     "mana_cost": 26,
+-    "description": "Останавливает ближайшего к курсору врага и держит его в стане."
++    "description": "Зажмите клавишу и стойте на месте: ближайший к курсору враг остаётся в стане, пока вы колдуете (максимум 2.5 с). Движение, приседание, прыжок, перекат, атака, получение урона или отпущенная клавиша прерывают захват — навык уходит в перезарядку."
+   },
+   "meteor": {
+     "name": "Метеор",
+diff --git a/hud.py b/hud.py
+index d7a4acf..3c7e157 100644
+--- a/hud.py
++++ b/hud.py
+@@ -137,6 +137,31 @@ def portrait(scr, pl, font):
+     slot(scr, 0, P.get("icon", "icons/player.png"), face, layout_key="player")
+ 
+ 
++def channel_overlay(scr, pl, sid, r, font, color):
++    """Индикатор удерживаемого заклинания (skills.json: "channel": true) на иконке навыка sid в прямоугольнике r.
++    Пока герой колдует: уже «израсходованное» время затемняет иконку сектором по часовой стрелке (светлая часть = сколько
++    ещё можно стоять и колдуть), в центре — оставшиеся секунды, рамка пульсирует цветом заклинания.
++    Возвращает True, если индикатор нарисован (тогда кулдаун/«готово» на иконке не рисуем)."""
++    ch = getattr(pl, "channel", None)
++    if not ch or ch.get("sid") != sid: return False
++    total = max(0.1, float(ch.get("max", 1.0)))
++    left = max(0.0, total - float(ch.get("t", 0.0)))
++    used = max(0.0, min(1.0, 1.0 - left / total))
++    if used > 0.004:
++        veil = pg.Surface(r.size, pg.SRCALPHA)
++        cx, cy, rad, a0 = r.w / 2, r.h / 2, r.w * 1.2, -math.pi / 2
++        n = max(2, int(used * 48))
++        pts = [(cx, cy)] + [(cx + math.cos(a0 + used * math.tau * i / n) * rad, cy + math.sin(a0 + used * math.tau * i / n) * rad) for i in range(n + 1)]
++        pg.draw.polygon(veil, (8, 8, 18, 185), pts)
++        scr.blit(veil, r)
++    pulse = 0.55 + 0.45 * math.sin(pg.time.get_ticks() * 0.012)
++    glow = tuple(min(255, int(c * pulse + 255 * (1 - pulse) * 0.35)) for c in color[:3])
++    pg.draw.rect(scr, glow, r.inflate(4, 4), 3, border_radius=10)
++    txt = f"{left:.1f}"
++    label(scr, font, txt, r.centerx - font.size(txt)[0] // 2, r.centery - font.get_height() // 2, (255, 255, 255))
++    return True
++
++
+ def spell_cell(scr, pl, sid, x, y, size, font, active=False):
+     """Одна ячейка заклинания: иконка/цвет, рамка, затемнение неактивных, кулдаун и цена маны."""
+     sk = CFG.get("skills", {}).get(sid, {})
+@@ -150,8 +175,9 @@ def spell_cell(scr, pl, sid, x, y, size, font, active=False):
+     if not active:   # предыдущее/следующее — приглушены
+         veil = pg.Surface(r.size, pg.SRCALPHA); veil.fill((8, 8, 16, 120)); scr.blit(veil, r)
+     pg.draw.rect(scr, color if active else (80, 78, 105), r, 3 if active else 2, border_radius=8)
++    chan = channel_overlay(scr, pl, sid, r, font, color)   # удерживаемое заклинание: убывающий индикатор вместо кулдауна
+     left = max(0.0, getattr(pl, "skill_cooldowns", {}).get(sid, 0.0))
+-    if left > 0:
++    if left > 0 and not chan:
+         veil = pg.Surface(r.size, pg.SRCALPHA); pg.draw.rect(veil, (8, 8, 18, 170), veil.get_rect(), border_radius=8); scr.blit(veil, r)
+         label(scr, font, str(int(left + .99)), r.centerx - 4, r.centery - 8, (255, 255, 255))
+     cost = int(sk.get("mana_cost", 0))
+@@ -205,8 +231,10 @@ def icons(scr, pl, font):
+         skill = defs.get(sid, {"name": sid, "color": [150, 130, 220], "cooldown": 1})
+         r = slot(scr, 3, spells.icon_path(sid, skill), lambda r: pg.draw.circle(scr, skill.get("color", [150, 130, 220]), r.center, 13), border=tuple(skill.get("color", [150, 130, 220])), layout_key="skill")
+         label(scr, font, "Q", r.x + 4, r.y + 3, (255, 230, 150))
++        chan = channel_overlay(scr, pl, sid, r, font, tuple(skill.get("color", [150, 130, 220])))   # удерживаемое заклинание: убывающий индикатор
+         left = max(0.0, getattr(pl, "skill_cooldowns", {}).get(sid, 0.0))
+-        if left > 0:
++        if chan: pass
++        elif left > 0:
+             veil = pg.Surface(r.size, pg.SRCALPHA); pg.draw.rect(veil, (8, 8, 18, 165), veil.get_rect(), border_radius=8); scr.blit(veil, r)
+             label(scr, font, str(int(left + .99)), r.centerx - 4, r.centery - 8, (255, 255, 255))
+         else:
+diff --git a/main.py b/main.py
+index c02ef98..afbe479 100644
+--- a/main.py
++++ b/main.py
+@@ -86,6 +86,11 @@ class Player(Body):
+         s.skill_cooldowns = {key: 0.0 for key in s.skills}; s.skill_notice = 0.0
+         s.shield_time = 0.0; s.shield_hp = 0.0; s.shield_face = s.face; s.shield_asset_cache = {}
+         s.last_weapon = s.slots[0]; s.skill_cast = None
++        # Удерживаемое заклинание (skills.json: "channel": true — напр. захват инженера, как ульта Bane): словарь
++        # {"sid", "t" (сколько уже колдуем), "max" (лимит, сек), ...} или None. Логика — spells.channel_*.
++        s.channel = None
++        s.skill_held = False   # зажата ли клавиша навыка (одиночная игра: Game.step; сеть: бит в NetKeys)
++        s.move_input = False   # зажато ли движение/«вниз» в этом кадре (удерживаемое заклинание нельзя начать на бегу)
+         # Мультиплеер: номер и имя игрока, прогресс воскрешения, «отошёл от входа» (для выходов).
+         s.pid, s.name, s.revive, s.armed, s.downed = 0, "", 0.0, False, False
+         # tp — номер «телепорта» (хост переставил игрока), hitc/kb — счётчик попаданий и отброс: клиент повторяет их у себя.
+@@ -117,6 +122,9 @@ class Player(Body):
+         # возвращается), поэтому прыжок показываем только при реальном взлёте или если герой в воздухе дольше AIR_ANIM_DELAY.
+         if not s.ground and (s.vy < -AIR_ANIM_RISE or s.air_t > AIR_ANIM_DELAY): return ["jump"], None
+         return (["move"] if abs(s.vx) > 25 else ["idle"]), None
++    def airborne(s):
++        """Герой реально в воздухе. Флаг ground у стоящего «мигает», поэтому эвристика та же, что у анимации прыжка."""
++        return not s.ground and (s.vy < -AIR_ANIM_RISE or s.air_t > AIR_ANIM_DELAY)
+     def facing(s, d):
+         """Куда повернуться при ударе: к курсору (если есть) или по движению."""
+         return (sign(s.aim[0] - s.cx) or s.face) if s.aim else (d or s.face)
+@@ -232,6 +240,7 @@ class Player(Body):
+                 fx.text("Щит разрушен", s.cx, s.y - 18)
+             if dmg <= 0: return
+         s.hp -= dmg
++        if s.channel: spells.channel_stop(s, fx, "damage")   # урон прерывает удерживаемое заклинание
+         s.hp_regen_timer = 0.0  # любой полученный урон заново запускает задержку регенерации
+         s.inv = CFG["player"]["hurt_inv"]; s.stun = .18
+         s.vx = (sign(s.cx - fx_x) or 1) * kb; s.vy = -260; fx.shake = .2; fx.stop = .06
+@@ -276,6 +285,7 @@ class Player(Body):
+                st["damage"] * s.dmg_mult(), True, o.get("count", 1), o.get("spread", 0))
+     @in_char
+     def swap_skill(s, direction=1):
++        if s.channel: return   # пока колдуем удерживаемое заклинание, книгу не листаем
+         active_skills = [sid for sid in s.skills if CFG.get("skills", {}).get(sid, {}).get("category", "active") == "active"]
+         if not active_skills: return
+         s.skill_index = (s.skill_index + direction) % len(active_skills)
+@@ -316,7 +326,14 @@ class Player(Body):
+         else: s.shield_face = s.face  # ориентация защиты синхронизирована с игроком
+         for skill_id in s.skill_cooldowns: s.skill_cooldowns[skill_id] = max(0.0, s.skill_cooldowns[skill_id] - dt)
+         if s.grab:
++            if s.channel: spells.channel_stop(s, fx, "grab")
+             s.update_grab(dt, k); return
++        # Ввод движения считаем заранее: он нужен и удерживаемым заклинаниям (прерывают каст), и самому движению ниже.
++        d = (k[pg.K_d] or k[pg.K_RIGHT]) - (k[pg.K_a] or k[pg.K_LEFT])
++        up, dn = k[pg.K_w] or k[pg.K_UP], k[pg.K_s] or k[pg.K_DOWN]
++        s.move_input = bool(d or dn)
++        if hasattr(k, "skill"): s.skill_held = bool(k.skill)   # сетевой ввод несёт «клавиша навыка зажата»
++        if s.channel: spells.channel_update(s, dt, d, dn, mobs, projs, fx)
+         if s.ground: s.air_jumps = 0
+         if s.buf.get("skill", 0) > 0:
+             s.buf["skill"] = 0
+@@ -339,8 +356,6 @@ class Player(Body):
+             s.mana = min(s.maxmana, s.mana + p.get("mana", {}).get("regen", 14) * regen_mult * dt)   # восстановление маны
+         sl, stp, left = s.combo; s.combo = (sl, stp, left - dt)
+         s.coy = p["coyote"] if s.ground else s.coy - dt
+-        d = (k[pg.K_d] or k[pg.K_RIGHT]) - (k[pg.K_a] or k[pg.K_LEFT])
+-        up, dn = k[pg.K_w] or k[pg.K_UP], k[pg.K_s] or k[pg.K_DOWN]
+         held = up or k[pg.K_SPACE]
+         c0, r0 = int(s.cx // T), int(s.cy // T); here = tile(g, c0, r0)
+         below = tile(g, c0, int((s.y + s.h + 1) // T)); st = s.state
+@@ -585,6 +600,7 @@ class Game:
+         if mb[0]: pl.press("a1")
+         if mb[2]: pl.press("a2")
+         pl.drops = r.drops   # телекинез дотягивается до предметов на полу текущей комнаты
++        pl.skill_held = s.skill_held()   # удерживаемые заклинания (захват инженера) работают, пока клавиша зажата
+         pl.update(sim, pg.key.get_pressed(), r.g, r.mobs, s.projs, fx); pl.update_anim(sim)
+         w = SimpleNamespace(g=r.g, pl=pl, mobs=r.mobs, projs=s.projs, fx=fx)   # «мир» для мобов и пуль
+         for m in r.mobs:
+@@ -626,6 +642,13 @@ class Game:
+         cfg = SETTINGS.setdefault("controls", {})
+         for action, keyname in s.CONTROL_DEFAULTS.items(): cfg.setdefault(action, keyname)
+         return cfg
++    def skill_held(s):
++        """Зажата ли сейчас клавиша навыка (у мага — ещё и ЛКМ). Нужна удерживаемым заклинаниям (skills.json: "channel")."""
++        if s.overlay_open(): return False
++        try: down = pg.key.get_pressed()[pg.key.key_code(s.controls()["skill"])]
++        except (ValueError, TypeError, KeyError, IndexError): down = False
++        if not down and CFG.get("character", {}).get("spellcaster"): down = pg.mouse.get_pressed()[0]
++        return bool(down)
+     def key_name(s, key):
+         try: return pg.key.name(pg.key.key_code(key))
+         except (ValueError, TypeError): return str(key).lower()
+diff --git a/multiplayer.py b/multiplayer.py
+index 1d151cb..2d28c40 100644
+--- a/multiplayer.py
++++ b/multiplayer.py
+@@ -271,13 +271,15 @@ def _key_bits():
+ 
+ 
+ class NetKeys:
+-    """Заменитель pg.key.get_pressed() для удалённого игрока: [влево, вправо, вверх, вниз, пробел]."""
+-    def __init__(s, bits=(0, 0, 0, 0, 0)):
+-        bits = list(bits)[:5]; bits += [0] * (5 - len(bits))
++    """Заменитель pg.key.get_pressed() для удалённого игрока: [влево, вправо, вверх, вниз, пробел, клавиша навыка зажата]."""
++    def __init__(s, bits=(0, 0, 0, 0, 0, 0)):
++        bits = list(bits)[:6]; bits += [0] * (6 - len(bits))
+         s.bits = tuple(int(bool(b)) for b in bits)
+     def __getitem__(s, key):
+         i = _key_bits().get(key)
+         return 0 if i is None else s.bits[i]
++    @property
++    def skill(s): return s.bits[5]   # зажата клавиша навыка (для удерживаемых заклинаний, см. Player.update)
+ 
+ 
+ class Input:
+@@ -285,10 +287,10 @@ class Input:
+ 
+ 
+ def local_bits(g):
+-    if g.overlay_open(): return [0, 0, 0, 0, 0]
++    if g.overlay_open(): return [0, 0, 0, 0, 0, 0]
+     k = pg.key.get_pressed()
+     return [int(bool(k[pg.K_a] or k[pg.K_LEFT])), int(bool(k[pg.K_d] or k[pg.K_RIGHT])), int(bool(k[pg.K_w] or k[pg.K_UP])),
+-            int(bool(k[pg.K_s] or k[pg.K_DOWN])), int(bool(k[pg.K_SPACE]))]
++            int(bool(k[pg.K_s] or k[pg.K_DOWN])), int(bool(k[pg.K_SPACE])), int(g.skill_held())]
+ 
+ 
+ def local_aim(g):
+@@ -559,7 +561,7 @@ class HostSession(Session):
+             if p.hp <= 0: s.revive(p, CLEAR_REVIVE_HP)
+ 
+     def down(s, p):
+-        p.downed = True; p.revive = 0.0; p.state = "move"; p.atk = None; p.skill_cast = None; p.grab = None
++        p.downed = True; p.revive = 0.0; p.state = "move"; p.atk = None; p.skill_cast = None; p.grab = None; p.channel = None
+         p.shield_time = 0.0; p.shield_hp = 0.0; p.hitbox = None; p.vx = 0
+         if p.h != p.H0: p.y -= p.H0 - p.h; p.h = p.H0
+         s.g.fx.text(f"{p.name} пал!", p.cx - 20, p.y - 30)
+@@ -692,12 +694,13 @@ class HostSession(Session):
+         for p in s.players.values():
+             atk = [p.atk["w"], p.atk["n"], round(p.atk["t"], 3)] if p.state == "attack" and p.atk else None
+             cast = [p.skill_cast[0], round(p.skill_cast[1], 3), p.skill_cast[2]] if p.skill_cast else None
++            chan = [p.channel["sid"], round(p.channel["t"], 3), p.channel["max"]] if p.channel else None   # удерживаемый каст: id, сколько идёт, лимит
+             pls.append({"id": p.pid, "n": p.name, "c": p.char_id, "x": R(p.x), "y": R(p.y), "h": p.h, "f": p.face, "st": p.state,
+                         "an": p.anim, "at": round(p.anim_t, 3), "ap": None if p.anim_p is None else round(p.anim_p, 3),
+                         "hp": R(p.hp), "mhp": p.maxhp, "mp": R(p.mana), "mmp": p.maxmana, "mf": round(max(0, p.mana_flash), 2),
+                         "inv": round(max(0, p.inv), 2), "atk": atk, "aim": [R(p.aim[0]), R(p.aim[1])] if p.aim else None,
+                         "sl": list(p.slots), "lw": p.last_weapon, "sc": cast,
+-                        "sh": [round(p.shield_time, 2), p.shield_face, R(p.shield_hp)],
++                        "sh": [round(p.shield_time, 2), p.shield_face, R(p.shield_hp)], "ch": chan,
+                         "sk": list(p.skills), "si": p.skill_index, "cd": {k: round(v, 2) for k, v in p.skill_cooldowns.items() if v > 0},
+                         "lv": p.level, "xp": p.xp, "xn": p.xp_next, "rv": round(p.revive, 2),
+                         "tp": p.tp, "hc": p.hitc, "kb": [R(p.kb[0]), R(p.kb[1])], "gr": 1 if p.grab else 0})
+@@ -980,6 +983,14 @@ class ClientSession(Session):
+         if p.pid != s.my_id or not s.predicting: p.last_weapon = ps["lw"]
+         p.shield_time, p.shield_face, p.shield_hp = ps["sh"]
+         p.skills, p.skill_index = list(ps["sk"]), ps["si"]
++        ch = ps.get("ch")   # удерживаемый каст решает хост; у клиента это только картинка (view) для HUD и анимации
++        if ch:
++            t, cur = float(ch[1]), p.channel
++            if cur and cur.get("sid") == ch[0] and abs(cur["t"] - t) < .3: t = cur["t"]   # свой плавный отсчёт между снимками
++            p.channel = {"sid": ch[0], "t": t, "max": float(ch[2]), "view": True}
++        else:
++            if p.channel: p.skill_cast = None
++            p.channel = None
+         host_cd = {k: float(v) for k, v in ps.get("cd", {}).items()}
+         if p.pid == s.my_id and s.predicting:   # только что применённый навык не «оживает», пока хост не подтвердил
+             host_cd = {k: max(host_cd.get(k, 0.0), p.skill_cooldowns.get(k, 0.0)) for k in set(host_cd) | set(p.skill_cooldowns)}
+diff --git a/spells.py b/spells.py
+index 155ea29..bfdca0a 100644
+--- a/spells.py
++++ b/spells.py
+@@ -7,6 +7,13 @@ data/skills.json. Общая обвязка (проверка маны и кул
+ (+ при необходимости новый @spell(...)). Так же устроены movement.py / attacks.py /
+ projectiles.py / boss_hands.py.
+ 
++Удерживаемые заклинания (в skills.json "channel": true, напр. телекинетический захват инженера) работают
++как ульта Bane в Dota 2: нажатие запускает каст, герой стоит на месте и колдует, пока зажата клавиша навыка,
++но не дольше "duration" секунд. Каст прерывается (и навык уходит в перезарядку), если герой двинулся,
++пригнулся (S/↓), прыгнул, перекатился, атаковал, получил урон или отпустил клавишу. Состояние хранится в
++pl.channel, а на иконке навыка (hud.py) рисуется убывающий индикатор. Свои удерживаемые заклинания —
++@spell(...) + channel("тип", tick=..., end=...) (см. ниже).
++
+ Окно мага (hud.py) показывает три активных заклинания — предыдущее, текущее и следующее;
+ порядок — список pl.skills (только "active"), текущее — pl.skill_index. Переключение C/V."""
+ import math
+@@ -84,6 +91,101 @@ def spell(kind):
+     return reg
+ 
+ 
++CHANNELS = {}   # тип заклинания -> (tick, end): хуки удерживаемых заклинаний (см. channel())
++
++
++def channel(kind, tick=None, end=None):
++    """Хуки удерживаемого заклинания типа kind (дополнение к @spell(kind), в skills.json нужен "channel": true).
++    @spell-функция запускает каст: возвращает False (не вышло — ни маны, ни перезарядки не тратится) или
++    словарь/None — стартовое состояние канала (оно лежит в pl.channel вместе с sid/t/max).
++    tick(pl, ch, a, dt, mobs, projs, fx) вызывается каждый кадр, пока герой колдует; вернёт False — каст завершится
++    (цель погибла и т.п.). end(pl, ch, a, fx) — один раз при любом завершении (отпустил/двинулся/урон/время)."""
++    CHANNELS[kind] = (tick, end)
++
++
++def channeling(pl, sid=None):
++    """Колдует ли сейчас игрок удерживаемое заклинание (и именно sid, если указан)."""
++    ch = getattr(pl, "channel", None)
++    return bool(ch) and (sid is None or ch.get("sid") == sid)
++
++
++def _channel_blocker(pl):
++    """Почему удерживаемое заклинание сейчас не начать (текст для игрока) или None, если можно."""
++    if getattr(pl, "grab", None) or pl.state != "move" or pl.stun > 0:
++        return "Нужно стоять на месте"
++    if pl.airborne():
++        return "Нужно стоять на земле"
++    if getattr(pl, "move_input", False):
++        return "Остановитесь, чтобы колдовать"
++    return None
++
++
++def begin_channel(pl, sid, a, state=None):
++    """Начать удержание: герой замирает, очередь прыжка/переката/атак сбрасывается, чтобы не прервать каст сразу."""
++    pl.vx = 0.0
++    for b in ("jump", "roll", "a1", "a2"):
++        pl.buf[b] = 0
++    pl.channel = dict(state or {}, sid=sid, t=0.0, max=max(0.1, float(a.get("duration", 2.5))))
++
++
++def _channel_break(pl, d, dn):
++    """Причина прерывания удерживаемого заклинания или None. d — направление бега (-1/0/1), dn — зажато «вниз»."""
++    if not getattr(pl, "skill_held", False):
++        return "release"                                   # отпустил клавишу навыка
++    if d or dn:
++        return "move"                                      # пошёл или пригнулся
++    if pl.state != "move" or getattr(pl, "grab", None) or pl.airborne():
++        return "move"                                      # перекат, лестница, атака, падение, захват
++    spellcaster = CFG.get("character", {}).get("spellcaster")   # у мага ЛКМ — это и есть клавиша каста
++    buttons = ("jump", "roll") if spellcaster else ("jump", "roll", "a1", "a2")
++    if any(pl.buf.get(b, 0) > 0 for b in buttons):
++        return "move"                                      # прыжок, перекат или удар
++    return None
++
++
++def channel_update(pl, dt, d, dn, mobs, projs, fx):
++    """Каждый кадр удерживаемого каста (зовётся из Player.update): проверка прерываний, лимит времени, tick заклинания."""
++    ch = pl.channel
++    sid = ch["sid"]; a = CFG.get("skills", {}).get(sid, {})
++    ch["t"] += dt
++    loop = max(0.1, float(a.get("cast_animation", 0.55)))
++    if ch.get("view"):
++        # Клиент в сетевой игре: состояние каста прислал хост (он же прерывает), здесь только крутим анимацию и таймер.
++        pl.skill_cast = (sid, ch["t"] % loop, loop)
++        return
++    why = _channel_break(pl, d, dn)
++    if why is None and ch["t"] >= ch["max"]:
++        why = "time"
++    if why is None:
++        tick = CHANNELS.get(a.get("type"), (None, None))[0]
++        if tick and tick(pl, ch, a, dt, mobs, projs, fx) is False:
++            why = "target"
++    if why:
++        channel_stop(pl, fx, why)
++        return
++    pl.vx = 0.0                                            # герой стоит на месте (без проскальзывания)
++    pl.skill_cast = (sid, ch["t"] % loop, loop)            # анимация каста крутится по кругу, пока колдуем
++
++
++def channel_stop(pl, fx=None, why="release"):
++    """Завершить удерживаемый каст: вызвать end-хук и отправить навык в перезарядку.
++    why: release (отпустил) / time (вышло время) / target (цель пропала) / move (двинулся, пригнулся, прыгнул...) / damage / grab."""
++    ch = getattr(pl, "channel", None)
++    if not ch:
++        return
++    pl.channel = None
++    pl.skill_cast = None
++    if ch.get("view"):
++        return
++    sid = ch["sid"]; a = CFG.get("skills", {}).get(sid, {})
++    end = CHANNELS.get(a.get("type"), (None, None))[1]
++    if end:
++        end(pl, ch, a, fx)
++    pl.skill_cooldowns[sid] = max(0.0, float(a.get("cooldown", 5.0)))
++    if fx is not None and why in ("move", "damage", "grab"):
++        fx.text(f"{a.get('name', sid)}: прервано", pl.cx, pl.y - 18)
++
++
+ def active_skills(pl):
+     """Список id активных навыков игрока в порядке получения (это и есть «книга заклинаний»)."""
+     defs = CFG.get("skills", {})
+@@ -103,7 +205,7 @@ def spellbook(pl):
+ def ready(pl):
+     """Готово ли текущее заклинание (нет кулдауна и хватает маны). Для авто-каста мага по зажатой ЛКМ."""
+     act = active_skills(pl)
+-    if not act:
++    if not act or channeling(pl):
+         return False
+     sid = act[pl.skill_index % len(act)]
+     a = CFG.get("skills", {}).get(sid, {})
+@@ -123,7 +225,7 @@ def cast(pl, mobs, projs, fx):
+     """Применить текущее активное заклинание (Q, а у мага ещё и ЛКМ). Тонкий диспетчер поверх @spell."""
+     defs = CFG.get("skills", {})
+     act = active_skills(pl)
+-    if not act:
++    if not act or channeling(pl):    # уже колдуем удерживаемое заклинание — новые нажатия игнорируются
+         return
+     sid = act[pl.skill_index % len(act)]
+     a = defs.get(sid)
+@@ -142,11 +244,23 @@ def cast(pl, mobs, projs, fx):
+     if fn is None:
+         fx.text(f"неизвестное заклинание: {kind}", pl.cx, pl.y - 18)
+         return
++    hold = bool(a.get("channel"))
++    if hold:
++        why = _channel_blocker(pl)
++        if why:
++            fx.text(why, pl.cx, pl.y - 18)
++            return
+     pl.skill_cast = (sid, 0.0, float(a.get("cast_animation", 0.55)))
+-    fn(pl, dict(a, _sid=sid), mobs, projs, fx)
++    res = fn(pl, dict(a, _sid=sid), mobs, projs, fx)
++    if res is False:                 # заклинание не сработало (нет цели и т.п.) — ни маны, ни перезарядки
++        pl.skill_cast = None
++        return
+     pl.mana -= cost
+     pl.mana_t = CFG["player"].get("mana", {}).get("regen_delay", .9)
+-    pl.skill_cooldowns[sid] = max(0.0, float(a.get("cooldown", 5.0)))
++    if hold:                         # удерживаемое: перезарядка стартует, когда каст закончится (channel_stop)
++        begin_channel(pl, sid, a, res if isinstance(res, dict) else None)
++    else:
++        pl.skill_cooldowns[sid] = max(0.0, float(a.get("cooldown", 5.0)))
+     fx.text(f"{a.get('name', sid)} (-{cost:g} маны)", pl.cx, pl.y - 18)
+ 
+ 
+@@ -348,9 +462,15 @@ def _telekinesis_cone(pl, a, mobs, projs, fx):
+             _shove(m, push, -kb * 0.4)
+ 
+ 
++HOLD_REFRESH = 0.2   # на сколько секунд захват обновляет стан цели каждый кадр (после конца каста он быстро спадает)
++
++
+ @spell("telekinesis_hold")
+ def _telekinesis_hold(pl, a, mobs, projs, fx):
+-    """Телекинетический захват: останавливает ближайшего к курсору врага и держит его в стане \"duration\" секунд."""
++    """Телекинетический захват: останавливает ближайшего к курсору врага и держит его в стане.
++    С "channel": true (так в skills.json) — удерживаемое заклинание, как ульта Bane: цель в стане, пока герой
++    стоит и держит клавишу навыка, но не дольше "duration" секунд (хуки _hold_tick/_hold_end ниже).
++    Без "channel" — разовый стан на "duration" секунд, как раньше."""
+     reach = a.get("range", 340)
+     dur = float(a.get("duration", 2.5))
+     color = list(a.get("color", [200, 120, 255]))
+@@ -364,10 +484,46 @@ def _telekinesis_hold(pl, a, mobs, projs, fx):
+             best, target = d_aim, m
+     if target is None:
+         fx.text("нет цели для захвата", pl.cx, pl.y - 18)
+-        return
++        return False
++    if status.cc_immune(target):   # боссы (cc_immune) не поддаются — см. status.py
++        fx.text("иммунитет к контролю", target.cx, target.cy - 60)
++        return False
+     fx.beam(pl.cx, pl.cy, target.cx, target.cy, color)
+     fx.ring(target.cx, target.cy, 38)
+     target.vx = 0.0
+     if getattr(target, "flies", False):
+         target.vy = 0.0
+-    status.apply(target, {"stun": dur}, fx)   # боссы (cc_immune) не поддаются — см. status.py
++    if a.get("channel"):
++        status.apply(target, {"stun": HOLD_REFRESH}, fx)
++        face = sign(target.cx - pl.cx)
++        if face:
++            pl.face = face          # герой смотрит на пойманного врага
++        return {"target": target, "beam": 0.1, "break_range": float(a.get("break_range", reach * 1.5))}
++    status.apply(target, {"stun": dur}, fx)
++
++
++def _hold_tick(pl, ch, a, dt, mobs, projs, fx):
++    """Каждый кадр каста: удерживаем стан цели и обновляем луч. False — цель погибла/пропала/вырвалась за break_range."""
++    t = ch.get("target")
++    if t is None or t.hp <= 0 or t not in mobs:
++        return False
++    if math.hypot(t.cx - pl.cx, t.cy - pl.cy) > ch.get("break_range", 500):
++        return False
++    status.apply(t, {"stun": HOLD_REFRESH})
++    t.vx = 0.0
++    if getattr(t, "flies", False):
++        t.vy = 0.0
++    ch["beam"] -= dt
++    if ch["beam"] <= 0:                                  # луч «живёт» 0.22 с, обновляем чаще — выглядит сплошным
++        ch["beam"] = 0.1
++        fx.beam(pl.cx, pl.cy, t.cx, t.cy, list(a.get("color", [200, 120, 255])))
++
++
++def _hold_end(pl, ch, a, fx):
++    """Каст закончился: цель отпускают (её стан спадает за доли секунды)."""
++    t = ch.get("target")
++    if t is not None and fx is not None:
++        fx.ring(t.cx, t.cy, 30)
++
++
++channel("telekinesis_hold", tick=_hold_tick, end=_hold_end)

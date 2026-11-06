@@ -47,12 +47,22 @@ class Proj:
         s.g = d.get("gravity", 0); s.life = d.get("life", 1.5); s.r = d.get("size", 5)
         s.color = d.get("color", [255, 255, 255]); s.kb = d.get("knockback", 120); s.aoe = d.get("aoe", 0)
         s.pierce = d.get("pierce", 0); s.bounces = d.get("bounces", 0); s.t = 0.0; s.hit = set(); s.dead = False
+        # Молния-снаряд: после попадания перескакивает на ближайшего ещё не задетого врага (до chain раз).
+        s.chain = int(d.get("chain", 0)); s.chain_range = d.get("chain_range", 220)
     @property
     def speed(s): return math.hypot(s.vx, s.vy)
     @property
     def angle(s): return math.atan2(s.vy, s.vx)
     def set_dir(s, angle, speed=None):
         sp = s.speed if speed is None else speed; s.vx, s.vy = math.cos(angle) * sp, math.sin(angle) * sp
+    def next_chain(s, w):
+        """Ближайшая ещё не задетая цель в радиусе chain_range (для отскока молнии) или None."""
+        best, bd = None, s.chain_range
+        for m in s.targets(w):
+            if id(m) in s.hit or getattr(m, "hp", 1) <= 0: continue
+            dd = math.hypot(m.cx - s.x, m.cy - s.y)
+            if dd < bd: bd, best = dd, m
+        return best
     def targets(s, w): return w.mobs if s.friendly else (getattr(w, "players", None) or [w.pl])   # мультиплеер: все живые игроки
     def damage(s, target, w, kb_dir):
         if s.friendly:
@@ -93,6 +103,15 @@ class Proj:
             if not s.friendly and getattr(m, "state", "") == "roll": continue   # перекат проходит сквозь пули
             s.hit.add(id(m))
             if not s.aoe: s.damage(m, w, sign(s.vx) or 1)
+            if s.chain > 0 and not s.aoe:
+                nxt = s.next_chain(w)
+                if nxt is not None:
+                    s.chain -= 1
+                    w.fx.beam(s.x, s.y, nxt.cx, nxt.cy, s.color)   # разряд к следующей цели
+                    s.set_dir(math.atan2(nxt.cy - s.y, nxt.cx - s.x))
+                    s.life = max(s.life, s.d.get("life", 1.5))      # хватит времени долететь до следующего врага
+                    return
+                return s.die(w)                                     # больше некуда перескакивать
             if s.pierce > 0 and not s.aoe: s.pierce -= 1
             else: return s.die(w)
     def draw(s, v):
@@ -118,6 +137,7 @@ def _homing(s, p, dt, w):
     if s.t < p.get("delay", 0): return
     best, bd = None, p.get("range", 99999)
     for m in s.targets(w):
+        if id(m) in s.hit: continue   # уже задетых не преследуем (пробивающие/цепные пули летят к следующему врагу)
         dd = math.hypot(m.cx - s.x, m.cy - s.y)
         if dd < bd: best, bd = m, dd
     if not best: return

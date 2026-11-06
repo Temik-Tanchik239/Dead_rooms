@@ -8,6 +8,11 @@ ROOT = Path(__file__).resolve().parent
 MAP_DIR = ROOT / "data" / "maps"
 MAP_CONFIG = ROOT / "data" / "maps.json"
 BOSS_CONFIG = ROOT / "assets" / "boss" / "boss.json"
+SKILLS_CONFIG = ROOT / "data" / "skills.json"
+CHARS_CONFIG = ROOT / "data" / "characters.json"
+PROJ_CONFIG = ROOT / "data" / "projectiles.json"
+ICON_DIR = ROOT / "assets" / "icons"
+SKILLS_ASSET_DIR = ROOT / "assets" / "skills"
 W, H, CELL = 50, 50, 16
 MORGART_MARKER = "C"   # символ карты, который ставит Моргарта; другие боссы получат свои маркеры и панели
 TILE = 32            # размер клетки в игре (пикселей) — нужен для перевода смещений рук
@@ -125,10 +130,11 @@ def describe_light(definition):
 
 
 class Editor:
-    def __init__(self, root):
-        self.root = root
-        root.title("DEAD ROOMS — редактор карт")
-        root.geometry("1100x820")
+    def __init__(self, container, window=None):
+        self.root = container
+        if window is not None:
+            window.title("DEAD ROOMS — редактор карт")
+            window.geometry("1100x820")
         self.map_w, self.map_h = W, H
         self.rows = [["." for _ in range(self.map_w)] for _ in range(self.map_h)]
         self.meta = {"name": "Новая карта", "pos": [0, 0], "fill": "."}
@@ -627,5 +633,758 @@ class Editor:
             messagebox.showinfo("Карта сохранена", f"Сохранено в:\n{path}\n\nЕсли игра уже запущена, нажми F5 для перезагрузки данных.")
         except Exception as e: messagebox.showerror("Ошибка сохранения", str(e))
 
+# ======================================================================================
+#  РЕДАКТОР НАВЫКОВ  (вторая вкладка; пишет data/skills.json и привязки в data/characters.json)
+# ======================================================================================
+
+# Типы навыков. active — заклинания/активные навыки (@spell в spells.py); passive — пассивки.
+ACTIVE_TYPES = ["dash", "nova", "heal", "shield", "projectile", "chain_lightning", "strike_area",
+                "telekinesis", "telekinesis_cone", "telekinesis_hold"]
+PASSIVE_TYPES = ["double_jump", "max_hp", "max_mana", "mana_regen", "mana_cost_reduction",
+                 "damage", "move_speed"]
+
+# Числовые/текстовые поля навыка. (ключ, подпись, тип). Пустое поле не пишется в JSON.
+# "подсказка" справа поясняет, для каких типов поле нужно.
+SKILL_FIELDS = [
+    ("mana_cost", "Расход маны", "float", "активные"),
+    ("cooldown", "Перезарядка, с", "float", "активные"),
+    ("unlock_level", "Открывается на ур.", "int", "в дереве навыков"),
+    ("damage", "Урон", "float", "nova/strike_area/projectile/chain_lightning/telekinesis*"),
+    ("radius", "Радиус", "float", "nova/heal/shield/strike_area/telekinesis"),
+    ("range", "Дальность", "float", "chain_lightning/strike_area/telekinesis*"),
+    ("knockback", "Отбрасывание", "float", "nova/strike_area/telekinesis*"),
+    ("duration", "Длительность, с", "float", "shield/telekinesis_hold"),
+    ("speed", "Скорость", "float", "dash"),
+    ("invulnerability", "Неуязвимость, с", "float", "dash"),
+    ("amount", "Количество (лечение/бонус)", "float", "heal/max_hp/max_mana"),
+    ("multiplier", "Множитель", "float", "damage/move_speed/mana_regen"),
+    ("capacity", "Ёмкость щита", "float", "shield"),
+    ("stun", "Оглушение, с", "float", "strike_area"),
+    ("chains", "Прыжков молнии", "int", "chain_lightning"),
+    ("chain_range", "Радиус прыжка", "float", "chain_lightning"),
+    ("falloff", "Спад урона (0..1)", "float", "chain_lightning"),
+    ("force", "Сила притяжения", "float", "telekinesis"),
+    ("grip", "Радиус захвата", "float", "telekinesis"),
+    ("angle", "Угол конуса, °", "float", "telekinesis_cone"),
+    ("count", "Снарядов за выстрел", "int", "projectile"),
+    ("spread", "Разброс, рад", "float", "projectile"),
+]
+
+# Какие числовые поля показывать для каждого типа (остальные скрыты). Для всех активных
+# добавляются mana_cost/cooldown, для всех — unlock_level. Неизвестный тип -> показываем все.
+TYPE_FIELDS = {
+    "dash": {"speed", "invulnerability", "radius"},
+    "nova": {"radius", "damage", "knockback"},
+    "heal": {"amount", "radius"},
+    "shield": {"duration", "capacity", "radius"},
+    "projectile": {"damage", "count", "spread"},
+    "chain_lightning": {"damage", "range", "chain_range", "chains", "falloff", "knockback"},
+    "strike_area": {"radius", "damage", "range", "knockback", "stun"},
+    "telekinesis": {"range", "radius", "force", "grip", "damage"},
+    "telekinesis_cone": {"range", "angle", "knockback", "damage"},
+    "telekinesis_hold": {"range", "duration", "damage"},
+    "double_jump": set(),
+    "max_hp": {"amount"}, "max_mana": {"amount"},
+    "mana_regen": {"multiplier"}, "mana_cost_reduction": {"amount"},
+    "damage": {"multiplier"}, "move_speed": {"multiplier"},
+}
+PROJECTILE_TYPES = {"projectile"}          # у кого есть снаряд-«оболочка»
+EFFECT_TYPES = {"nova", "strike_area"}     # у кого осмыслен эффект на врага
+# Порядок полей/блоков в середине (токен = ключ поля либо спец-блок __имя__).
+LAYOUT_ORDER = ["mana_cost", "cooldown", "unlock_level", "__projectile__",
+                "damage", "radius", "range", "knockback", "duration", "speed",
+                "invulnerability", "amount", "multiplier", "capacity", "stun",
+                "chains", "chain_range", "falloff", "force", "grip", "angle",
+                "count", "spread", "__weapons__", "__effect__", "__cast__"]
+FIELD_KIND = {k: kind for k, _, kind, _ in SKILL_FIELDS}
+FIELD_LABEL = {k: lbl for k, lbl, _, _ in SKILL_FIELDS}
+
+
+class SkillEditor:
+    def __init__(self, container):
+        self.root = container
+        self.skills = {}
+        self.chars = {}
+        self.projectiles = []
+        self.editing_id = None          # id навыка, который сейчас редактируется (None — новый)
+        self.icon_var = tk.StringVar(value="")     # относительный путь иконки ("" — нет)
+        self.color_rgb = [150, 150, 255]
+        self.icon_images = {}           # кэш PhotoImage иконок (чтобы Tk не удалил их)
+        self.icon_buttons = {}
+        self.vars = {}                  # поле -> StringVar
+        self.cat_var = tk.StringVar(value="active")
+        self.type_var = tk.StringVar(value="projectile")
+        self.proj_var = tk.StringVar(value="")
+        self.proj_skin_var = tk.StringVar(value="")  # свой спрайт снаряда ("" — по типу / по id навыка)
+        self.proj_defs = {}
+        self._thumbs = {}            # кэш превью: (путь, размер) -> PhotoImage
+        self._preview_refs = []      # ссылки на картинки превью (чтобы Tk их не удалил)
+        self.proj_buttons = {}       # тип снаряда -> кнопка
+        self.proj_skin_buttons = {}  # путь спрайта -> кнопка
+        self.roww = {}               # токен LAYOUT_ORDER -> виджет-строка/блок (для показа/скрытия)
+        self.channel_var = tk.BooleanVar(value=False)
+        self.effect_kind = tk.StringVar(value="нет")
+        self.effect_a = tk.StringVar(value="")   # freeze/stun: секунды; burn: время
+        self.effect_b = tk.StringVar(value="")   # burn: dps
+        self.cast_anim = tk.StringVar(value="")
+        self.cast_w = tk.StringVar(value=""); self.cast_h = tk.StringVar(value="")
+        self.cast_dx = tk.StringVar(value=""); self.cast_dy = tk.StringVar(value="")
+        self.cast_dur = tk.StringVar(value="")
+        self.weapons_var = tk.StringVar(value="")      # для пассивки mana_cost_reduction
+        self.status = tk.StringVar(value="Выбери навык слева или нажми «Новый навык».")
+        self.char_rows = {}             # cid -> (in_tree BooleanVar, base BooleanVar, level StringVar)
+        self._load_data()
+        self._ui()
+        self._refresh_list()
+
+    # ---------- данные ----------
+    def _load_data(self):
+        try:
+            self.skills = json.loads(SKILLS_CONFIG.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            self.skills = {}
+        try:
+            self.chars = json.loads(CHARS_CONFIG.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            self.chars = {"order": [], "characters": {}}
+        try:
+            self.proj_defs = json.loads(PROJ_CONFIG.read_text(encoding="utf-8"))
+            self.projectiles = sorted(self.proj_defs.keys())
+        except (OSError, ValueError):
+            self.proj_defs = {}; self.projectiles = []
+
+    def _skill_ids(self):
+        return [k for k in self.skills if not k.startswith("_")]
+
+    def _char_order(self):
+        order = self.chars.get("order") or list(self.chars.get("characters", {}).keys())
+        return [c for c in order if c in self.chars.get("characters", {})]
+
+    def _cast_anim_options(self):
+        opts = [""]
+        if SKILLS_ASSET_DIR.is_dir():
+            for d in sorted(SKILLS_ASSET_DIR.iterdir()):
+                if d.is_dir() and (d / "cast").is_dir():
+                    opts.append(f"skills/{d.name}/cast")
+                elif d.is_dir() and (d / "cast.png").exists():
+                    opts.append(f"skills/{d.name}/cast.png")
+        return opts
+
+    # ---------- превью-картинки ----------
+    def _thumb(self, rel, maxsize=48):
+        """PhotoImage файла assets/<rel>, уменьшенный до maxsize (с кэшем). None — если нет файла."""
+        if not rel:
+            return None
+        key = (rel, maxsize)
+        if key in self._thumbs:
+            return self._thumbs[key]
+        img = None
+        try:
+            img = tk.PhotoImage(file=str(ROOT / "assets" / rel))
+            while img.width() > maxsize or img.height() > maxsize:
+                img = img.subsample(2, 2)
+        except tk.TclError:
+            img = None
+        self._thumbs[key] = img
+        return img
+
+    def _proj_thumb(self, ptype, maxsize=40):
+        skin = self.proj_defs.get(ptype, {}).get("skin")
+        return self._thumb(skin, maxsize) if skin else None
+
+    # ---------- UI ----------
+    def _ui(self):
+        outer = ttk.Frame(self.root, padding=8); outer.pack(fill="both", expand=True)
+
+        # левая колонка — список навыков
+        left = ttk.Frame(outer); left.pack(side="left", fill="y")
+        ttk.Label(left, text="Навыки", font=("Arial", 12, "bold")).pack(anchor="w")
+        self.listbox = tk.Listbox(left, width=24, height=28, exportselection=False)
+        self.listbox.pack(fill="y", expand=True, pady=4)
+        self.listbox.bind("<<ListboxSelect>>", self._on_select)
+        btns = ttk.Frame(left); btns.pack(fill="x")
+        ttk.Button(btns, text="Новый", command=self._new_skill).pack(side="left", padx=2)
+        ttk.Button(btns, text="Удалить", command=self._delete_skill).pack(side="left", padx=2)
+
+        # середина — форма полей (прокручиваемая)
+        mid_wrap = ttk.Frame(outer); mid_wrap.pack(side="left", fill="both", expand=True, padx=10)
+        canvas = tk.Canvas(mid_wrap, highlightthickness=0, width=440)
+        scroll = ttk.Scrollbar(mid_wrap, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y"); canvas.pack(side="left", fill="both", expand=True)
+        mid = ttk.Frame(canvas); canvas.create_window((0, 0), window=mid, anchor="nw")
+        mid.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta / 120), "units"))
+
+        self._row(mid, "ID навыка (англ.):", "id", width=24)
+        self._row(mid, "Название:", "name", width=30)
+        r = ttk.Frame(mid); r.pack(fill="x", pady=2)
+        ttk.Label(r, text="Категория:", width=18).pack(side="left")
+        ttk.Combobox(r, textvariable=self.cat_var, width=12, state="readonly",
+                     values=["active", "passive"]).pack(side="left")
+        r2 = ttk.Frame(mid); r2.pack(fill="x", pady=2)
+        ttk.Label(r2, text="Тип:", width=18).pack(side="left")
+        self.type_combo = ttk.Combobox(r2, textvariable=self.type_var, width=22,
+                                       values=ACTIVE_TYPES + PASSIVE_TYPES)
+        self.type_combo.pack(side="left")
+        self.channel_cb = ttk.Checkbutton(r2, text="удерживаемый (channel)", variable=self.channel_var)
+        self.channel_cb.pack(side="left", padx=6)
+
+        # динамический блок: все поля/блоки строятся сюда, показываются по типу навыка
+        self.dyn = ttk.Frame(mid); self.dyn.pack(fill="x")
+        for key in FIELD_KIND:                       # числовые/текстовые поля
+            self._field_row(self.dyn, key)
+        self._projectile_block(self.dyn)             # __projectile__
+        self._weapons_block(self.dyn)                # __weapons__
+        self._effect_block(self.dyn)                 # __effect__
+        self._cast_block(self.dyn)                   # __cast__
+
+        # описание
+        ttk.Label(mid, text="Описание:").pack(anchor="w", pady=(4, 0))
+        self.desc_text = tk.Text(mid, width=52, height=3, wrap="word")
+        self.desc_text.pack(fill="x")
+        ttk.Button(mid, text="💾 Сохранить навык", command=self._save_skill).pack(fill="x", pady=8)
+        ttk.Label(mid, textvariable=self.status, wraplength=430, foreground="#2a6").pack(fill="x")
+
+        # правая колонка — превью, иконка, цвет, привязка к героям
+        right = ttk.Frame(outer); right.pack(side="left", fill="y", padx=(6, 0))
+        self._preview_panel(right)
+        self._icon_panel(right)
+        self._color_panel(right)
+        self._char_panel(right)
+
+        # перестраивать видимость при смене категории/типа (и обновлять превью)
+        self.cat_var.trace_add("write", self._relayout)
+        self.type_var.trace_add("write", self._relayout)
+        self.channel_var.trace_add("write", lambda *a: self._update_preview())
+        self.effect_kind.trace_add("write", lambda *a: self._update_preview())
+        self._relayout()
+
+    def _row(self, parent, label, key, width=20, var=None, hint=None):
+        """Строка «подпись + Entry» (для всегда видимых id/name)."""
+        if var is None:
+            var = tk.StringVar(value=""); self.vars[key] = var
+        row = ttk.Frame(parent); row.pack(fill="x", pady=1)
+        ttk.Label(row, text=label, width=18).pack(side="left")
+        ttk.Entry(row, textvariable=var, width=width).pack(side="left")
+        var.trace_add("write", lambda *a: self._update_preview())
+        if hint:
+            ttk.Label(row, text=hint, foreground="#888").pack(side="left", padx=6)
+
+    def _field_row(self, parent, key):
+        """Одно числовое поле внутри self.dyn (пакуется/скрывается в _relayout)."""
+        self.vars[key] = tk.StringVar(value="")
+        row = ttk.Frame(parent)
+        ttk.Label(row, text=FIELD_LABEL[key] + ":", width=20).pack(side="left")
+        ttk.Entry(row, textvariable=self.vars[key], width=10).pack(side="left")
+        self.vars[key].trace_add("write", lambda *a: self._update_preview())
+        self.roww[key] = row
+
+    def _projectile_block(self, parent):
+        """Блок снаряда: тип (поведение) + сетка иконок типов + свой спрайт («оболочка» навыка)."""
+        f = ttk.LabelFrame(parent, text="Снаряд этого навыка", padding=4)
+        top = ttk.Frame(f); top.pack(fill="x")
+        ttk.Label(top, text="Поведение (тип):").pack(side="left")
+        ttk.Combobox(top, textvariable=self.proj_var, width=16, state="readonly",
+                     values=[""] + self.projectiles).pack(side="left", padx=4)
+        self.proj_var.trace_add("write", lambda *a: (self._sync_proj_buttons(), self._update_preview()))
+        ttk.Label(f, text="Иконки снарядов (клик — выбрать тип):", foreground="#888").pack(anchor="w", pady=(4, 0))
+        grid = ttk.Frame(f); grid.pack(fill="x")
+        for i, pt in enumerate(self.projectiles):
+            img = self._proj_thumb(pt)
+            b = tk.Button(grid, image=img, text=("" if img else pt[:6]), compound="center",
+                          width=(40 if img else 7), height=(40 if img else 2),
+                          command=lambda p=pt: self.proj_var.set(p))
+            if img:
+                b.image = img
+            b.grid(row=i // 5, column=i % 5, padx=2, pady=2)
+            self.proj_buttons[pt] = b
+        ttk.Label(f, text="Свой спрайт (перекрывает картинку типа, assets/projectiles):",
+                  foreground="#888", wraplength=300).pack(anchor="w", pady=(4, 0))
+        sgrid = ttk.Frame(f); sgrid.pack(fill="x")
+        skins = [("", "авто")]
+        pdir = ROOT / "assets" / "projectiles"
+        if pdir.is_dir():
+            skins += [(f"projectiles/{p.name}", p.stem) for p in sorted(pdir.glob("*.png"))]
+        for i, (rel, name) in enumerate(skins):
+            img = self._thumb(rel, 40) if rel else None
+            b = tk.Button(sgrid, image=img, text=("" if img else "авто"), compound="center",
+                          width=(40 if img else 6), height=(40 if img else 2),
+                          command=lambda r=rel: self._pick_proj_skin(r))
+            if img:
+                b.image = img
+            b.grid(row=i // 5, column=i % 5, padx=2, pady=2)
+            self.proj_skin_buttons[rel] = b
+        self.roww["__projectile__"] = f
+
+    def _weapons_block(self, parent):
+        f = ttk.Frame(parent)
+        ttk.Label(f, text="Оружие (через запятую):", width=20).pack(side="left")
+        ttk.Entry(f, textvariable=self.weapons_var, width=26).pack(side="left")
+        self.roww["__weapons__"] = f
+
+    def _effect_block(self, parent):
+        ef = ttk.LabelFrame(parent, text="Эффект (накладывается на врага)", padding=4)
+        er = ttk.Frame(ef); er.pack(fill="x")
+        ttk.Label(er, text="Эффект:").pack(side="left")
+        ttk.Combobox(er, textvariable=self.effect_kind, width=10, state="readonly",
+                     values=["нет", "freeze", "stun", "burn"]).pack(side="left", padx=4)
+        ttk.Label(er, text="время/сек:").pack(side="left")
+        ttk.Entry(er, textvariable=self.effect_a, width=6).pack(side="left", padx=2)
+        ttk.Label(er, text="dps (burn):").pack(side="left")
+        ttk.Entry(er, textvariable=self.effect_b, width=6).pack(side="left", padx=2)
+        self.roww["__effect__"] = ef
+
+    def _cast_block(self, parent):
+        af = ttk.LabelFrame(parent, text="Анимация применения (своя, assets/skills/<...>)", padding=4)
+        ar = ttk.Frame(af); ar.pack(fill="x")
+        ttk.Label(ar, text="Кадры:").pack(side="left")
+        ttk.Combobox(ar, textvariable=self.cast_anim, width=26,
+                     values=self._cast_anim_options()).pack(side="left", padx=4)
+        ar2 = ttk.Frame(af); ar2.pack(fill="x", pady=2)
+        for lbl, v in (("Ш", self.cast_w), ("В", self.cast_h),
+                       ("dx", self.cast_dx), ("dy", self.cast_dy), ("длит.с", self.cast_dur)):
+            ttk.Label(ar2, text=lbl).pack(side="left")
+            ttk.Entry(ar2, textvariable=v, width=5).pack(side="left", padx=2)
+        self.roww["__cast__"] = af
+
+    # ---------- показ/скрытие по типу ----------
+    def _visible(self):
+        """(category, type, set видимых токенов) — какие поля/блоки показывать для текущего типа."""
+        cat = self.cat_var.get(); typ = self.type_var.get().strip()
+        known = typ in TYPE_FIELDS
+        fields = set(TYPE_FIELDS[typ]) if known else set(FIELD_KIND)   # неизвестный тип -> всё
+        fields.add("unlock_level")
+        if cat == "active":
+            fields.update({"mana_cost", "cooldown"})
+        show = set(fields)
+        if typ in PROJECTILE_TYPES or not known:
+            show.add("__projectile__")
+        if typ in EFFECT_TYPES or not known:
+            show.add("__effect__")
+        if cat == "active":
+            show.add("__cast__")
+        if typ == "mana_cost_reduction" or not known:
+            show.add("__weapons__")
+        return cat, typ, show
+
+    def _relayout(self, *_):
+        cat, typ, show = self._visible()
+        for tok in LAYOUT_ORDER:
+            self.roww[tok].pack_forget()
+        for tok in LAYOUT_ORDER:
+            if tok in show:
+                self.roww[tok].pack(fill="x", pady=1, anchor="w")
+        if cat == "active":
+            self.channel_cb.pack(side="left", padx=6)
+        else:
+            self.channel_cb.pack_forget()
+        self._sync_proj_buttons()
+        self._update_preview()
+
+    def _sync_proj_buttons(self):
+        pt = self.proj_var.get()
+        for p, b in self.proj_buttons.items():
+            b.configure(relief="sunken" if p == pt else "raised")
+        sk = self.proj_skin_var.get()
+        for rel, b in self.proj_skin_buttons.items():
+            b.configure(relief="sunken" if rel == sk else "raised")
+
+    def _pick_proj_skin(self, rel):
+        self.proj_skin_var.set(rel or "")
+        self._sync_proj_buttons(); self._update_preview()
+
+    # ---------- превью «собранного навыка» ----------
+    def _preview_panel(self, parent):
+        box = ttk.LabelFrame(parent, text="Собранный навык", padding=4); box.pack(fill="x")
+        self.preview = tk.Canvas(box, width=232, height=300, bg="#1b1b24", highlightthickness=0)
+        self.preview.pack()
+
+    def _update_preview(self, *_):
+        c = getattr(self, "preview", None)
+        if c is None:
+            return
+        c.delete("all"); self._preview_refs = []
+        col = hex_color(self.color_rgb)
+        icon = self.icon_var.get()
+        img = self._thumb(icon, 64) if icon else None
+        if img:
+            c.create_image(16, 14, image=img, anchor="nw"); self._preview_refs.append(img)
+        else:
+            c.create_oval(18, 16, 78, 76, fill=col, outline="")
+        name = self.vars["name"].get() or self.vars["id"].get() or "новый навык"
+        c.create_text(90, 16, text=name, fill="#ffffff", anchor="nw", font=("Arial", 12, "bold"), width=132)
+        c.create_text(90, 42, text=f"{self.cat_var.get()} · {self.type_var.get()}", fill="#9ad0ff",
+                      anchor="nw", font=("Arial", 9), width=132)
+        if self.channel_var.get() and self.cat_var.get() == "active":
+            c.create_text(90, 60, text="удерживаемый", fill="#ffcf8a", anchor="nw", font=("Arial", 8))
+        c.create_rectangle(16, 86, 216, 92, fill=col, outline="")
+        _, typ, show = self._visible()
+        y = 100
+        for key in LAYOUT_ORDER:
+            if key.startswith("__") or key not in show:
+                continue
+            val = self.vars[key].get().strip()
+            if val:
+                c.create_text(16, y, text=f"{FIELD_LABEL[key]}: {val}", fill="#cfd4e0",
+                              anchor="nw", font=("Arial", 9)); y += 15
+        if self.effect_kind.get() != "нет" and "__effect__" in show:
+            c.create_text(16, y, text=f"эффект: {self.effect_kind.get()} {self.effect_a.get()}".strip(),
+                          fill="#a0e0c0", anchor="nw", font=("Arial", 9)); y += 15
+        if "__projectile__" in show:
+            skin = self.proj_skin_var.get() or self.proj_defs.get(self.proj_var.get(), {}).get("skin")
+            c.create_text(16, y + 4, text=f"снаряд: {self.proj_var.get() or '—'}", fill="#9ad0ff",
+                          anchor="nw", font=("Arial", 9))
+            pim = self._thumb(skin, 44) if skin else None
+            if pim:
+                c.create_image(150, y, image=pim, anchor="nw"); self._preview_refs.append(pim)
+            y += 26
+        if "__cast__" in show and self.cast_anim.get().strip():
+            c.create_text(16, y, text=f"каст: {self.cast_anim.get()}", fill="#c9b3ff",
+                          anchor="nw", font=("Arial", 8), width=200)
+
+    def _icon_panel(self, parent):
+        box = ttk.LabelFrame(parent, text="Иконка навыка (своя, assets/icons)", padding=4); box.pack(fill="x", pady=6)
+        ttk.Label(box, textvariable=self.icon_var, foreground="#888", wraplength=210).pack(anchor="w")
+        canvas = tk.Canvas(box, width=224, height=150, highlightthickness=0)
+        sc = ttk.Scrollbar(box, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=sc.set)
+        sc.pack(side="right", fill="y"); canvas.pack(side="left")
+        grid = ttk.Frame(canvas); canvas.create_window((0, 0), window=grid, anchor="nw")
+        grid.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        options = [("", "нет")]
+        if ICON_DIR.is_dir():
+            for p in sorted(ICON_DIR.glob("*.png")):
+                options.append((f"icons/{p.name}", p.stem))
+        col_n = 4
+        for i, (rel, name) in enumerate(options):
+            img = self._thumb(rel, 48) if rel else None
+            b = tk.Button(grid, image=img, text=("✖" if not rel else ""), width=(48 if img else 4),
+                          height=(48 if img else 2), compound="center",
+                          command=lambda r=rel: self._pick_icon(r))
+            if img:
+                b.image = img
+            b.grid(row=i // col_n, column=i % col_n, padx=2, pady=2)
+            self.icon_buttons[rel] = b
+
+    def _pick_icon(self, rel):
+        for r, b in self.icon_buttons.items():
+            b.configure(relief="sunken" if r == rel else "raised")
+        self.icon_var.set(rel or "")
+        self._update_preview()
+
+    def _color_panel(self, parent):
+        box = ttk.LabelFrame(parent, text="Цвет навыка", padding=4); box.pack(fill="x", pady=6)
+        self.color_preview = tk.Label(box, text="      ", bg=hex_color(self.color_rgb), relief="sunken")
+        self.color_preview.pack(side="left", padx=4)
+        ttk.Button(box, text="Выбрать цвет…", command=self._pick_color).pack(side="left")
+
+    def _pick_color(self):
+        res = colorchooser.askcolor(color=hex_color(self.color_rgb), title="Цвет навыка")
+        if res and res[0]:
+            self.color_rgb = [int(v) for v in res[0]]
+            self.color_preview.configure(bg=hex_color(self.color_rgb))
+            self._update_preview()
+
+    def _char_panel(self, parent):
+        box = ttk.LabelFrame(parent, text="Каким героям доступен навык", padding=4); box.pack(fill="x")
+        ttk.Label(box, text="☑ в дереве · ☑ с начала · уровень", foreground="#888").pack(anchor="w")
+        for cid in self._char_order():
+            name = self.chars["characters"][cid].get("name", cid)
+            row = ttk.Frame(box); row.pack(fill="x", pady=1)
+            in_tree = tk.BooleanVar(value=False); base = tk.BooleanVar(value=False); lvl = tk.StringVar(value="1")
+            ttk.Checkbutton(row, variable=in_tree).pack(side="left")
+            ttk.Checkbutton(row, variable=base).pack(side="left")
+            ttk.Entry(row, textvariable=lvl, width=3).pack(side="left", padx=2)
+            ttk.Label(row, text=f"{name} ({cid})").pack(side="left")
+            self.char_rows[cid] = (in_tree, base, lvl)
+
+    # ---------- список / выбор ----------
+    def _refresh_list(self, select=None):
+        self.listbox.delete(0, "end")
+        self._ids_in_list = sorted(self._skill_ids())
+        for sid in self._ids_in_list:
+            s = self.skills[sid]
+            self.listbox.insert("end", f"{sid} — {s.get('name', '')}")
+        if select in self._ids_in_list:
+            i = self._ids_in_list.index(select)
+            self.listbox.selection_set(i); self.listbox.see(i)
+
+    def _on_select(self, _event=None):
+        sel = self.listbox.curselection()
+        if not sel:
+            return
+        sid = self._ids_in_list[sel[0]]
+        self._load_skill(sid)
+
+    def _load_skill(self, sid):
+        s = self.skills.get(sid, {})
+        self.editing_id = sid
+        self.vars["id"].set(sid)
+        self.vars["name"].set(s.get("name", ""))
+        self.cat_var.set(s.get("category", "active"))
+        self.type_var.set(s.get("type", ""))
+        self.proj_var.set(s.get("projectile", "") if isinstance(s.get("projectile"), str) else "")
+        self.proj_skin_var.set(s.get("projectile_skin", "") or "")
+        self.channel_var.set(bool(s.get("channel")))
+        for key, _, _, _ in SKILL_FIELDS:
+            v = s.get(key, "")
+            self.vars[key].set("" if v == "" else str(v))
+        self.weapons_var.set(", ".join(s.get("weapons", [])) if isinstance(s.get("weapons"), list) else "")
+        # цвет
+        col = s.get("color")
+        if isinstance(col, list) and len(col) >= 3:
+            self.color_rgb = [int(c) for c in col[:3]]
+        self.color_preview.configure(bg=hex_color(self.color_rgb))
+        # иконка
+        self._pick_icon(s.get("icon", "") or "")
+        # эффект
+        eff = s.get("effect")
+        self.effect_kind.set("нет"); self.effect_a.set(""); self.effect_b.set("")
+        if isinstance(eff, dict):
+            if "freeze" in eff: self.effect_kind.set("freeze"); self.effect_a.set(str(eff["freeze"]))
+            elif "stun" in eff: self.effect_kind.set("stun"); self.effect_a.set(str(eff["stun"]))
+            elif "burn" in eff and isinstance(eff["burn"], dict):
+                self.effect_kind.set("burn"); self.effect_a.set(str(eff["burn"].get("time", "")))
+                self.effect_b.set(str(eff["burn"].get("dps", "")))
+        # анимация каста
+        self.cast_anim.set(s.get("cast_anim", "") or "")
+        cs = s.get("cast_size") or ["", ""]; self.cast_w.set(str(cs[0])); self.cast_h.set(str(cs[1]))
+        co = s.get("cast_offset") or ["", ""]; self.cast_dx.set(str(co[0])); self.cast_dy.set(str(co[1]))
+        self.cast_dur.set(str(s.get("cast_animation", "")) if s.get("cast_animation") is not None else "")
+        # описание
+        self.desc_text.delete("1.0", "end"); self.desc_text.insert("1.0", s.get("description", ""))
+        # привязка к героям
+        self._load_char_assignment(sid)
+        self._relayout()        # показать только нужные поля для этого типа + обновить превью
+        self.status.set(f"Редактируется навык: {sid}")
+
+    def _load_char_assignment(self, sid):
+        for cid, (in_tree, base, lvl) in self.char_rows.items():
+            cdef = self.chars["characters"].get(cid, {})
+            in_tree.set(False); base.set(False); lvl.set("1")
+            for entry in cdef.get("skill_tree", []):
+                if isinstance(entry, dict) and entry.get("skill") == sid:
+                    in_tree.set(True); lvl.set(str(entry.get("unlock_level", 1))); break
+            if sid in cdef.get("base_skills", []):
+                base.set(True)
+
+    def _new_skill(self):
+        self.editing_id = None
+        self.listbox.selection_clear(0, "end")
+        for v in self.vars.values():
+            v.set("")
+        self.vars["unlock_level"].set("1")
+        self.cat_var.set("active"); self.type_var.set("projectile")
+        self.proj_var.set(""); self.proj_skin_var.set("")
+        self.channel_var.set(False); self.weapons_var.set("")
+        self.effect_kind.set("нет"); self.effect_a.set(""); self.effect_b.set("")
+        self.cast_anim.set(""); self.cast_w.set(""); self.cast_h.set("")
+        self.cast_dx.set(""); self.cast_dy.set(""); self.cast_dur.set("")
+        self.color_rgb = [150, 150, 255]; self.color_preview.configure(bg=hex_color(self.color_rgb))
+        self._pick_icon("")
+        self.desc_text.delete("1.0", "end")
+        for in_tree, base, lvl in self.char_rows.values():
+            in_tree.set(False); base.set(False); lvl.set("1")
+        self._relayout()
+        self.status.set("Новый навык: заполни поля и сохрани.")
+
+    def _delete_skill(self):
+        if not self.editing_id or self.editing_id not in self.skills:
+            messagebox.showinfo("Удаление", "Сначала выбери сохранённый навык в списке."); return
+        sid = self.editing_id
+        if not messagebox.askyesno("Удалить навык", f"Удалить «{sid}» из skills.json и из всех героев?"):
+            return
+        self.skills.pop(sid, None)
+        for cdef in self.chars.get("characters", {}).values():
+            cdef["skill_tree"] = [e for e in cdef.get("skill_tree", []) if not (isinstance(e, dict) and e.get("skill") == sid)]
+            cdef["base_skills"] = [s for s in cdef.get("base_skills", []) if s != sid]
+            cdef.get("skill_overrides", {}).pop(sid, None)
+        self._write_all()
+        self._new_skill(); self._refresh_list()
+        self.status.set(f"Навык «{sid}» удалён.")
+
+    # ---------- сохранение ----------
+    def _num(self, text, kind):
+        text = text.strip().replace(",", ".")
+        if not text:
+            return None
+        try:
+            val = float(text)
+        except ValueError:
+            raise ValueError(f"«{text}» — не число")
+        if kind == "int" or val.is_integer():
+            return int(val)       # целое пишем как целое (42, а не 42.0)
+        return val
+
+    def _save_skill(self):
+        sid = self.vars["id"].get().strip()
+        if not sid or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_" for c in sid):
+            messagebox.showerror("ID", "ID навыка: латинские буквы, цифры и _ (без пробелов)."); return
+        # начинаем с копии старого навыка, чтобы не потерять незнакомые поля (visual и т.п.)
+        base = dict(self.skills.get(self.editing_id, {})) if self.editing_id else {}
+        try:
+            s = self._build_skill(base)
+        except ValueError as e:
+            messagebox.showerror("Число", str(e)); return
+        # переименование
+        if self.editing_id and self.editing_id != sid:
+            self.skills.pop(self.editing_id, None)
+            self._rename_in_chars(self.editing_id, sid)
+        self.skills[sid] = s
+        self._apply_char_assignment(sid)
+        self.editing_id = sid
+        self._write_all()
+        self._refresh_list(select=sid)
+        self.status.set(f"Навык «{sid}» сохранён. В игре нажми F5.")
+        messagebox.showinfo("Навык сохранён", f"«{sid}» записан в data/skills.json и привязан к героям.\n\nЕсли игра запущена — нажми F5.")
+
+    def _build_skill(self, base):
+        # пишем только поля/блоки, видимые для текущего типа — так навык не тянет чужие настройки
+        _, typ, show = self._visible()
+        s = dict(base)
+        s["name"] = self.vars["name"].get().strip() or self.vars["id"].get().strip()
+        s["category"] = self.cat_var.get()
+        if self.type_var.get().strip():
+            s["type"] = self.type_var.get().strip()
+        # channel (только активные)
+        if self.channel_var.get() and self.cat_var.get() == "active":
+            s["channel"] = True
+        else:
+            s.pop("channel", None)
+        # снаряд и свой спрайт (только для типов со снарядом)
+        if "__projectile__" in show and self.proj_var.get().strip():
+            s["projectile"] = self.proj_var.get().strip()
+        else:
+            s.pop("projectile", None)
+        if "__projectile__" in show and self.proj_skin_var.get().strip():
+            s["projectile_skin"] = self.proj_skin_var.get().strip()
+        else:
+            s.pop("projectile_skin", None)
+        # числовые поля: пишем только видимые, остальные удаляем
+        for key, _, kind, _ in SKILL_FIELDS:
+            if key not in show:
+                s.pop(key, None); continue
+            val = self._num(self.vars[key].get(), kind)
+            if val is None:
+                s.pop(key, None)
+            else:
+                s[key] = val
+        # оружие (пассивка mana_cost_reduction)
+        weps = [w.strip() for w in self.weapons_var.get().split(",") if w.strip()]
+        if "__weapons__" in show and weps:
+            s["weapons"] = weps
+        else:
+            s.pop("weapons", None)
+        # цвет
+        s["color"] = [int(c) for c in self.color_rgb]
+        # иконка
+        if self.icon_var.get():
+            s["icon"] = self.icon_var.get()
+        else:
+            s.pop("icon", None)
+        # эффект (только для типов с эффектом)
+        kind = self.effect_kind.get()
+        if "__effect__" not in show or kind == "нет":
+            s.pop("effect", None)
+        elif kind in ("freeze", "stun"):
+            s["effect"] = {kind: self._num(self.effect_a.get(), "float") or 0}
+        elif kind == "burn":
+            s["effect"] = {"burn": {"time": self._num(self.effect_a.get(), "float") or 0,
+                                     "dps": self._num(self.effect_b.get(), "float") or 0}}
+        # анимация каста (только активные)
+        if "__cast__" in show and self.cast_anim.get().strip():
+            s["cast_anim"] = self.cast_anim.get().strip()
+        else:
+            s.pop("cast_anim", None)
+        cw, ch = self._num(self.cast_w.get(), "int"), self._num(self.cast_h.get(), "int")
+        if "__cast__" in show and cw is not None and ch is not None:
+            s["cast_size"] = [cw, ch]
+        else:
+            s.pop("cast_size", None)
+        dx, dy = self._num(self.cast_dx.get(), "int"), self._num(self.cast_dy.get(), "int")
+        if "__cast__" in show and dx is not None and dy is not None:
+            s["cast_offset"] = [dx, dy]
+        else:
+            s.pop("cast_offset", None)
+        dur = self._num(self.cast_dur.get(), "float")
+        if "__cast__" in show and dur is not None:
+            s["cast_animation"] = dur
+        else:
+            s.pop("cast_animation", None)
+        # описание
+        desc = self.desc_text.get("1.0", "end").strip()
+        if desc:
+            s["description"] = desc
+        else:
+            s.pop("description", None)
+        return s
+
+    def _rename_in_chars(self, old, new):
+        for cdef in self.chars.get("characters", {}).values():
+            for e in cdef.get("skill_tree", []):
+                if isinstance(e, dict) and e.get("skill") == old:
+                    e["skill"] = new
+            cdef["base_skills"] = [new if s == old else s for s in cdef.get("base_skills", [])]
+            ov = cdef.get("skill_overrides", {})
+            if old in ov:
+                ov[new] = ov.pop(old)
+
+    def _apply_char_assignment(self, sid):
+        for cid, (in_tree, base, lvl) in self.char_rows.items():
+            cdef = self.chars["characters"].setdefault(cid, {})
+            tree = cdef.setdefault("skill_tree", [])
+            bs = cdef.setdefault("base_skills", [])
+            if in_tree.get():
+                try:
+                    level = int(float(lvl.get()))
+                except ValueError:
+                    level = 1
+                found = False
+                for e in tree:
+                    if isinstance(e, dict) and e.get("skill") == sid:
+                        e["unlock_level"] = level; found = True; break
+                if not found:
+                    tree.append({"skill": sid, "unlock_level": level})
+            else:
+                cdef["skill_tree"] = [e for e in tree if not (isinstance(e, dict) and e.get("skill") == sid)]
+            if base.get():
+                if sid not in bs:
+                    bs.append(sid)
+            else:
+                cdef["base_skills"] = [s for s in bs if s != sid]
+
+    def _write_all(self):
+        try:
+            SKILLS_CONFIG.write_text(json.dumps(self.skills, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            CHARS_CONFIG.write_text(json.dumps(self.chars, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        except Exception as e:
+            messagebox.showerror("Ошибка сохранения", str(e))
+
+
+def _apply_editor_icon(root):
+    """Иконка окна/ярлыка редактора — из assets (меняется без правки кода).
+    Приоритет: assets/app/editor_icon.png, затем assets/app/icon.png (общая с игрой)."""
+    for name in ("editor_icon.png", "icon.png"):
+        p = ROOT / "assets" / "app" / name
+        if p.is_file():
+            try:
+                img = tk.PhotoImage(file=str(p))
+                root.iconphoto(True, img)
+                root._editor_icon_ref = img   # держим ссылку, иначе Tk удалит картинку
+                return
+            except Exception as e:
+                print("иконка редактора не загружена:", e)
+
+
 if __name__ == "__main__":
-    root = tk.Tk(); Editor(root); root.mainloop()
+    root = tk.Tk()
+    root.title("DEAD ROOMS — редакторы")
+    root.geometry("1280x880")
+    _apply_editor_icon(root)
+    nb = ttk.Notebook(root); nb.pack(fill="both", expand=True)
+    maps_tab = ttk.Frame(nb); nb.add(maps_tab, text="  Карты  ")
+    skills_tab = ttk.Frame(nb); nb.add(skills_tab, text="  Навыки  ")
+    Editor(maps_tab, window=None)
+    SkillEditor(skills_tab)
+    root.mainloop()

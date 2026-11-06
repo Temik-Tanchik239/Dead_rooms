@@ -232,5 +232,26 @@
       28,
       24
     ]
+  },
+  "lightning_bolt": {
+    "speed": 780,
+    "size": 7,
+    "color": [
+      150,
+      205,
+      255
+    ],
+    "life": 2.5,
+    "knockback": 120,
+    "homing": {
+      "rate": 16,
+      "range": 640
+    },
+    "chain": 5,
+    "chain_range": 280,
+    "draw": [
+      40,
+      16
+    ]
   }
 }

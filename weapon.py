@@ -41,8 +41,9 @@ def held_pose(pl):
         if t < wu + ac:
             ang = a0 + (a1 - a0) * (t - wu) / max(ac, 1e-6); return wid, ang, 0, (a0, ang)
         return wid, a1 + (r0 - a1) * ease((t - wu - ac) / rec), 0, None
-    wid = getattr(pl, "last_weapon", pl.slots[0]);
-    if wid not in W: wid = pl.slots[0]
+    wid = getattr(pl, "last_weapon", None) or (pl.slots[0] if pl.slots else None)
+    if wid not in W: wid = pl.slots[0] if pl.slots else None
+    if wid not in W: return None, 0, 0, None   # герой без оружия (маг/инженер) — рисовать нечего
     # Вне атаки оружие плавно ориентируется в сторону прицела.
     # Для предметов с rotate=false сохраняем фиксированный угол.
     w = W[wid]
@@ -57,7 +58,9 @@ def draw_held(v, pl, hand):
     # пока проигрывается активная анимация атаки.
     if getattr(pl, "state", None) != "attack" or not getattr(pl, "atk", None):
         return
-    wid, ang, dx, trail = held_pose(pl); path, dw, dh, (gx, gy) = info(wid); f = pl.face
+    wid, ang, dx, trail = held_pose(pl)
+    if wid is None or wid not in CFG["weapons"]: return
+    path, dw, dh, (gx, gy) = info(wid); f = pl.face
     hx, hy = hand[0] + f * dx, hand[1]
     q = round((ang if f > 0 else -ang) / 5) * 5
     img = sprite(path, dw, dh, f < 0, False, q)

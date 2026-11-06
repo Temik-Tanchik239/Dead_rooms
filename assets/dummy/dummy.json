@@ -1,0 +1,8 @@
+{
+  "w": 34,
+  "h": 60,
+  "draw": [34, 60],
+  "offset": [0, 0],
+  "skin": "dummy/dummy.png",
+  "hurt_time": 0.25
+}

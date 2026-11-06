@@ -1,0 +1,17 @@
+DEAD ROOMS — update: Black Hole spell
+
+Changes:
+- data/skills.json: added active spell `black_hole` (30 mana, 12 s cooldown, 180 px radius, 35 damage, 3 s visual field).
+- data/characters.json: added `black_hole` as the first base skill for the mage, so it is available from the start.
+- spells.py: implemented targeting, area damage and pull impulse for ordinary enemies. Bosses take damage but are not pulled.
+- core.py: added serializable black-hole visual effect.
+- main.py: added in-game rendering for the black-hole effect.
+- assets/icons/skill_black_hole.png: added the spell icon.
+
+Install:
+Extract this archive into the project root and allow files to be overwritten, preserving the folder structure.
+The update modifies only the files listed above. No GitHub commit was made.
+
+Validation performed:
+- Python syntax compilation passed for spells.py, core.py and main.py.
+- JSON parsing and Mage starting-skill check passed.

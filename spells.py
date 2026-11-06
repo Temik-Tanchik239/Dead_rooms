@@ -7,6 +7,13 @@ data/skills.json. Общая обвязка (проверка маны и кул
 (+ при необходимости новый @spell(...)). Так же устроены movement.py / attacks.py /
 projectiles.py / boss_hands.py.
 
+Удерживаемые заклинания (в skills.json "channel": true, напр. телекинетический захват инженера) работают
+как ульта Bane в Dota 2: нажатие запускает каст, герой стоит на месте и колдует, пока зажата клавиша навыка,
+но не дольше "duration" секунд. Каст прерывается (и навык уходит в перезарядку), если герой двинулся,
+пригнулся (S/↓), прыгнул, перекатился, атаковал, получил урон или отпустил клавишу. Состояние хранится в
+pl.channel, а на иконке навыка (hud.py) рисуется убывающий индикатор. Свои удерживаемые заклинания —
+@spell(...) + channel("тип", tick=..., end=...) (см. ниже).
+
 Окно мага (hud.py) показывает три активных заклинания — предыдущее, текущее и следующее;
 порядок — список pl.skills (только "active"), текущее — pl.skill_index. Переключение C/V."""
 import math
@@ -84,6 +91,101 @@ def spell(kind):
     return reg
 
 
+CHANNELS = {}   # тип заклинания -> (tick, end): хуки удерживаемых заклинаний (см. channel())
+
+
+def channel(kind, tick=None, end=None):
+    """Хуки удерживаемого заклинания типа kind (дополнение к @spell(kind), в skills.json нужен "channel": true).
+    @spell-функция запускает каст: возвращает False (не вышло — ни маны, ни перезарядки не тратится) или
+    словарь/None — стартовое состояние канала (оно лежит в pl.channel вместе с sid/t/max).
+    tick(pl, ch, a, dt, mobs, projs, fx) вызывается каждый кадр, пока герой колдует; вернёт False — каст завершится
+    (цель погибла и т.п.). end(pl, ch, a, fx) — один раз при любом завершении (отпустил/двинулся/урон/время)."""
+    CHANNELS[kind] = (tick, end)
+
+
+def channeling(pl, sid=None):
+    """Колдует ли сейчас игрок удерживаемое заклинание (и именно sid, если указан)."""
+    ch = getattr(pl, "channel", None)
+    return bool(ch) and (sid is None or ch.get("sid") == sid)
+
+
+def _channel_blocker(pl):
+    """Почему удерживаемое заклинание сейчас не начать (текст для игрока) или None, если можно."""
+    if getattr(pl, "grab", None) or pl.state != "move" or pl.stun > 0:
+        return "Нужно стоять на месте"
+    if pl.airborne():
+        return "Нужно стоять на земле"
+    if getattr(pl, "move_input", False):
+        return "Остановитесь, чтобы колдовать"
+    return None
+
+
+def begin_channel(pl, sid, a, state=None):
+    """Начать удержание: герой замирает, очередь прыжка/переката/атак сбрасывается, чтобы не прервать каст сразу."""
+    pl.vx = 0.0
+    for b in ("jump", "roll", "a1", "a2"):
+        pl.buf[b] = 0
+    pl.channel = dict(state or {}, sid=sid, t=0.0, max=max(0.1, float(a.get("duration", 2.5))))
+
+
+def _channel_break(pl, d, dn):
+    """Причина прерывания удерживаемого заклинания или None. d — направление бега (-1/0/1), dn — зажато «вниз»."""
+    if not getattr(pl, "skill_held", False):
+        return "release"                                   # отпустил клавишу навыка
+    if d or dn:
+        return "move"                                      # пошёл или пригнулся
+    if pl.state != "move" or getattr(pl, "grab", None) or pl.airborne():
+        return "move"                                      # перекат, лестница, атака, падение, захват
+    spellcaster = CFG.get("character", {}).get("spellcaster")   # у мага ЛКМ — это и есть клавиша каста
+    buttons = ("jump", "roll") if spellcaster else ("jump", "roll", "a1", "a2")
+    if any(pl.buf.get(b, 0) > 0 for b in buttons):
+        return "move"                                      # прыжок, перекат или удар
+    return None
+
+
+def channel_update(pl, dt, d, dn, mobs, projs, fx):
+    """Каждый кадр удерживаемого каста (зовётся из Player.update): проверка прерываний, лимит времени, tick заклинания."""
+    ch = pl.channel
+    sid = ch["sid"]; a = CFG.get("skills", {}).get(sid, {})
+    ch["t"] += dt
+    loop = max(0.1, float(a.get("cast_animation", 0.55)))
+    if ch.get("view"):
+        # Клиент в сетевой игре: состояние каста прислал хост (он же прерывает), здесь только крутим анимацию и таймер.
+        pl.skill_cast = (sid, ch["t"] % loop, loop)
+        return
+    why = _channel_break(pl, d, dn)
+    if why is None and ch["t"] >= ch["max"]:
+        why = "time"
+    if why is None:
+        tick = CHANNELS.get(a.get("type"), (None, None))[0]
+        if tick and tick(pl, ch, a, dt, mobs, projs, fx) is False:
+            why = "target"
+    if why:
+        channel_stop(pl, fx, why)
+        return
+    pl.vx = 0.0                                            # герой стоит на месте (без проскальзывания)
+    pl.skill_cast = (sid, ch["t"] % loop, loop)            # анимация каста крутится по кругу, пока колдуем
+
+
+def channel_stop(pl, fx=None, why="release"):
+    """Завершить удерживаемый каст: вызвать end-хук и отправить навык в перезарядку.
+    why: release (отпустил) / time (вышло время) / target (цель пропала) / move (двинулся, пригнулся, прыгнул...) / damage / grab."""
+    ch = getattr(pl, "channel", None)
+    if not ch:
+        return
+    pl.channel = None
+    pl.skill_cast = None
+    if ch.get("view"):
+        return
+    sid = ch["sid"]; a = CFG.get("skills", {}).get(sid, {})
+    end = CHANNELS.get(a.get("type"), (None, None))[1]
+    if end:
+        end(pl, ch, a, fx)
+    pl.skill_cooldowns[sid] = max(0.0, float(a.get("cooldown", 5.0)))
+    if fx is not None and why in ("move", "damage", "grab"):
+        fx.text(f"{a.get('name', sid)}: прервано", pl.cx, pl.y - 18)
+
+
 def active_skills(pl):
     """Список id активных навыков игрока в порядке получения (это и есть «книга заклинаний»)."""
     defs = CFG.get("skills", {})
@@ -103,7 +205,7 @@ def spellbook(pl):
 def ready(pl):
     """Готово ли текущее заклинание (нет кулдауна и хватает маны). Для авто-каста мага по зажатой ЛКМ."""
     act = active_skills(pl)
-    if not act:
+    if not act or channeling(pl):
         return False
     sid = act[pl.skill_index % len(act)]
     a = CFG.get("skills", {}).get(sid, {})
@@ -123,7 +225,7 @@ def cast(pl, mobs, projs, fx):
     """Применить текущее активное заклинание (Q, а у мага ещё и ЛКМ). Тонкий диспетчер поверх @spell."""
     defs = CFG.get("skills", {})
     act = active_skills(pl)
-    if not act:
+    if not act or channeling(pl):    # уже колдуем удерживаемое заклинание — новые нажатия игнорируются
         return
     sid = act[pl.skill_index % len(act)]
     a = defs.get(sid)
@@ -142,11 +244,23 @@ def cast(pl, mobs, projs, fx):
     if fn is None:
         fx.text(f"неизвестное заклинание: {kind}", pl.cx, pl.y - 18)
         return
+    hold = bool(a.get("channel"))
+    if hold:
+        why = _channel_blocker(pl)
+        if why:
+            fx.text(why, pl.cx, pl.y - 18)
+            return
     pl.skill_cast = (sid, 0.0, float(a.get("cast_animation", 0.55)))
-    fn(pl, dict(a, _sid=sid), mobs, projs, fx)
+    res = fn(pl, dict(a, _sid=sid), mobs, projs, fx)
+    if res is False:                 # заклинание не сработало (нет цели и т.п.) — ни маны, ни перезарядки
+        pl.skill_cast = None
+        return
     pl.mana -= cost
     pl.mana_t = CFG["player"].get("mana", {}).get("regen_delay", .9)
-    pl.skill_cooldowns[sid] = max(0.0, float(a.get("cooldown", 5.0)))
+    if hold:                         # удерживаемое: перезарядка стартует, когда каст закончится (channel_stop)
+        begin_channel(pl, sid, a, res if isinstance(res, dict) else None)
+    else:
+        pl.skill_cooldowns[sid] = max(0.0, float(a.get("cooldown", 5.0)))
     fx.text(f"{a.get('name', sid)} (-{cost:g} маны)", pl.cx, pl.y - 18)
 
 
@@ -348,9 +462,15 @@ def _telekinesis_cone(pl, a, mobs, projs, fx):
             _shove(m, push, -kb * 0.4)
 
 
+HOLD_REFRESH = 0.2   # на сколько секунд захват обновляет стан цели каждый кадр (после конца каста он быстро спадает)
+
+
 @spell("telekinesis_hold")
 def _telekinesis_hold(pl, a, mobs, projs, fx):
-    """Телекинетический захват: останавливает ближайшего к курсору врага и держит его в стане \"duration\" секунд."""
+    """Телекинетический захват: останавливает ближайшего к курсору врага и держит его в стане.
+    С "channel": true (так в skills.json) — удерживаемое заклинание, как ульта Bane: цель в стане, пока герой
+    стоит и держит клавишу навыка, но не дольше "duration" секунд (хуки _hold_tick/_hold_end ниже).
+    Без "channel" — разовый стан на "duration" секунд, как раньше."""
     reach = a.get("range", 340)
     dur = float(a.get("duration", 2.5))
     color = list(a.get("color", [200, 120, 255]))
@@ -364,10 +484,46 @@ def _telekinesis_hold(pl, a, mobs, projs, fx):
             best, target = d_aim, m
     if target is None:
         fx.text("нет цели для захвата", pl.cx, pl.y - 18)
-        return
+        return False
+    if status.cc_immune(target):   # боссы (cc_immune) не поддаются — см. status.py
+        fx.text("иммунитет к контролю", target.cx, target.cy - 60)
+        return False
     fx.beam(pl.cx, pl.cy, target.cx, target.cy, color)
     fx.ring(target.cx, target.cy, 38)
     target.vx = 0.0
     if getattr(target, "flies", False):
         target.vy = 0.0
-    status.apply(target, {"stun": dur}, fx)   # боссы (cc_immune) не поддаются — см. status.py
+    if a.get("channel"):
+        status.apply(target, {"stun": HOLD_REFRESH}, fx)
+        face = sign(target.cx - pl.cx)
+        if face:
+            pl.face = face          # герой смотрит на пойманного врага
+        return {"target": target, "beam": 0.1, "break_range": float(a.get("break_range", reach * 1.5))}
+    status.apply(target, {"stun": dur}, fx)
+
+
+def _hold_tick(pl, ch, a, dt, mobs, projs, fx):
+    """Каждый кадр каста: удерживаем стан цели и обновляем луч. False — цель погибла/пропала/вырвалась за break_range."""
+    t = ch.get("target")
+    if t is None or t.hp <= 0 or t not in mobs:
+        return False
+    if math.hypot(t.cx - pl.cx, t.cy - pl.cy) > ch.get("break_range", 500):
+        return False
+    status.apply(t, {"stun": HOLD_REFRESH})
+    t.vx = 0.0
+    if getattr(t, "flies", False):
+        t.vy = 0.0
+    ch["beam"] -= dt
+    if ch["beam"] <= 0:                                  # луч «живёт» 0.22 с, обновляем чаще — выглядит сплошным
+        ch["beam"] = 0.1
+        fx.beam(pl.cx, pl.cy, t.cx, t.cy, list(a.get("color", [200, 120, 255])))
+
+
+def _hold_end(pl, ch, a, fx):
+    """Каст закончился: цель отпускают (её стан спадает за доли секунды)."""
+    t = ch.get("target")
+    if t is not None and fx is not None:
+        fx.ring(t.cx, t.cy, 30)
+
+
+channel("telekinesis_hold", tick=_hold_tick, end=_hold_end)

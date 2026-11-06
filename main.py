@@ -16,6 +16,8 @@ import characters as char_menu
 from maps import Campaign, Drop, END, VH, check, random_weapon, pos_of, world_text, world_links, two_way
 import multiplayer as mp
 import lighting
+import devtools
+from devtools import hostile
 
 # Навыки по умолчанию, если у персонажа в data/characters.json нет base_skills.
 BASE_SKILLS = ["dash"]
@@ -86,6 +88,11 @@ class Player(Body):
         s.skill_cooldowns = {key: 0.0 for key in s.skills}; s.skill_notice = 0.0
         s.shield_time = 0.0; s.shield_hp = 0.0; s.shield_face = s.face; s.shield_asset_cache = {}
         s.last_weapon = s.slots[0]; s.skill_cast = None
+        # Удерживаемое заклинание (skills.json: "channel": true — напр. захват инженера, как ульта Bane): словарь
+        # {"sid", "t" (сколько уже колдуем), "max" (лимит, сек), ...} или None. Логика — spells.channel_*.
+        s.channel = None
+        s.skill_held = False   # зажата ли клавиша навыка (одиночная игра: Game.step; сеть: бит в NetKeys)
+        s.move_input = False   # зажато ли движение/«вниз» в этом кадре (удерживаемое заклинание нельзя начать на бегу)
         # Мультиплеер: номер и имя игрока, прогресс воскрешения, «отошёл от входа» (для выходов).
         s.pid, s.name, s.revive, s.armed, s.downed = 0, "", 0.0, False, False
         # tp — номер «телепорта» (хост переставил игрока), hitc/kb — счётчик попаданий и отброс: клиент повторяет их у себя.
@@ -117,6 +124,9 @@ class Player(Body):
         # возвращается), поэтому прыжок показываем только при реальном взлёте или если герой в воздухе дольше AIR_ANIM_DELAY.
         if not s.ground and (s.vy < -AIR_ANIM_RISE or s.air_t > AIR_ANIM_DELAY): return ["jump"], None
         return (["move"] if abs(s.vx) > 25 else ["idle"]), None
+    def airborne(s):
+        """Герой реально в воздухе. Флаг ground у стоящего «мигает», поэтому эвристика та же, что у анимации прыжка."""
+        return not s.ground and (s.vy < -AIR_ANIM_RISE or s.air_t > AIR_ANIM_DELAY)
     def facing(s, d):
         """Куда повернуться при ударе: к курсору (если есть) или по движению."""
         return (sign(s.aim[0] - s.cx) or s.face) if s.aim else (d or s.face)
@@ -232,6 +242,7 @@ class Player(Body):
                 fx.text("Щит разрушен", s.cx, s.y - 18)
             if dmg <= 0: return
         s.hp -= dmg
+        if s.channel: spells.channel_stop(s, fx, "damage")   # урон прерывает удерживаемое заклинание
         s.hp_regen_timer = 0.0  # любой полученный урон заново запускает задержку регенерации
         s.inv = CFG["player"]["hurt_inv"]; s.stun = .18
         s.vx = (sign(s.cx - fx_x) or 1) * kb; s.vy = -260; fx.shake = .2; fx.stop = .06
@@ -276,6 +287,7 @@ class Player(Body):
                st["damage"] * s.dmg_mult(), True, o.get("count", 1), o.get("spread", 0))
     @in_char
     def swap_skill(s, direction=1):
+        if s.channel: return   # пока колдуем удерживаемое заклинание, книгу не листаем
         active_skills = [sid for sid in s.skills if CFG.get("skills", {}).get(sid, {}).get("category", "active") == "active"]
         if not active_skills: return
         s.skill_index = (s.skill_index + direction) % len(active_skills)
@@ -316,7 +328,14 @@ class Player(Body):
         else: s.shield_face = s.face  # ориентация защиты синхронизирована с игроком
         for skill_id in s.skill_cooldowns: s.skill_cooldowns[skill_id] = max(0.0, s.skill_cooldowns[skill_id] - dt)
         if s.grab:
+            if s.channel: spells.channel_stop(s, fx, "grab")
             s.update_grab(dt, k); return
+        # Ввод движения считаем заранее: он нужен и удерживаемым заклинаниям (прерывают каст), и самому движению ниже.
+        d = (k[pg.K_d] or k[pg.K_RIGHT]) - (k[pg.K_a] or k[pg.K_LEFT])
+        up, dn = k[pg.K_w] or k[pg.K_UP], k[pg.K_s] or k[pg.K_DOWN]
+        s.move_input = bool(d or dn)
+        if hasattr(k, "skill"): s.skill_held = bool(k.skill)   # сетевой ввод несёт «клавиша навыка зажата»
+        if s.channel: spells.channel_update(s, dt, d, dn, mobs, projs, fx)
         if s.ground: s.air_jumps = 0
         if s.buf.get("skill", 0) > 0:
             s.buf["skill"] = 0
@@ -339,8 +358,6 @@ class Player(Body):
             s.mana = min(s.maxmana, s.mana + p.get("mana", {}).get("regen", 14) * regen_mult * dt)   # восстановление маны
         sl, stp, left = s.combo; s.combo = (sl, stp, left - dt)
         s.coy = p["coyote"] if s.ground else s.coy - dt
-        d = (k[pg.K_d] or k[pg.K_RIGHT]) - (k[pg.K_a] or k[pg.K_LEFT])
-        up, dn = k[pg.K_w] or k[pg.K_UP], k[pg.K_s] or k[pg.K_DOWN]
         held = up or k[pg.K_SPACE]
         c0, r0 = int(s.cx // T), int(s.cy // T); here = tile(g, c0, r0)
         below = tile(g, c0, int((s.y + s.h + 1) // T)); st = s.state
@@ -434,6 +451,7 @@ class Game:
         s.show_world = False; s.controls_open = False; s.waiting_for_bind = None; s.hud_edit = False; s.hud_drag = None; s.hud_selected = "player"; s.veil = pg.Surface((W, VIEW_H), pg.SRCALPHA); s.veil.fill((6, 6, 12, 225))
         # Мультиплеер (multiplayer.py): s.net — сессия хоста или клиента, None — одиночная игра.
         s.net = None; s.mp_status = ""; s.mp_focus = None; s.mp_finder = None
+        s.dev = devtools.DevMenu(s)   # F6: меню разработчика (опыт/здоровье/мана, тренировочный манекен) — devtools.py
         s.mp_name = str(SETTINGS.get("player_name") or mp.default_name())[:16]; s.mp_ip = str(SETTINGS.get("mp_last_ip", ""))
         s.clock = pg.time.Clock(); s.new_game()
         # Стартовое меню; после Esc игровой мир сохраняется и ставится на паузу.
@@ -561,7 +579,7 @@ class Game:
         s.apply_action(s.pl, name)
     def overlay_open(s):
         """Открыто меню/карта/настройки — в сетевой игре свой персонаж в это время стоит на месте."""
-        return s.menu_mode is not None or s.show_world or s.controls_open or s.level_menu or s.hud_edit
+        return s.menu_mode is not None or s.show_world or s.controls_open or s.level_menu or s.hud_edit or s.dev.open
     def net_leave(s, message="", menu="mp"):
         """Выйти из сетевой игры (или лобби) в меню мультиплеера; одиночный мир создаётся заново."""
         if s.net: s.net.close()
@@ -575,16 +593,17 @@ class Game:
         mp.housekeeping(s)
         if s.net:   # сетевая игра: хост считает мир, клиент получает его от хоста
             s.net.update(dt); return
-        fx, pl, r = s.fx, s.pl, s.room; sim = 0 if (fx.stop > 0 or s.show_world or s.controls_open or s.menu_mode is not None or s.level_menu) else dt   # меню ставит игру на паузу
+        fx, pl, r = s.fx, s.pl, s.room; sim = 0 if (fx.stop > 0 or s.show_world or s.controls_open or s.menu_mode is not None or s.level_menu or s.dev.open) else dt   # меню ставит игру на паузу
         fx.stop = max(0, fx.stop - dt); fx.shake = max(0, fx.shake - dt)
         for it in fx.items: it[4] -= dt
         fx.items = [it for it in fx.items if it[4] > 0]
         if pl.hp <= 0: return
         mpos = pg.mouse.get_pos(); pl.aim = (mpos[0] / CAMERA_ZOOM + s.cam[0], mpos[1] / CAMERA_ZOOM + s.cam[1]) if SETTINGS.get("mouse_aim", True) else None
         mb = pg.mouse.get_pressed()   # зажатая кнопка = непрерывные атаки / комбо
-        if mb[0]: pl.press("a1")
-        if mb[2]: pl.press("a2")
+        if mb[0] and not s.dev.open: pl.press("a1")   # клики по меню разработчика — не атаки
+        if mb[2] and not s.dev.open: pl.press("a2")
         pl.drops = r.drops   # телекинез дотягивается до предметов на полу текущей комнаты
+        pl.skill_held = s.skill_held()   # удерживаемые заклинания (захват инженера) работают, пока клавиша зажата
         pl.update(sim, pg.key.get_pressed(), r.g, r.mobs, s.projs, fx); pl.update_anim(sim)
         w = SimpleNamespace(g=r.g, pl=pl, mobs=r.mobs, projs=s.projs, fx=fx)   # «мир» для мобов и пуль
         for m in r.mobs:
@@ -606,14 +625,14 @@ class Game:
         r.mobs = [m for m in r.mobs if m.hp > 0]
         for m in r.mobs:   # упал за край карты — умер
             if m.y > r.height_px + 200 or m.y < -400 or m.x < -400 or m.x > r.width_px + 400: m.hp = 0
-        if r.spawned and not r.cleared and not r.mobs: s.clear(r)
+        if r.spawned and not r.cleared and not hostile(r.mobs): s.clear(r)   # манекен (F6) комнату не держит
         sc, sr = int(pl.cx // T), int((pl.y + pl.h - 2) // T)
         if tile(r.g, sc, sr) == "x": pl.hit(r.spike_damage(sc, sr), pl.cx, fx)
         # выходы: сработают, когда игрок отошёл от места появления и потом зашёл в клетку выхода
         z = r.exit_at(pl.cx, pl.cy)
         if not s.armed and not r.exit_touch(pl.rect):   # целиком вышел из проёма
             s.armed = True
-            if r.mobs and r.d.get("lock", s_lock()): r.set_lock(True)   # двери закрываются, пока есть мобы
+            if hostile(r.mobs) and r.d.get("lock", s_lock()): r.set_lock(True)   # двери закрываются, пока есть мобы
         elif s.armed and z is not None: s.take_exit(z); return
         if pl.cx < 0 or pl.cx > r.width_px or pl.cy < 0 or pl.cy > r.height_px:   # за край текущей карты
             z = None if r.locked else (z or r.exit_near(pl.rect))
@@ -626,6 +645,13 @@ class Game:
         cfg = SETTINGS.setdefault("controls", {})
         for action, keyname in s.CONTROL_DEFAULTS.items(): cfg.setdefault(action, keyname)
         return cfg
+    def skill_held(s):
+        """Зажата ли сейчас клавиша навыка (у мага — ещё и ЛКМ). Нужна удерживаемым заклинаниям (skills.json: "channel")."""
+        if s.overlay_open(): return False
+        try: down = pg.key.get_pressed()[pg.key.key_code(s.controls()["skill"])]
+        except (ValueError, TypeError, KeyError, IndexError): down = False
+        if not down and CFG.get("character", {}).get("spellcaster"): down = pg.mouse.get_pressed()[0]
+        return bool(down)
     def key_name(s, key):
         try: return pg.key.name(pg.key.key_code(key))
         except (ValueError, TypeError): return str(key).lower()
@@ -901,7 +927,7 @@ class Game:
         if not r.spawned: r.spawn()
         pl.x, pl.y, pl.state = x, y, st; s.projs = []
         s.armed = not r.exit_touch(pl.rect)
-        if s.armed and r.mobs and r.d.get("lock", s_lock()): r.set_lock(True)
+        if s.armed and hostile(r.mobs) and r.d.get("lock", s_lock()): r.set_lock(True)
     def txt(s, t, x, y, col=(235, 235, 240), f=None):
         s.scr.blit((f or s.font).render(t, True, col), (x, y))
     def draw(s):
@@ -949,6 +975,8 @@ class Game:
         # Темнота и мягкие пятна света поверх кадра (только на картах с темнотой или блоками света).
         lit = s.net.player_list() if s.net and s.net.in_game else [pl]
         lighting.apply(s.scr, r, s.cam, (max(1, crop_w), max(1, crop_h)), lit, r.mobs, s.projs, light_t)
+        for m in r.mobs:
+            if hasattr(m, "draw_overlay"): m.draw_overlay(s.scr, s.cam, CAMERA_ZOOM)   # таблички манекена поверх темноты
         order = s.camp.order   # прогресс: квадратик на каждую карту из order
         for i, mid in enumerate(order):
             rm = s.camp.maps.get(mid); rc = (W - 18 * len(order) - 8 + i * 18, 8, 14, 10)
@@ -970,8 +998,9 @@ class Game:
         if s.show_world: s.draw_world()
         if s.controls_open: s.draw_controls()
         if s.hud_edit: s.draw_hud_editor()
+        if s.dev.open: s.dev.draw(s.scr)
         if s.menu_mode is not None: s.draw_menu()
-        if pl.aim and s.menu_mode is None:   # прицел
+        if pl.aim and s.menu_mode is None and not s.dev.open:   # прицел
             mx, my = int((pl.aim[0] - s.cam[0]) * CAMERA_ZOOM), int((pl.aim[1] - s.cam[1]) * CAMERA_ZOOM); col = (255, 255, 255); pg.draw.circle(s.scr, col, (mx, my), 10, 1); pg.draw.circle(s.scr, col, (mx, my), 1)
             for a in ((-17, 0, -7, 0), (7, 0, 17, 0), (0, -17, 0, -7), (0, 7, 0, 17)): pg.draw.line(s.scr, col, (mx + a[0], my + a[1]), (mx + a[2], my + a[3]))
         pg.display.flip()
@@ -1179,11 +1208,13 @@ class Game:
         while True:
             dt = min(s.clock.tick(60) / 1000, 1 / 30)
             # В меню используем курсор из assets; в забеге сохраняем обычное управление мышью.
-            pg.mouse.set_visible(s.menu_mode is not None and s.menu_cursor is None or s.menu_mode is None and not SETTINGS.get("mouse_aim", True))
+            pg.mouse.set_visible(s.menu_mode is not None and s.menu_cursor is None or s.menu_mode is None and not SETTINGS.get("mouse_aim", True) or s.dev.open)
             for e in pg.event.get():
                 if e.type == pg.QUIT:
                     if s.net: s.net.close()
                     return
+                if e.type == pg.KEYDOWN and e.key == pg.K_F6 and not s.dev.open: s.dev.toggle(); continue   # F6: меню разработчика
+                if s.dev.event(e): continue   # открытое меню разработчика забирает весь ввод
                 if e.type == pg.KEYDOWN: s.key(e.key)
                 if s.menu_mode is not None:
                     s.menu_event(e)

@@ -137,6 +137,31 @@ def portrait(scr, pl, font):
     slot(scr, 0, P.get("icon", "icons/player.png"), face, layout_key="player")
 
 
+def channel_overlay(scr, pl, sid, r, font, color):
+    """Индикатор удерживаемого заклинания (skills.json: "channel": true) на иконке навыка sid в прямоугольнике r.
+    Пока герой колдует: уже «израсходованное» время затемняет иконку сектором по часовой стрелке (светлая часть = сколько
+    ещё можно стоять и колдуть), в центре — оставшиеся секунды, рамка пульсирует цветом заклинания.
+    Возвращает True, если индикатор нарисован (тогда кулдаун/«готово» на иконке не рисуем)."""
+    ch = getattr(pl, "channel", None)
+    if not ch or ch.get("sid") != sid: return False
+    total = max(0.1, float(ch.get("max", 1.0)))
+    left = max(0.0, total - float(ch.get("t", 0.0)))
+    used = max(0.0, min(1.0, 1.0 - left / total))
+    if used > 0.004:
+        veil = pg.Surface(r.size, pg.SRCALPHA)
+        cx, cy, rad, a0 = r.w / 2, r.h / 2, r.w * 1.2, -math.pi / 2
+        n = max(2, int(used * 48))
+        pts = [(cx, cy)] + [(cx + math.cos(a0 + used * math.tau * i / n) * rad, cy + math.sin(a0 + used * math.tau * i / n) * rad) for i in range(n + 1)]
+        pg.draw.polygon(veil, (8, 8, 18, 185), pts)
+        scr.blit(veil, r)
+    pulse = 0.55 + 0.45 * math.sin(pg.time.get_ticks() * 0.012)
+    glow = tuple(min(255, int(c * pulse + 255 * (1 - pulse) * 0.35)) for c in color[:3])
+    pg.draw.rect(scr, glow, r.inflate(4, 4), 3, border_radius=10)
+    txt = f"{left:.1f}"
+    label(scr, font, txt, r.centerx - font.size(txt)[0] // 2, r.centery - font.get_height() // 2, (255, 255, 255))
+    return True
+
+
 def spell_cell(scr, pl, sid, x, y, size, font, active=False):
     """Одна ячейка заклинания: иконка/цвет, рамка, затемнение неактивных, кулдаун и цена маны."""
     sk = CFG.get("skills", {}).get(sid, {})
@@ -150,8 +175,9 @@ def spell_cell(scr, pl, sid, x, y, size, font, active=False):
     if not active:   # предыдущее/следующее — приглушены
         veil = pg.Surface(r.size, pg.SRCALPHA); veil.fill((8, 8, 16, 120)); scr.blit(veil, r)
     pg.draw.rect(scr, color if active else (80, 78, 105), r, 3 if active else 2, border_radius=8)
+    chan = channel_overlay(scr, pl, sid, r, font, color)   # удерживаемое заклинание: убывающий индикатор вместо кулдауна
     left = max(0.0, getattr(pl, "skill_cooldowns", {}).get(sid, 0.0))
-    if left > 0:
+    if left > 0 and not chan:
         veil = pg.Surface(r.size, pg.SRCALPHA); pg.draw.rect(veil, (8, 8, 18, 170), veil.get_rect(), border_radius=8); scr.blit(veil, r)
         label(scr, font, str(int(left + .99)), r.centerx - 4, r.centery - 8, (255, 255, 255))
     cost = int(sk.get("mana_cost", 0))
@@ -205,8 +231,10 @@ def icons(scr, pl, font):
         skill = defs.get(sid, {"name": sid, "color": [150, 130, 220], "cooldown": 1})
         r = slot(scr, 3, spells.icon_path(sid, skill), lambda r: pg.draw.circle(scr, skill.get("color", [150, 130, 220]), r.center, 13), border=tuple(skill.get("color", [150, 130, 220])), layout_key="skill")
         label(scr, font, "Q", r.x + 4, r.y + 3, (255, 230, 150))
+        chan = channel_overlay(scr, pl, sid, r, font, tuple(skill.get("color", [150, 130, 220])))   # удерживаемое заклинание: убывающий индикатор
         left = max(0.0, getattr(pl, "skill_cooldowns", {}).get(sid, 0.0))
-        if left > 0:
+        if chan: pass
+        elif left > 0:
             veil = pg.Surface(r.size, pg.SRCALPHA); pg.draw.rect(veil, (8, 8, 18, 165), veil.get_rect(), border_radius=8); scr.blit(veil, r)
             label(scr, font, str(int(left + .99)), r.centerx - 4, r.centery - 8, (255, 255, 255))
         else:

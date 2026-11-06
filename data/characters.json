@@ -262,6 +262,7 @@
       ],
       "allowed_weapons": [],
       "base_skills": [
+        "black_hole",
         "chain_lightning",
         "fireball",
         "ice_shard",

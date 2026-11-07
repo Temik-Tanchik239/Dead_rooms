@@ -137,6 +137,22 @@ def icon_frost_nova():
     return finish_icon((150, 230, 255), g)
 
 
+def icon_inferno():
+    """Огненная аура: кольцо языков пламени по кругу + внутреннее свечение."""
+    g = new(32, 32); d = ImageDraw.Draw(g); C = (16, 16)
+    for a in range(0, 360, 15):
+        r0 = 12.5 if ((a // 30) % 2) == 0 else 14.6
+        x, y = C[0] + math.cos(math.radians(a)) * r0, C[1] + math.sin(math.radians(a)) * r0
+        d.point((round(x), round(y)), fill=(255, 150, 40, 255))
+        if a % 45 == 0:
+            d.point((round(x), round(y)), fill=(255, 230, 120, 255))
+    for k in range(6):
+        a = math.radians(k * 60 - 90); ca, sa = math.cos(a), math.sin(a)
+        d.line([C, (C[0] + ca * 8, C[1] + sa * 8)], fill=(255, 205, 80, 255), width=2)
+    circle(d, C, 3.2, (215, 60, 30, 255)); circle(d, C, 2.2, (255, 140, 45, 255)); circle(d, C, 1.2, (255, 240, 180, 255))
+    return finish_icon((255, 130, 40), g)
+
+
 def icon_chain_lightning():
     g = new(32, 32); d = ImageDraw.Draw(g)
     blue = (120, 175, 255, 255)
@@ -287,7 +303,8 @@ def cast_telekinesis_hold(frame, n=6):
 # ------------------------------------------------------------------ запись файлов
 ICONS = {"fireball": icon_fireball, "ice_shard": icon_ice_shard, "arcane_orb": icon_arcane_orb, "frost_nova": icon_frost_nova,
          "chain_lightning": icon_chain_lightning, "thunderstrike": icon_thunderstrike, "meteor": icon_meteor,
-         "telekinesis": icon_telekinesis, "telekinesis_cone": icon_telekinesis_cone, "telekinesis_hold": icon_telekinesis_hold}
+         "telekinesis": icon_telekinesis, "telekinesis_cone": icon_telekinesis_cone, "telekinesis_hold": icon_telekinesis_hold,
+         "inferno": icon_inferno}
 PROJECTILES = {"fireball": fire_bolt, "ice_shard": ice_bolt, "arcane_orb": arcane_bolt}
 CASTS = {"telekinesis": cast_telekinesis, "telekinesis_cone": cast_telekinesis_cone, "telekinesis_hold": cast_telekinesis_hold}
 

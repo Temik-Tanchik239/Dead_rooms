@@ -130,9 +130,8 @@
     "name": "Щит",
     "category": "active",
     "type": "shield",
-    "cooldown": 10,
-    "duration": 4,
-    "capacity": 60,
+    "duration": 2,
+    "capacity": 100,
     "radius": 42,
     "icon": "icons/skill_shield.png",
     "visual": "skills/shield/shield_effect.png",
@@ -149,8 +148,10 @@
     "unlock_level": 1,
     "mana_cost": 20,
     "cast_anim": "skills/shield/cast",
-    "channel": true,
-    "cast_animation": 4
+    "cast_animation": 4,
+    "hold": true,
+    "recharge": 10,
+    "recharge_delay": 1
   },
   "vitality": {
     "name": "Живучесть",
@@ -244,6 +245,26 @@
     ],
     "mana_cost": 12,
     "description": "Огненный снаряд, взрывается при попадании"
+  },
+  "fire_stream": {
+    "name": "Огненный поток",
+    "category": "active",
+    "type": "projectile",
+    "projectile": "fire_bolt",
+    "hold": true,
+    "duration": 3.0,
+    "recharge": 6.0,
+    "interval": 0.2,
+    "damage": 9,
+    "spread": 0,
+    "mana_cost": 14,
+    "icon": "icons/skill_fireball.png",
+    "color": [
+      255,
+      120,
+      40
+    ],
+    "description": "Зажмите клавишу — огненные снаряды летят в курсор, пока держите (можно бежать и прыгать). Запас 3 с, мана тратится 14 в секунду; отпустили — запас восстанавливается с того места, где остановились (полностью за 6 с)."
   },
   "ice_shard": {
     "name": "Ледяной выстрел",

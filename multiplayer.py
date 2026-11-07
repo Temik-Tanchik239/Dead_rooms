@@ -24,6 +24,7 @@ from types import SimpleNamespace
 import pygame as pg
 from core import CFG, SETTINGS, T, W, VIEW_H, CHAR, use_char, apply_character, char_ids, char_def, approach, tile, free, FX
 import characters as char_menu
+import spells
 from maps import Campaign, Drop, END, random_weapon
 from mob import Mob, Corpse, normalize, spawn_boss, scale_boss_for_players
 from projectiles import Proj
@@ -561,7 +562,7 @@ class HostSession(Session):
             if p.hp <= 0: s.revive(p, CLEAR_REVIVE_HP)
 
     def down(s, p):
-        p.downed = True; p.revive = 0.0; p.state = "move"; p.atk = None; p.skill_cast = None; p.grab = None; p.channel = None
+        p.downed = True; p.revive = 0.0; p.state = "move"; p.atk = None; p.skill_cast = None; p.grab = None; p.channel = None; p.hold = None
         p.shield_time = 0.0; p.shield_hp = 0.0; p.hitbox = None; p.vx = 0
         if p.h != p.H0: p.y -= p.H0 - p.h; p.h = p.H0
         s.g.fx.text(f"{p.name} пал!", p.cx - 20, p.y - 30)
@@ -695,12 +696,13 @@ class HostSession(Session):
             atk = [p.atk["w"], p.atk["n"], round(p.atk["t"], 3)] if p.state == "attack" and p.atk else None
             cast = [p.skill_cast[0], round(p.skill_cast[1], 3), p.skill_cast[2]] if p.skill_cast else None
             chan = [p.channel["sid"], round(p.channel["t"], 3), p.channel["max"]] if p.channel else None   # удерживаемый каст: id, сколько идёт, лимит
+            hd, hr = spells.hold_net(p)   # потоки ("hold"): активный [id, сколько держим] и запас у неполных навыков
             pls.append({"id": p.pid, "n": p.name, "c": p.char_id, "x": R(p.x), "y": R(p.y), "h": p.h, "f": p.face, "st": p.state,
                         "an": p.anim, "at": round(p.anim_t, 3), "ap": None if p.anim_p is None else round(p.anim_p, 3),
                         "hp": R(p.hp), "mhp": p.maxhp, "mp": R(p.mana), "mmp": p.maxmana, "mf": round(max(0, p.mana_flash), 2),
                         "inv": round(max(0, p.inv), 2), "atk": atk, "aim": [R(p.aim[0]), R(p.aim[1])] if p.aim else None,
                         "sl": list(p.slots), "lw": p.last_weapon, "sc": cast,
-                        "sh": [round(p.shield_time, 2), p.shield_face, R(p.shield_hp)], "ch": chan,
+                        "sh": [round(p.shield_time, 2), p.shield_face, R(p.shield_hp)], "ch": chan, "hd": hd, "hr": hr,
                         "sk": list(p.skills), "si": p.skill_index, "cd": {k: round(v, 2) for k, v in p.skill_cooldowns.items() if v > 0},
                         "lv": p.level, "xp": p.xp, "xn": p.xp_next, "rv": round(p.revive, 2),
                         "tp": p.tp, "hc": p.hitc, "kb": [R(p.kb[0]), R(p.kb[1])], "gr": 1 if p.grab else 0})
@@ -991,6 +993,7 @@ class ClientSession(Session):
         else:
             if p.channel: p.skill_cast = None
             p.channel = None
+        spells.hold_net_apply(p, ps.get("hd"), ps.get("hr"))   # потоки: решает хост, у клиента — картинка и запас для HUD
         host_cd = {k: float(v) for k, v in ps.get("cd", {}).items()}
         if p.pid == s.my_id and s.predicting:   # только что применённый навык не «оживает», пока хост не подтвердил
             host_cd = {k: max(host_cd.get(k, 0.0), p.skill_cooldowns.get(k, 0.0)) for k in set(host_cd) | set(p.skill_cooldowns)}

@@ -95,6 +95,11 @@ class Player(Body):
         s.channel = None
         s.skill_held = False   # зажата ли клавиша навыка (одиночная игра: Game.step; сеть: бит в NetKeys)
         s.move_input = False   # зажато ли движение/«вниз» в этом кадре (удерживаемое заклинание нельзя начать на бегу)
+        # Заклинания-«потоки» (skills.json: "hold": true — зажал и держишь, запас тратится, отпустил — восстанавливается).
+        # hold — активный поток {"sid", "t", ...} или None; hold_pool — оставшийся запас в секундах по навыкам (нет записи = полный);
+        # hold_rest — пауза перед восстановлением; hold_latch — запас/мана кончились при зажатой клавише, ждём отпускания;
+        # hold_view — клиент сетевой игры (поток считает хост). Логика — spells.hold_*.
+        s.hold = None; s.hold_pool = {}; s.hold_rest = {}; s.hold_latch = False; s.hold_view = False
         # Мультиплеер: номер и имя игрока, прогресс воскрешения, «отошёл от входа» (для выходов).
         s.pid, s.name, s.revive, s.armed, s.downed = 0, "", 0.0, False, False
         # tp — номер «телепорта» (хост переставил игрока), hitc/kb — счётчик попаданий и отброс: клиент повторяет их у себя.
@@ -292,6 +297,7 @@ class Player(Body):
     @in_char
     def swap_skill(s, direction=1):
         if s.channel: return   # пока колдуем удерживаемое заклинание, книгу не листаем
+        if s.hold: spells.hold_stop(s, None, "swap")   # смена навыка отпускает поток (запас начнёт восстанавливаться)
         active_skills = [sid for sid in s.skills if CFG.get("skills", {}).get(sid, {}).get("category", "active") == "active"]
         if not active_skills: return
         s.skill_index = (s.skill_index + direction) % len(active_skills)
@@ -333,6 +339,7 @@ class Player(Body):
         for skill_id in s.skill_cooldowns: s.skill_cooldowns[skill_id] = max(0.0, s.skill_cooldowns[skill_id] - dt)
         if s.grab:
             if s.channel: spells.channel_stop(s, fx, "grab")
+            if s.hold: spells.hold_stop(s, fx, "grab")
             s.update_grab(dt, k); return
         # Ввод движения считаем заранее: он нужен и удерживаемым заклинаниям (прерывают каст), и самому движению ниже.
         d = (k[pg.K_d] or k[pg.K_RIGHT]) - (k[pg.K_a] or k[pg.K_LEFT])
@@ -340,6 +347,7 @@ class Player(Body):
         s.move_input = bool(d or dn)
         if hasattr(k, "skill"): s.skill_held = bool(k.skill)   # сетевой ввод несёт «клавиша навыка зажата»
         if s.channel: spells.channel_update(s, dt, d, dn, mobs, projs, fx)
+        spells.hold_update(s, dt, mobs, projs, fx)   # потоки: восстановление запаса, расход запаса/маны, эффект зажатого потока
         if s.ground: s.air_jumps = 0
         if s.buf.get("skill", 0) > 0:
             s.buf["skill"] = 0

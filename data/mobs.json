@@ -15,7 +15,7 @@
       80,
       80
     ],
-    "skin": "mobs\rotling\rotling",
+    "skin": "mobs/rotling/rotling.png",
     "mass": 4,
     "contact": 6,
     "move": {

@@ -56,7 +56,7 @@ def bar(scr, c, value, maxv, y0, flash=False, font=None):
 
 def draw(scr, pl, font):
     P = CFG["player"]; y0 = VIEW_H
-    # Маг (spellcaster в data/characters.json): портрет + окно из трёх заклинаний вместо иконок оружия.
+    # Заклинатель (spellcaster в data/characters.json — маг/инженер): портрет + окно из трёх умений вместо иконок оружия.
     if CFG.get("character", {}).get("spellcaster"):
         portrait(scr, pl, font); spellbook(scr, pl, font)
     else:

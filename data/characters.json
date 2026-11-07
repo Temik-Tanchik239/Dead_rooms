@@ -146,8 +146,9 @@
     "ranger": {
       "name": "Инженер",
       "role": "Телекинетик",
-      "description": "Управляет полем телекинеза: притягивает и отталкивает врагов и предметы, сносит толпу конусом перед собой и держит одного врага в захвате. Быстрый и прыгучий — с самого начала умеет двойной прыжок и рывок.",
+      "description": "Управляет полем телекинеза: притягивает и отталкивает врагов и предметы, сносит толпу конусом перед собой и держит одного врага в захвате. Быстрый и прыгучий — с самого начала умеет двойной прыжок и рывок. Оружия нет: ЛКМ или Q — применить выбранное умение в курсор, C/V — листать книгу умений (показаны предыдущее, текущее и следующее).",
       "assets": "characters/ranger",
+      "spellcaster": true,
       "stats": {
         "hp": 95,
         "speed": 235,
@@ -159,16 +160,8 @@
           "regen": 12
         }
       },
-      "weapons": [
-        "twin_daggers",
-        "short_bow"
-      ],
-      "allowed_weapons": [
-        "twin_daggers",
-        "iron_pike",
-        "short_bow",
-        "seeker_staff"
-      ],
+      "weapons": [],
+      "allowed_weapons": [],
       "base_skills": [
         "telekinesis",
         "telekinesis_cone",
@@ -227,11 +220,7 @@
           "cooldown": 2.5
         }
       },
-      "weapon_overrides": {
-        "short_bow": {
-          "mana": 9
-        }
-      },
+      "weapon_overrides": {},
       "model_scale": 1.0,
       "hitbox": [
         20,
@@ -256,10 +245,7 @@
           "regen_delay": 0.6
         }
       },
-      "weapons": [
-        "rusty_sword",
-        "seeker_staff"
-      ],
+      "weapons": [],
       "allowed_weapons": [],
       "base_skills": [
         "black_hole",

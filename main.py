@@ -76,7 +76,9 @@ class Player(Body):
         s.atk, s.combo, s.hitbox = None, (None, 0, 0), None
         s.buf = dict(jump=0, roll=0, a1=0, a2=0, skill=0)
         # Стартовое оружие персонажа (data/characters.json -> weapons: [оружие ЛКМ, оружие ПКМ]).
-        s.slots = [w if w in CFG["weapons"] else DEFAULT_WEAPONS[i] for i, w in enumerate((list(ch.get("weapons", [])) + DEFAULT_WEAPONS[len(ch.get("weapons", [])):])[:2])]
+        # Чистый заклинатель (spellcaster — маг/инженер) не носит оружие вовсе: слоты пусты.
+        if ch.get("spellcaster"): s.slots = [None, None]
+        else: s.slots = [w if w in CFG["weapons"] else DEFAULT_WEAPONS[i] for i, w in enumerate((list(ch.get("weapons", [])) + DEFAULT_WEAPONS[len(ch.get("weapons", [])):])[:2])]
         s.anim, s.anim_t, s.anim_p = "idle", 0.0, None
         s.air_t = 0.0   # сколько секунд подряд герой не касается земли (для анимации прыжка)
         s.aim = None   # куда смотрит курсор (координаты комнаты) или None
@@ -261,7 +263,9 @@ class Player(Body):
         else: s.mana = min(s.mana, s.maxmana)
     @in_char
     def start_attack(s, i):
-        wid = s.slots[i]; s.last_weapon = wid; steps = CFG["weapons"][wid]["combo"]; sl, stp, left = s.combo
+        wid = s.slots[i]
+        if not wid or wid not in CFG["weapons"]: return   # у героя нет оружия (маг/инженер) — удара не будет
+        s.last_weapon = wid; steps = CFG["weapons"][wid]["combo"]; sl, stp, left = s.combo
         n = (stp + 1) % len(steps) if sl == wid and left > 0 else 0; st = steps[n]
         s.buf["a1" if i == 0 else "a2"] = 0; cost = weapon.mana_cost(wid, st)
         for sid in s.skills:
@@ -340,7 +344,7 @@ class Player(Body):
         if s.buf.get("skill", 0) > 0:
             s.buf["skill"] = 0
             s.use_skill(mobs, projs, fx)
-        # Маг (spellcaster) не использует оружие: ЛКМ кастует текущее заклинание, ПКМ не нужна.
+        # Заклинатель (spellcaster — маг/инженер) не использует оружие: ЛКМ кастует текущее умение, ПКМ не нужна.
         # Кастуем только когда заклинание готово — иначе зажатая ЛКМ спамила бы сообщениями.
         if CFG.get("character", {}).get("spellcaster"):
             if s.buf.get("a1", 0) > 0 and spells.ready(s):

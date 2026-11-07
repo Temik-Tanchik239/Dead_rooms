@@ -302,18 +302,21 @@ def draw(g):
         return
     box(scr, lr, "loadout_image", col("panel_color", (20, 20, 32)), col("panel_border", (80, 80, 110)), 2, 8)
     isz = int(u.get("loadout_icon_size", 34))
-    text(scr, u.get("weapons_label", "Оружие"), 12, col("stat_label_color", (190, 190, 210)), topleft=(lr.x + 10, lr.y + 8), shadow=False)
+    ws = [wid for wid in c.get("weapons", [])[:2] if wid in CFG["weapons_base"]]
+    # У безоружных героев (маг/инженер, weapons: []) блок «Оружие» не рисуем — навыки слева.
+    sx = lr.x + 10 if not ws else lr.x + 10 + 2 * (isz + 6) + 8
+    if ws:
+        text(scr, u.get("weapons_label", "Оружие"), 12, col("stat_label_color", (190, 190, 210)), topleft=(lr.x + 10, lr.y + 8), shadow=False)
     x = lr.x + 10
-    for wid in c.get("weapons", [])[:2]:
-        if wid not in CFG["weapons_base"]: continue
+    for wid in ws:
         ir = pg.Rect(x, lr.y + 26, isz, isz)
         pg.draw.rect(scr, (32, 30, 46), ir, border_radius=6); pg.draw.rect(scr, (90, 86, 120), ir, 1, border_radius=6)
         icon = sprite(CFG["weapons_base"][wid].get("icon", f"icons/{wid}.png"), isz, isz)
         if icon: scr.blit(icon, ir)
         else: weapon.icon(scr, wid, ir.centerx, ir.centery, int(isz * .8))
         x += isz + 6
-    text(scr, u.get("skills_label", "Навыки"), 12, col("stat_label_color", (190, 190, 210)), topleft=(lr.x + 10 + 2 * (isz + 6) + 8, lr.y + 8), shadow=False)
-    x = lr.x + 10 + 2 * (isz + 6) + 8
+    text(scr, u.get("skills_label", "Навыки"), 12, col("stat_label_color", (190, 190, 210)), topleft=(sx, lr.y + 8), shadow=False)
+    x = sx
     skills = CFG["skills_base"]
     for sid in c.get("base_skills", [])[:4]:
         if sid not in skills: continue

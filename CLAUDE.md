@@ -91,7 +91,7 @@
 `mana_cost`, `cooldown`, `effect`, `color`, `icon`; у активного навыка можно задать анимацию каста:
 `cast_anim` — папка/файл кадров, `cast_size` [ш,в], `cast_offset` [dx,dy], `cast_animation` — длительность, сек) ·
 `characters.json` (5 героев: stats/weapons/skills/tree/overrides; `spellcaster: true` — чистый заклинатель:
-нет оружия/подбора, ЛКМ или Q кастует текущее заклинание, C/V листают книгу из трёх; у мага это включено) ·
+нет оружия/подбора, ЛКМ или Q кастует текущее заклинание, C/V листают книгу из трёх; у мага и инженера это включено, weapons: [] — оружие им вообще не выпадает) ·
 `maps.json` (order, общая legend, настройки, lighting, world) · `maps/<id>.json` (rows, pos, legend,
 mob_pool, фон, свет, `morgart_layout`) · `settings.json` (fullscreen, mouse_aim, menu_layout,
 last_character, player_name). `maps/_*.json` — заготовки, не читаются.

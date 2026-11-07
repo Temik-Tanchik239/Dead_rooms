@@ -132,6 +132,7 @@ class Drop:
 def random_weapon():
     """Случайное оружие из тех, что разрешены текущему персонажу (allowed_weapons в data/characters.json)."""
     allowed = CFG.get("character", {}).get("allowed_weapons")
+    if allowed == []: return None   # пустой список — герою без оружия (маг/инженер) ничего не выпадает
     pool = [w for w in CFG["weapons"] if not allowed or w in allowed]
     return random.choice(pool or list(CFG["weapons"]))
 

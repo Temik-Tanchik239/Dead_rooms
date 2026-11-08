@@ -3,7 +3,8 @@
 Меню (DevMenu) — только в одиночной игре. Игра на паузе, пока оно открыто. Что умеет:
   · выдать опыт / здоровье / ману (число в поле + «Выдать»; для здоровья и маны можно отрицательное число —
     здоровье при этом не опустится ниже 1, чтобы не убить героя);
-  · заспавнить тренировочного манекена рядом с героем, убрать всех манекенов, сбросить его счётчики и эффекты.
+  · заспавнить тренировочного манекена рядом с героем, убрать всех манекенов, сбросить его счётчики и эффекты;
+  · включить/выключить бессрочную невидимость себе («Невидимость: я») или манекенам (см. invisibility.py).
 
 Манекен (Dummy) — обычный Mob (лежит в r.mobs, поэтому по нему попадают атаки, пули и заклинания), но:
   · стоит на месте, не атакует; урон не отбрасывает и не сбивает его (а вот телекинез/толчки заклинаний двигают);
@@ -30,6 +31,7 @@ from core import CFG, W, VIEW_H, T, free
 from mob import Mob
 from anim import sprite, mob_frame, ASSETS_EXISTS
 import status
+import invisibility
 
 KIND = "__dummy__"
 DEF = {"name": "Тренировочный манекен", "w": 34, "h": 60, "hp": 1_000_000, "xp": 0, "dummy": True,
@@ -101,7 +103,7 @@ class Dummy(Mob):
     def reset(s):
         """Обнулить счётчики урона и снять все эффекты."""
         s.total = s.last_hit = 0.0; s.log = []; s._dot = s._dot_t = 0.0
-        s.stun = s.frozen = s.burn = s.burn_dps = 0.0
+        s.stun = s.frozen = s.burn = s.burn_dps = 0.0; s.invis = None
 
     # ---------- жизнь ----------
     def update(s, dt, w):
@@ -129,6 +131,12 @@ class Dummy(Mob):
         return int(dw), int(dh), r.centerx - int(dw) // 2 + int(ox), r.bottom - int(dh) + int(oy)
 
     def draw(s, v, debug=False):
+        """Манекен под невидимостью (invisibility.py) рисуется прозрачным — так удобно проверять процент прозрачности."""
+        dw, dh, x, y = s._box(look())
+        area = pg.Rect(x, y, dw, dh).union(s.rect).inflate(50, 50)
+        invisibility.ghost(v, area, lambda: s._draw_body(v, debug), invisibility.alpha(s))
+
+    def _draw_body(s, v, debug=False):
         d = look(); r = s.rect; hot = s.flash > 0
         path = mob_frame(KIND, d, s.anim.split("|"), s.anim_t, None, folder=ASSET_DIR)
         img = None
@@ -178,6 +186,7 @@ class Dummy(Mob):
         if s.frozen > 0: lines.append((f"Заморожен {s.frozen:.1f} с", (150, 215, 255)))
         elif s.stun > 0: lines.append((f"Оглушён {s.stun:.1f} с", (255, 230, 90)))
         if s.burn > 0: lines.append((f"Горит {s.burn:.1f} с ({s.burn_dps:g}/с)", (255, 150, 70)))
+        if s.invis: lines.append(("Невидим" + ("" if s.invis["t"] is None else f" {max(0, s.invis['t']):.1f} с") + f" ({s.invis['tr']:g}%)", (190, 170, 255)))
         font = _f(); imgs = [(font.render(t, True, c), font.render(t, True, (0, 0, 0))) for t, c in lines]   # (текст, тень)
         pw, ph = max(i.get_width() for i, _ in imgs) + 14, sum(i.get_height() for i, _ in imgs) + 8
         x, y = max(2, min(v.get_width() - pw - 2, int(cx - pw / 2))), max(2, int(bottom - ph))
@@ -189,7 +198,7 @@ class Dummy(Mob):
 
 class DevMenu:
     """Окно разработчика (F6). Рисуется поверх игры на логическом экране; сама игра ставится на паузу (см. Game.step)."""
-    PW, PH = 560, 352
+    PW, PH = 560, 396
     ROWS = (("xp", "Опыт"), ("hp", "Здоровье"), ("mana", "Мана"))
 
     def __init__(s, game):
@@ -242,6 +251,15 @@ class DevMenu:
         n = len(s.dummies()); s.g.room.mobs = hostile(s.g.room.mobs)
         s.msg = f"Убрано манекенов: {n}" if n else "Манекенов нет"
 
+    def toggle_invisible(s, units, who):
+        """Включить/выключить бессрочную невидимость (процент — data/invisibility.json): проверка прозрачности и «мобы не агрятся»."""
+        if not units: s.msg = "Манекенов нет"; return
+        on = not all(invisibility.is_invisible(u) for u in units)
+        for u in units:
+            if on: invisibility.apply(u, {"time": 0})
+            else: invisibility.clear(u, None, "dev")
+        s.msg = f"{who}: невидимость {'включена' if on else 'выключена'}"
+
     def reset_dummies(s):
         for d in s.dummies(): d.reset()
         s.msg = "Счётчики и эффекты манекенов сброшены" if s.dummies() else "Манекенов нет"
@@ -259,6 +277,8 @@ class DevMenu:
         by = py + 250
         for i, (act, label) in enumerate((("spawn", "Спавн манекена"), ("remove", "Убрать манекены"), ("reset", "Сбросить счётчик"))):
             L["buttons"].append(((act, None), pg.Rect(px + 20 + i * 172, by, 166, 34), label))
+        for i, (act, label) in enumerate((("inv_self", "Невидимость: я"), ("inv_dummy", "Невидимость: манекен"))):
+            L["buttons"].append(((act, None), pg.Rect(px + 20 + i * 172, by + 42, 166, 34), label))
         return L
 
     def click(s, pos):
@@ -272,6 +292,8 @@ class DevMenu:
                 elif act == "spawn": s.spawn_dummy()
                 elif act == "remove": s.remove_dummies()
                 elif act == "reset": s.reset_dummies()
+                elif act == "inv_self": s.toggle_invisible([s.g.pl], "Герой")
+                elif act == "inv_dummy": s.toggle_invisible(s.dummies(), "Манекен")
                 return
 
     # ---------- события (True — событие поглощено, игре не передавать) ----------
@@ -311,6 +333,6 @@ class DevMenu:
         pg.draw.line(scr, (90, 84, 120), (p.x + 20, p.y + 232), (p.right - 20, p.y + 232), 1)
         g.txt("Манекен: стоит, не умирает, показывает урон и DPS, принимает эффекты", p.x + 20, p.y + 236, (190, 190, 215), g.small)
         n = len(s.dummies())
-        g.txt(f"Манекенов в комнате: {n}", p.x + 20, p.y + 296, (190, 190, 215), g.small)
-        g.txt("Enter — применить поле · Tab — следующее поле · для HP/маны можно число со знаком минус", p.x + 20, p.y + 312, (150, 150, 180), g.small)
-        if s.msg: g.txt(s.msg, p.x + 20, p.y + 330, (140, 240, 170), g.small)
+        g.txt(f"Манекенов в комнате: {n}", p.x + 20, p.y + 340, (190, 190, 215), g.small)
+        g.txt("Enter — применить поле · Tab — следующее поле · для HP/маны можно число со знаком минус", p.x + 20, p.y + 356, (150, 150, 180), g.small)
+        if s.msg: g.txt(s.msg, p.x + 20, p.y + 374, (140, 240, 170), g.small)

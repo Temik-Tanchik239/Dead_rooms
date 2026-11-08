@@ -25,7 +25,7 @@ import math, random
 import pygame as pg
 from core import CFG, T, deep_merge, circle_hits_rect, floor_below, free, sign
 from anim import sprite
-from attacks import players_of
+from attacks import players_of, seen_players
 
 DYING_TIME = 0.7
 DEFAULT_HEAD = (0.50, 0.20)
@@ -349,7 +349,8 @@ class Hand:
     @property
     def holding(s): return s.held is not None or s.net_hold
     def targets(s, w):
-        return [p for p in players_of(w) if p.hp > 0 and not getattr(p, "grab", None) and not getattr(p, "downed", False)]
+        """Кого рука может выбрать целью. Невидимых игроков (invisibility.py) не выбирает — но зона уже начатого удара их заденет."""
+        return [p for p in seen_players(w) if p.hp > 0 and not getattr(p, "grab", None) and not getattr(p, "downed", False)]
     def nearest(s, w):
         ts = s.targets(w); return min(ts, key=lambda p: (p.cx - s.x) ** 2 + (p.cy - s.y) ** 2) if ts else None
 

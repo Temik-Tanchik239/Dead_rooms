@@ -32,6 +32,8 @@ def reload_data():
         CFG["mobs"]["__boss__"]["name"] = CFG["boss"].get("name", "Босс")
     # Внешность и размеры тренировочного манекена (F6) — assets/dummy/dummy.json, см. devtools.py. Файл необязателен.
     CFG["dummy"] = read_json(ASSETS / "dummy" / "dummy.json", {})
+    # Общие настройки невидимости (процент прозрачности, плавность, мигание) — data/invisibility.json, см. invisibility.py. Файл необязателен.
+    CFG["invisibility"] = read_json(DATA / "invisibility.json", {})
     # Настраиваемое дерево навыков хранится в assets/skill_tree.json.
     try:
         CFG["skill_tree"] = json.loads((ASSETS / "skill_tree.json").read_text(encoding="utf-8"))

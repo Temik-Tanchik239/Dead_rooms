@@ -4,10 +4,11 @@ import math, random
 import pygame as pg
 from core import CFG, Body, sign, approach, MW, MH, T, circle_hits_rect
 from movement import MOVES, look
-from attacks import ATTACKS, players_of
+from attacks import ATTACKS, players_of, seen_players
 from anim import sprite, mob_frame, anim_length
 from boss_hands import HandSet, head_point, draw_boss
 import status
+import invisibility
 
 def normalize(d):
     """Старый формат ("ai": walker | flyer | shooter) -> новый ("move" + "attacks")."""
@@ -33,6 +34,8 @@ class Mob(Body):
         s.anim, s.anim_t, s.anim_p = "idle", 0.0, None
         s.hands = None; s.alone = False; s._parts = None; s._shield_msg = -9.0
         status.init(s)   # статусные таймеры: заморозка / горение (status.py)
+        invisibility.init(s)   # невидимость (invisibility.py); "invisible" в mobs.json: true | секунды | {time, transparency, break_on_attack}
+        if d.get("invisible"): invisibility.apply(s, d["invisible"])
         if d.get("boss_visual") == "morgart": s.setup_morgart(room, scale)
 
     # ---------- Моргарт: голова = сам моб, руки — отдельные части (boss_hands.py) ----------
@@ -103,6 +106,7 @@ class Mob(Body):
     # ---------- атаки ----------
     def start_attack(s, i, w):
         a = s.attacks[i]; h = ATTACKS[a["type"]]
+        invisibility.on_attack(s, w.fx)   # атака из невидимости сбрасывает эффект
         s.act = {"a": a, "h": h, "i": i, "phase": "windup", "t": 0.0, "hit": False}
         s.cds[i] = a.get("cooldown", 1.5); s.dir = sign(w.pl.cx - s.cx) or s.dir
         h.start(s, a, s.act, w)
@@ -137,9 +141,12 @@ class Mob(Body):
             s.vx = s.vy = 0.0
             s.stun = 0.0
             s.dir = sign(w.pl.cx - s.cx) or s.dir
-            if not s.aggro and any(math.hypot(p.cx - s.cx, p.cy - s.cy) <= s.mv.get("sight", 900) for p in players_of(w)): s.aggro = True
+            seen = seen_players(w)    # невидимых игроков босс не замечает: не агрится, а уже агрившийся теряет цель
+            if not seen: s.aggro = False
+            elif not s.aggro and any(math.hypot(p.cx - s.cx, p.cy - s.cy) <= s.mv.get("sight", 900) for p in seen): s.aggro = True
             if s.hands:
                 s.hands.update(dt, w, s.aggro)
+                if s.invis and any(h.act for h in s.hands.alive_hands()): invisibility.on_attack(s, w.fx)   # атака руки — тоже атака
                 if not s.alone and not s.hands.alive_count(): s.on_alone(w)      # уничтожена последняя рука
             if s.act:
                 s.tick_attack(dt, w)
@@ -195,29 +202,36 @@ class Mob(Body):
         d = s.d; hot = s.flash > 0 or (s.act and s.act["phase"] == "windup" and d.get("blink", True) and int(s.act["t"] * 20) % 2)
         dw, dh = d.get("draw", [s.w, s.h]); r = s.rect
         top = r.centery - dh // 2 if s.flies else r.bottom - dh
-        if s.act: s.act["h"].draw(s, s.act["a"], s.act, v)
-        if d.get("boss_visual") == "morgart":
-            draw_boss(v, (s.cx, s.cy), s.hands, s.t, bool(hot), appearing=True, act=s.act)
-        else:
-            img = sprite(mob_frame(s.kind, d, s.anim.split("|"), s.anim_t, s.anim_p), dw, dh, s.dir < 0, bool(hot))
-            if img: v.blit(img, (r.centerx - dw // 2, top))
-            else:
-                pg.draw.rect(v, (255, 255, 255) if hot else d.get("color", [200, 200, 200]), r, border_radius=5)
-                pg.draw.rect(v, (20, 10, 10), (r.centerx + s.dir * 5 - 2, r.top + 6, 4, 4))
-        tcol = status.tint(s)   # заморожен — синий, горит — оранжевый
-        if tcol and not d.get("boss"):
-            glow = pg.Surface((max(1, dw), max(1, dh)), pg.SRCALPHA); glow.fill(tcol)
-            v.blit(glow, (r.centerx - dw // 2, top))
-        if debug:
-            pg.draw.rect(v, (0, 255, 0), r, 1)
+        if s.act: s.act["h"].draw(s, s.act["a"], s.act, v)   # зоны атаки рисуются всегда, даже у невидимого моба
+        def body():
             if d.get("boss_visual") == "morgart":
-                for hb in s.collision_rects(): pg.draw.rect(v, (255, 70, 210), hb, 2)
-                if s.hands:
-                    for hd in s.hands.alive_hands(): pg.draw.circle(v, (90, 220, 255), (int(hd.home[0]), int(hd.home[1])), 6, 2)
-            if s.act and "box" in s.act: pg.draw.rect(v, (255, 0, 255), s.act["box"], 1)
-        if not d.get("boss"):
-            pg.draw.rect(v, (60, 20, 20), (r.centerx - 14, top - 8, 28, 3))
-            pg.draw.rect(v, (220, 60, 60), (r.centerx - 14, top - 8, 28 * max(0, s.hp) / s.maxhp, 3))
+                draw_boss(v, (s.cx, s.cy), s.hands, s.t, bool(hot), appearing=True, act=s.act)
+            else:
+                img = sprite(mob_frame(s.kind, d, s.anim.split("|"), s.anim_t, s.anim_p), dw, dh, s.dir < 0, bool(hot))
+                if img: v.blit(img, (r.centerx - dw // 2, top))
+                else:
+                    pg.draw.rect(v, (255, 255, 255) if hot else d.get("color", [200, 200, 200]), r, border_radius=5)
+                    pg.draw.rect(v, (20, 10, 10), (r.centerx + s.dir * 5 - 2, r.top + 6, 4, 4))
+            tcol = status.tint(s)   # заморожен — синий, горит — оранжевый
+            if tcol and not d.get("boss"):
+                glow = pg.Surface((max(1, dw), max(1, dh)), pg.SRCALPHA); glow.fill(tcol)
+                v.blit(glow, (r.centerx - dw // 2, top))
+            if debug:
+                pg.draw.rect(v, (0, 255, 0), r, 1)
+                if d.get("boss_visual") == "morgart":
+                    for hb in s.collision_rects(): pg.draw.rect(v, (255, 70, 210), hb, 2)
+                    if s.hands:
+                        for hd in s.hands.alive_hands(): pg.draw.circle(v, (90, 220, 255), (int(hd.home[0]), int(hd.home[1])), 6, 2)
+                if s.act and "box" in s.act: pg.draw.rect(v, (255, 0, 255), s.act["box"], 1)
+            if not d.get("boss"):
+                pg.draw.rect(v, (60, 20, 20), (r.centerx - 14, top - 8, 28, 3))
+                pg.draw.rect(v, (220, 60, 60), (r.centerx - 14, top - 8, 28 * max(0, s.hp) / s.maxhp, 3))
+        a = invisibility.alpha(s)   # 255 — видим; меньше — моб прозрачный (невидимость, см. invisibility.py)
+        if a >= 255: return body()
+        if d.get("boss_visual") == "morgart":   # голова и руки целиком: общая рамка со всех хитбоксов + запас на цепи/свечение
+            area = s.head_rect().unionall(s.hands.rects() if s.hands else []).inflate(260, 260)
+        else: area = pg.Rect(r.centerx - dw // 2, top, dw, dh).inflate(48, 40)
+        invisibility.ghost(v, area, body, a)
 
 def _draw_front(s, v):
     """Руки, державшие игрока, рисуются поверх него (вызывается после отрисовки игроков)."""

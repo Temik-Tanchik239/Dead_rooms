@@ -10,6 +10,7 @@ from anim import clear_cache, sprite, mob_frame
 import weapon
 import hud
 import spells
+import invisibility
 from projectiles import volley
 from mob import Mob, Corpse, spawn_boss
 import characters as char_menu
@@ -104,6 +105,8 @@ class Player(Body):
         s.pid, s.name, s.revive, s.armed, s.downed = 0, "", 0.0, False, False
         # tp — номер «телепорта» (хост переставил игрока), hitc/kb — счётчик попаданий и отброс: клиент повторяет их у себя.
         s.tp, s.hitc, s.kb = 0, 0, (0.0, 0.0)
+        # Невидимость (invisibility.py): s.invis — состояние эффекта или None; тик — в update, прозрачность — в draw.
+        invisibility.init(s)
     @in_char
     def press(s, what): s.buf[what] = CFG["player"]["buffer"]
     def passive_mult(s, kind):
@@ -158,12 +161,15 @@ class Player(Body):
         p = CFG["player"]; r = s.rect; st = s.anim.split("|")
         dw, dh = p.get("draws", {}).get(st[0], p.get("draw", [s.w, s.H0]))
         dw, dh = max(1, int(dw * s.model_scale)), max(1, int(dh * s.model_scale))
-        img = sprite(mob_frame(f"player:{s.char_id}", p, st, s.anim_t, s.anim_p, folder=p.get("folder", "player")), dw, dh, s.face < 0)
-        if img: v.blit(img, (r.centerx - dw // 2, r.bottom - dh))
-        else:
-            pg.draw.rect(v, (200, 160, 70) if s.state == "roll" else (240, 200, 90), r, border_radius=4)
-            ex = r.right - 6 if s.face > 0 else r.left + 3; pg.draw.rect(v, (30, 20, 20), (ex, r.top + 6, 3, 5))
-        if st[0] not in ("roll", "ladder"): weapon.draw_held(v, s, s.hand(st[0]))
+        def body():
+            img = sprite(mob_frame(f"player:{s.char_id}", p, st, s.anim_t, s.anim_p, folder=p.get("folder", "player")), dw, dh, s.face < 0)
+            if img: v.blit(img, (r.centerx - dw // 2, r.bottom - dh))
+            else:
+                pg.draw.rect(v, (200, 160, 70) if s.state == "roll" else (240, 200, 90), r, border_radius=4)
+                ex = r.right - 6 if s.face > 0 else r.left + 3; pg.draw.rect(v, (30, 20, 20), (ex, r.top + 6, 3, 5))
+            if st[0] not in ("roll", "ladder"): weapon.draw_held(v, s, s.hand(st[0]))
+        # Невидимость: герой с оружием рисуется прозрачным (процент — data/invisibility.json, у навыка/эффекта может быть свой).
+        invisibility.ghost(v, pg.Rect(r.centerx - dw // 2, r.bottom - dh, dw, dh).inflate(200, 80), body, invisibility.alpha(s))
         # Анимация применения навыка: сначала кадры из ассета (skills/<id>/cast — можно заменить
         # своими PNG), иначе — процедурная анимация для встроенных навыков / запасная вспышка.
         cast = s.skill_cast
@@ -267,7 +273,7 @@ class Player(Body):
         if full: s.mana, s.mana_t, s.mana_flash = min(m.get("start", s.maxmana), s.maxmana), 0, 0
         else: s.mana = min(s.mana, s.maxmana)
     @in_char
-    def start_attack(s, i):
+    def start_attack(s, i, fx=None):
         wid = s.slots[i]
         if not wid or wid not in CFG["weapons"]: return   # у героя нет оружия (маг/инженер) — удара не будет
         s.last_weapon = wid; steps = CFG["weapons"][wid]["combo"]; sl, stp, left = s.combo
@@ -279,6 +285,7 @@ class Player(Body):
                 cost *= max(0.0, 1.0 - float(passive.get("amount", 0)))
         if s.mana < cost: s.mana_flash = .35; return   # не хватает маны — удар не начинается, полоска мигает
         s.mana -= cost; s.mana_t = CFG["player"].get("mana", {}).get("regen_delay", .9)
+        invisibility.on_attack(s, fx)   # атака из невидимости сбрасывает эффект
         s.atk = dict(w=wid, n=n, step=st, t=0.0, wu=st["windup"], ac=st["active"], rec=st["recovery"], fired=False, hit=set())
         s.state = "attack"
     def strike(s, mobs, fx):
@@ -329,6 +336,7 @@ class Player(Body):
         for b in s.buf: s.buf[b] = max(0, s.buf[b] - dt)
         s.inv -= dt; s.lock -= dt; s.drop_t -= dt; s.mana_t -= dt; s.mana_flash -= dt
         s.skill_notice = max(0.0, s.skill_notice - dt)
+        invisibility.tick(s, dt, fx)   # время невидимости тает; кончилось — эффект снимается
         if s.skill_cast:
             sid, elapsed, duration = s.skill_cast
             elapsed += dt
@@ -407,8 +415,8 @@ class Player(Body):
                     s.vy = -p["jump"]
                     if s.coy <= 0: s.air_jumps += 1
                 s.buf["jump"] = 0; s.coy = 0
-            elif s.buf["a1"]: s.face = s.facing(d); s.start_attack(0)
-            elif s.buf["a2"]: s.face = s.facing(d); s.start_attack(1)
+            elif s.buf["a1"]: s.face = s.facing(d); s.start_attack(0, fx)
+            elif s.buf["a2"]: s.face = s.facing(d); s.start_attack(1, fx)
             if s.vy < 0 and not held: s.vy = max(s.vy, -p["jump"] * p["jump_cut"])
         if s.state != "ladder":
             s.vy = min(s.vy + p["gravity"] * (p["fall_mult"] if s.vy > 0 else 1) * dt, p["max_fall"])

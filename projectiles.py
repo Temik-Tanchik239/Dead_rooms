@@ -15,6 +15,7 @@ import pygame as pg
 from core import CFG, T, solid, sign, circle_hits_rect
 from anim import sprite, frames
 import status
+from invisibility import is_invisible
 
 BEHAVIORS, DEATH = {}, {}
 def behavior(key):
@@ -138,6 +139,7 @@ def _homing(s, p, dt, w):
     best, bd = None, p.get("range", 99999)
     for m in s.targets(w):
         if id(m) in s.hit: continue   # уже задетых не преследуем (пробивающие/цепные пули летят к следующему врагу)
+        if not s.friendly and is_invisible(m): continue   # вражеские пули не наводятся на невидимого игрока
         dd = math.hypot(m.cx - s.x, m.cy - s.y)
         if dd < bd: best, bd = m, dd
     if not best: return

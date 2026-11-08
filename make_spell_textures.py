@@ -256,6 +256,24 @@ def icon_telekinesis_hold():
     return finish_icon(TK_MAG, g)
 
 
+INVIS_VIOLET = (170, 140, 255)
+
+
+def icon_invisibility_cloak():
+    """Мантия с капюшоном: левая половина плотная, правая «растворяется» пунктиром — невидимость."""
+    g = new(32, 32); d = ImageDraw.Draw(g)
+    body = [(16, 4), (22, 7), (24, 14), (27, 27), (5, 27), (8, 14), (10, 7)]       # капюшон + плащ
+    d.polygon(body, fill=(112, 84, 190, 255))
+    d.polygon([(16, 4), (10, 7), (8, 14), (5, 27), (16, 27)], fill=(138, 108, 224, 255))   # светлая левая половина
+    d.ellipse((12, 8, 20, 17), fill=(24, 14, 44, 255))                                     # тёмный провал капюшона
+    for x, y in ((14, 12), (18, 12)): d.point((x, y), fill=(220, 205, 255, 255))           # глаза
+    for y in range(6, 28, 2):                                                              # правая сторона тает: убираем точки шахматкой
+        for x in range(17 + (y // 2) % 2, 28, 2):
+            if g.getpixel((x, y))[3]: d.point((x, y), fill=(0, 0, 0, 0))
+    for p in ((26, 9), (28, 17), (25, 23), (29, 26)): sparkle(d, p[0], p[1], (225, 210, 255, 255))
+    return finish_icon(INVIS_VIOLET, g)
+
+
 # Анимации применения (смотрят вправо, 6 кадров). Мягкие эффекты — без тёмного контура.
 def cast_telekinesis(frame, n=6):
     S = 72; g = new(S, S); d = ImageDraw.Draw(g); c = (S / 2, S / 2); t = frame / n
@@ -304,7 +322,7 @@ def cast_telekinesis_hold(frame, n=6):
 ICONS = {"fireball": icon_fireball, "ice_shard": icon_ice_shard, "arcane_orb": icon_arcane_orb, "frost_nova": icon_frost_nova,
          "chain_lightning": icon_chain_lightning, "thunderstrike": icon_thunderstrike, "meteor": icon_meteor,
          "telekinesis": icon_telekinesis, "telekinesis_cone": icon_telekinesis_cone, "telekinesis_hold": icon_telekinesis_hold,
-         "inferno": icon_inferno}
+         "inferno": icon_inferno, "invisibility_cloak": icon_invisibility_cloak}
 PROJECTILES = {"fireball": fire_bolt, "ice_shard": ice_bolt, "arcane_orb": arcane_bolt}
 CASTS = {"telekinesis": cast_telekinesis, "telekinesis_cone": cast_telekinesis_cone, "telekinesis_hold": cast_telekinesis_hold}
 

@@ -317,7 +317,8 @@
         "fire_flask"
       ],
       "base_skills": [
-        "dash"
+        "dash",
+        "invisibility_cloak"
       ],
       "skill_tree": [
         {

@@ -13,6 +13,7 @@ import math
 import pygame as pg
 from core import T, MW, free, sign, floor_below, circle_hits_rect
 from projectiles import volley
+from invisibility import visible_only
 
 ATTACKS = {}
 def attack(name):
@@ -22,6 +23,10 @@ def attack(name):
 def players_of(w):
     """Все живые игроки (мультиплеер: w.players) или единственный w.pl."""
     return getattr(w, "players", None) or [w.pl]
+
+def seen_players(w):
+    """Игроки, которых мобы могут заметить (без невидимых) — для агра; урон по зоне бьёт всех (players_of)."""
+    return visible_only(players_of(w))
 
 def hit_player(m, a, w, from_x=None, target=None):
     (target or w.pl).hit(a.get("damage", 10) * m.dmg_scale, m.cx if from_x is None else from_x, w.fx, a.get("knockback", 260))

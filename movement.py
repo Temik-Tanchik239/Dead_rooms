@@ -7,6 +7,7 @@
 Функция меняет только m.vx / m.vy / m.dir: гравитацию и столкновения моб считает сам."""
 import math
 from core import T, MW, ROWS, tile, free, sign, approach
+from invisibility import is_invisible
 
 MOVES = {}
 def movement(name):
@@ -74,7 +75,11 @@ def hover(m, p, dt, w):
     m.vy = math.sin(m.t * 2.5 + m.home[0]) * 30; m.vx = approach(m.vx, 0, 300 * dt)
 
 def look(m, w, p):
-    """Видит ли игрока; увидел — m.aggro = True."""
+    """Видит ли игрока; увидел — m.aggro = True. Невидимого игрока (invisibility.py) моб не замечает, а уже агрившийся
+    теряет цель: агр сбрасывается, моб возвращается к обходу/покою."""
+    if is_invisible(w.pl):
+        m.aggro = False
+        return False
     dx, dy = w.pl.cx - m.cx, w.pl.cy - m.cy
     if abs(dx) < p.get("sight", m.d.get("sight", 340)) and abs(dy) < p.get("sight_y", m.d.get("sight_y", 140)): m.aggro = True
     return m.aggro

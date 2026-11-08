@@ -25,6 +25,7 @@ import pygame as pg
 from core import CFG, SETTINGS, T, W, VIEW_H, CHAR, use_char, apply_character, char_ids, char_def, approach, tile, free, FX
 import characters as char_menu
 import spells
+import invisibility
 from maps import Campaign, Drop, END, random_weapon
 from mob import Mob, Corpse, normalize, spawn_boss, scale_boss_for_players
 from projectiles import Proj
@@ -609,7 +610,7 @@ class HostSession(Session):
         if alive:
             w = SimpleNamespace(g=r.g, pl=alive[0], players=alive, mobs=r.mobs, projs=g.projs, fx=fx)
             for m in r.mobs:
-                w.pl = min(alive, key=lambda p: (p.cx - m.cx) ** 2 + (p.cy - m.cy) ** 2)   # моб видит ближайшего
+                w.pl = invisibility.pick_target(alive, m)   # моб видит ближайшего видимого игрока (невидимых — см. invisibility.py)
                 m.update(dt, w)
                 if m.d.get("contact"):
                     for p in alive:
@@ -690,7 +691,7 @@ class HostSession(Session):
                 if "to" in a: act.append(["to", R(a["to"][0]), R(a["to"][1])])
             mobs.append([m.nid, m.kind, R(m.x), R(m.y), m.dir, R(m.hp), R(m.maxhp), round(max(0, m.flash), 2),
                          m.anim, round(m.anim_t, 3), None if m.anim_p is None else round(m.anim_p, 3), act,
-                         m.hands.net_pack() if getattr(m, "hands", None) else None])
+                         m.hands.net_pack() if getattr(m, "hands", None) else None, invisibility.net_pack(m)])
         pls = []
         for p in s.players.values():
             atk = [p.atk["w"], p.atk["n"], round(p.atk["t"], 3)] if p.state == "attack" and p.atk else None
@@ -705,7 +706,8 @@ class HostSession(Session):
                         "sh": [round(p.shield_time, 2), p.shield_face, R(p.shield_hp)], "ch": chan, "hd": hd, "hr": hr,
                         "sk": list(p.skills), "si": p.skill_index, "cd": {k: round(v, 2) for k, v in p.skill_cooldowns.items() if v > 0},
                         "lv": p.level, "xp": p.xp, "xn": p.xp_next, "rv": round(p.revive, 2),
-                        "tp": p.tp, "hc": p.hitc, "kb": [R(p.kb[0]), R(p.kb[1])], "gr": 1 if p.grab else 0})
+                        "tp": p.tp, "hc": p.hitc, "kb": [R(p.kb[0]), R(p.kb[1])], "gr": 1 if p.grab else 0,
+                        "iv": invisibility.net_pack(p)})   # невидимость: [секунд осталось (-1 — бессрочно), прозрачность %, снимать ли при атаке] или None
         return {"t": "snap", "ht": round(time.monotonic(), 4), "room": r.id, "loop": g.camp.loop,
                 "spawned": bool(r.spawned), "locked": r.locked, "cleared": r.cleared,
                 "prog": {mid: [m.visited, m.cleared] for mid, m in g.camp.maps.items()},
@@ -999,6 +1001,7 @@ class ClientSession(Session):
             host_cd = {k: max(host_cd.get(k, 0.0), p.skill_cooldowns.get(k, 0.0)) for k in set(host_cd) | set(p.skill_cooldowns)}
         p.skill_cooldowns = host_cd
         p.level, p.xp, p.xp_next = ps["lv"], ps["xp"], ps["xn"]
+        invisibility.net_apply(p, ps.get("iv"), mine=p.pid == s.my_id and s.predicting)   # невидимость решает хост
 
     def apply_self(s, p, ps):
         alive = ps["hp"] > 0
@@ -1052,6 +1055,7 @@ class ClientSession(Session):
             else: at += ahead
             m.x, m.y, m.dir, m.hp, m.maxhp, m.flash = x, y, d, hp, mhp, fl
             m.anim, m.anim_t, m.anim_p = an, at, ap
+            invisibility.net_apply(m, extra[1] if len(extra) > 1 else None)   # невидимость моба — от хоста
             m.t += dt      # у клиентского моба нет update(): без этого «часы» Моргарта стоят на 0 и босс рисуется полностью прозрачным
             if getattr(m, "hands", None) and extra and extra[0]:
                 nbh = nb[12] if nb and len(nb) > 12 else None

@@ -154,3 +154,29 @@ class Leap(Attack):
         if m.flies: pg.draw.circle(v, (230, 80, 70), (tx, ty), 10, 2); return
         pg.draw.line(v, (230, 80, 70), (tx - r, ty - 1), (tx + r, ty - 1), 2)
         pg.draw.polygon(v, (230, 80, 70), [(tx, ty - 6), (tx - 6, ty - 16), (tx + 6, ty - 16)])
+
+@attack("kamikaze")
+class Kamikaze(Attack):
+    """Камикадзе: моб летит к игроку с большой скоростью и взрывается при столкновении.
+    Параметры: speed (px/s, по умолчанию 500), radius (радиус урона, 80), damage (по умолчанию 20)."""
+    def start(s, m, a, act, w):
+        act["free"] = True
+        dx = w.pl.cx - m.cx
+        dy = w.pl.cy - m.cy
+        dist = math.hypot(dx, dy) or 1
+        speed = a.get("speed", 500)
+        m.vx = dx / dist * speed
+        m.vy = dy / dist * speed
+
+    def active(s, m, a, act, dt, w):
+        if m.touches_rect(w.pl.rect) or math.hypot(m.cx - w.pl.cx, m.cy - w.pl.cy) <= 5:
+            x, y = m.cx, m.cy
+            r = a.get("radius", 80)
+            w.fx.ring(x, y, r)
+            hit_zone(m, a, act, w, lambda rect: circle_hits_rect(x, y, r, rect))
+            m.hp = 0
+            return True
+        if act.get("t", 0) > 5:
+            m.vx = m.vy = 0
+            return True
+        return False

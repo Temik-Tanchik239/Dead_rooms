@@ -253,5 +253,62 @@
       40,
       16
     ]
+  },
+  "xbow_arrow": {
+    "speed": 720,
+    "size": 4,
+    "color": [
+      240,
+      225,
+      160
+    ],
+    "life": 1.1,
+    "knockback": 140,
+    "skin": "projectiles/xbow_arrow.png",
+    "draw": [
+      40,
+      9
+    ]
+  },
+  "xbow_fire": {
+    "speed": 600,
+    "size": 5,
+    "color": [
+      255,
+      140,
+      50
+    ],
+    "life": 1.2,
+    "aoe": 30,
+    "knockback": 120,
+    "effect": {
+      "burn": {
+        "time": 3,
+        "dps": 7
+      }
+    },
+    "frames": "projectiles/xbow_fire",
+    "fps": 14,
+    "draw": [
+      40,
+      11
+    ]
+  },
+  "xbow_heavy": {
+    "speed": 860,
+    "size": 5,
+    "color": [
+      170,
+      195,
+      235
+    ],
+    "life": 1.0,
+    "pierce": 2,
+    "knockback": 340,
+    "skin": "projectiles/xbow_heavy.png",
+    "draw": [
+      52,
+      11
+    ]
   }
 }

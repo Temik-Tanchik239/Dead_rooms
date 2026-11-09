@@ -25,6 +25,7 @@ import pygame as pg
 from core import CFG, SETTINGS, T, W, VIEW_H, CHAR, use_char, apply_character, char_ids, char_def, approach, tile, free, FX
 import characters as char_menu
 import spells
+import crossbow
 import invisibility
 from maps import Campaign, Drop, END, random_weapon
 from mob import Mob, Corpse, normalize, spawn_boss, scale_boss_for_players
@@ -707,7 +708,7 @@ class HostSession(Session):
                         "sk": list(p.skills), "si": p.skill_index, "cd": {k: round(v, 2) for k, v in p.skill_cooldowns.items() if v > 0},
                         "lv": p.level, "xp": p.xp, "xn": p.xp_next, "rv": round(p.revive, 2),
                         "tp": p.tp, "hc": p.hitc, "kb": [R(p.kb[0]), R(p.kb[1])], "gr": 1 if p.grab else 0,
-                        "iv": invisibility.net_pack(p)})   # невидимость: [секунд осталось (-1 — бессрочно), прозрачность %, снимать ли при атаке] или None
+                        "iv": invisibility.net_pack(p), "xb": crossbow.net_pack(p)})   # невидимость: [секунд осталось (-1 — бессрочно), прозрачность %, снимать ли при атаке] или None
         return {"t": "snap", "ht": round(time.monotonic(), 4), "room": r.id, "loop": g.camp.loop,
                 "spawned": bool(r.spawned), "locked": r.locked, "cleared": r.cleared,
                 "prog": {mid: [m.visited, m.cleared] for mid, m in g.camp.maps.items()},
@@ -747,6 +748,7 @@ def place(p, rect, ladder, room, dx=0):
     """Поставить игрока p в точку появления rect (как Game.place, но для любого игрока; dx — сдвиг, чтобы не стоять друг в друге)."""
     if p.h != p.H0: p.y -= p.H0 - p.h; p.h = p.H0
     p.atk = None; p.grab = None; p.state = "ladder" if ladder and p.hp > 0 else "move"
+    crossbow.release_all(p)   # гарпуны остались в прошлой комнате
     lim = lambda x: max(0, min(room.width_px - p.w, x))
     x = lim(rect.centerx - p.w / 2 + dx); p.y = rect.bottom - p.h; p.vx = p.vy = 0
     if dx and not free(room.g, pg.Rect(int(x), int(p.y), p.w, p.h)): x = lim(rect.centerx - p.w / 2)
@@ -995,6 +997,7 @@ class ClientSession(Session):
         else:
             if p.channel: p.skill_cast = None
             p.channel = None
+        crossbow.net_apply(p, ps.get("xb"), local=(p.pid == s.my_id and s.predicting))   # мини-арбалеты (Тень): вид снаряда решает хост, перезарядку своего героя считаем сами
         spells.hold_net_apply(p, ps.get("hd"), ps.get("hr"))   # потоки: решает хост, у клиента — картинка и запас для HUD
         host_cd = {k: float(v) for k, v in ps.get("cd", {}).items()}
         if p.pid == s.my_id and s.predicting:   # только что применённый навык не «оживает», пока хост не подтвердил

@@ -71,45 +71,45 @@
   "morgart_layout": {
     "anchors": {
       "head": [
-        0.625,
-        0.3362
+        0.4763,
+        0.4925
       ]
     },
     "hands": {
       "upper_left": {
-        "enabled": false,
+        "enabled": true,
         "offset": [
-          -21.5,
-          1.0
+          -19.75,
+          1.5
         ],
-        "hp": 260,
+        "hp": 300,
         "pattern": "grabber"
       },
       "lower_left": {
-        "enabled": false,
+        "enabled": true,
         "offset": [
-          -21.25,
-          9.75
+          -19.75,
+          9.25
         ],
-        "hp": 220,
+        "hp": 300,
         "pattern": "sweeper"
       },
       "upper_right": {
-        "enabled": false,
+        "enabled": true,
         "offset": [
-          21.25,
-          9.75
+          22.0,
+          9.25
         ],
-        "hp": 260,
+        "hp": 300,
         "pattern": "slammer"
       },
       "lower_right": {
-        "enabled": false,
+        "enabled": true,
         "offset": [
           22.0,
-          4.75
+          2.25
         ],
-        "hp": 220,
+        "hp": 300,
         "pattern": "hunter"
       }
     }

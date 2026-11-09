@@ -20,9 +20,7 @@
     "contact": 6,
     "move": {
       "type": "chase",
-      "speed": 70,
-      "sight": 420,
-      "jump": 0
+      "speed": 70
     },
     "attacks": [
       {

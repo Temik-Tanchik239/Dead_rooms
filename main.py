@@ -10,6 +10,7 @@ from anim import clear_cache, sprite, mob_frame
 import weapon
 import hud
 import spells
+import crossbow
 import invisibility
 from projectiles import volley
 from mob import Mob, Corpse, spawn_boss
@@ -77,8 +78,8 @@ class Player(Body):
         s.atk, s.combo, s.hitbox = None, (None, 0, 0), None
         s.buf = dict(jump=0, roll=0, a1=0, a2=0, skill=0)
         # Стартовое оружие персонажа (data/characters.json -> weapons: [оружие ЛКМ, оружие ПКМ]).
-        # Чистый заклинатель (spellcaster — маг/инженер) не носит оружие вовсе: слоты пусты.
-        if ch.get("spellcaster"): s.slots = [None, None]
+        # Чистый заклинатель (spellcaster — маг/инженер) и арбалетчик (crossbows — Тень) не носят оружие вовсе: слоты пусты.
+        if ch.get("spellcaster") or ch.get("crossbows"): s.slots = [None, None]
         else: s.slots = [w if w in CFG["weapons"] else DEFAULT_WEAPONS[i] for i, w in enumerate((list(ch.get("weapons", [])) + DEFAULT_WEAPONS[len(ch.get("weapons", [])):])[:2])]
         s.anim, s.anim_t, s.anim_p = "idle", 0.0, None
         s.air_t = 0.0   # сколько секунд подряд герой не касается земли (для анимации прыжка)
@@ -91,6 +92,7 @@ class Player(Body):
         s.skill_cooldowns = {key: 0.0 for key in s.skills}; s.skill_notice = 0.0
         s.shield_time = 0.0; s.shield_hp = 0.0; s.shield_face = s.face; s.shield_asset_cache = {}
         s.last_weapon = s.slots[0]; s.skill_cast = None
+        crossbow.init(s)   # мини-арбалеты (Тень): виды снарядов, перезарядка и отдача по каждому арбалету — см. crossbow.py
         # Удерживаемое заклинание (skills.json: "channel": true — напр. захват инженера, как ульта Bane): словарь
         # {"sid", "t" (сколько уже колдуем), "max" (лимит, сек), ...} или None. Логика — spells.channel_*.
         s.channel = None
@@ -162,12 +164,16 @@ class Player(Body):
         dw, dh = p.get("draws", {}).get(st[0], p.get("draw", [s.w, s.H0]))
         dw, dh = max(1, int(dw * s.model_scale)), max(1, int(dh * s.model_scale))
         def body():
+            xb = crossbow.enabled() and st[0] not in ("roll", "ladder")   # мини-арбалеты в руках видны всегда, кроме переката и лестницы
+            if xb: crossbow.draw(v, s, 1)   # второй арбалет (ПКМ) — в дальней руке, за телом
             img = sprite(mob_frame(f"player:{s.char_id}", p, st, s.anim_t, s.anim_p, folder=p.get("folder", "player")), dw, dh, s.face < 0)
             if img: v.blit(img, (r.centerx - dw // 2, r.bottom - dh))
             else:
                 pg.draw.rect(v, (200, 160, 70) if s.state == "roll" else (240, 200, 90), r, border_radius=4)
                 ex = r.right - 6 if s.face > 0 else r.left + 3; pg.draw.rect(v, (30, 20, 20), (ex, r.top + 6, 3, 5))
             if st[0] not in ("roll", "ladder"): weapon.draw_held(v, s, s.hand(st[0]))
+            if xb: crossbow.draw(v, s, 0)   # первый арбалет (ЛКМ) — в ближней руке, поверх тела
+            if crossbow.enabled(): crossbow.draw_hooks(v, s)   # нити гарпунов и их наконечники
         # Невидимость: герой с оружием рисуется прозрачным (процент — data/invisibility.json, у навыка/эффекта может быть свой).
         invisibility.ghost(v, pg.Rect(r.centerx - dw // 2, r.bottom - dh, dw, dh).inflate(200, 80), body, invisibility.alpha(s))
         # Анимация применения навыка: сначала кадры из ассета (skills/<id>/cast — можно заменить
@@ -310,6 +316,10 @@ class Player(Body):
         s.skill_index = (s.skill_index + direction) % len(active_skills)
         s.skill_notice = 1.0
     @in_char
+    def swap_ammo(s, i, direction=1):
+        """Листает вид снаряда арбалета i (0 — ЛКМ, 1 — ПКМ). У героев без арбалетов ничего не делает."""
+        crossbow.swap(s, i, direction)
+    @in_char
     def use_skill(s, mobs, projs, fx):
         """Использует текущий активный навык/заклинание. Эффекты — реестр @spell в spells.py."""
         spells.cast(s, mobs, projs, fx)
@@ -367,6 +377,26 @@ class Player(Body):
                 s.buf["a1"] = 0
                 s.use_skill(mobs, projs, fx)
             s.buf["a2"] = 0
+        # Арбалетчик (crossbows — Тень): ЛКМ стреляет первым арбалетом, ПКМ — вторым, у каждого своя перезарядка; стрелять можно на бегу и в прыжке.
+        # Нажатие, пришедшее раньше конца перезарядки, ждёт в буфере; не хватило маны — выстрела нет, полоска маны мигает.
+        # «Свежее» нажатие (в этом кадре) или зажатая кнопка — буфер ввода только что обновлён и ещё полный (минус кадр): так отличаем зажатую ЛКМ/ПКМ
+        # от одиночного клика, чей буфер постепенно тает. Зажатая кнопка арбалета подтягивает гарпун ближе, Пробел отцепляет гарпуны.
+        if crossbow.enabled():
+            crossbow.tick(s, dt)
+            full = p["buffer"] - 1.5 * dt
+            if s.buf.get("jump", 0) > full: crossbow.release_all(s)   # прыжок при этом работает как обычно (скорость на верёвке сохраняется)
+            if s.state == "move" and s.stun <= 0:
+                for i, key in enumerate(crossbow.KEYS):
+                    s.xb_held[i] = s.buf.get(key, 0) > full
+                    if s.buf.get(key, 0) > 0:
+                        res = crossbow.trigger(s, i, projs, fx)
+                        if res != "cd": s.buf[key] = 0
+                    else: s.xb_lock[i] = False   # кнопку отпустили — новый гарпун можно выпустить
+            else:   # перекат/лестница/оглушение: стрелять нельзя, нажатие не копим
+                for key in crossbow.KEYS: s.buf[key] = 0
+                s.xb_held = [False] * crossbow.SIDES
+                if s.state in ("roll", "ladder"): crossbow.release_all(s)
+            crossbow.hooks_update(s, dt, g, mobs, fx)
         # Регенерация здоровья: начинается после hp_regen_delay секунд без полученного урона.
         s.hp_regen_timer += dt
         hp_regen_delay = max(0.0, float(p.get("hp_regen_delay", 5.0)))
@@ -403,6 +433,8 @@ class Player(Body):
                 s.combo = (a["w"], a["n"], p["combo_window"]); s.state = "move"; s.atk = None
         else:
             if s.stun > 0: s.stun -= dt
+            elif crossbow.swinging(s):   # висим на верёвке в воздухе: A/D раскачивают (crossbow.rope_step), обычный разгон/торможение выключены
+                if d: s.face = d
             else:
                 acc = (p["accel"] if d else p["friction"]) if s.ground else (p["air_accel"] if d else p["air_friction"])
                 s.vx = approach(s.vx, d * s.speed(), acc * dt)
@@ -418,8 +450,11 @@ class Player(Body):
             elif s.buf["a1"]: s.face = s.facing(d); s.start_attack(0, fx)
             elif s.buf["a2"]: s.face = s.facing(d); s.start_attack(1, fx)
             if s.vy < 0 and not held: s.vy = max(s.vy, -p["jump"] * p["jump_cut"])
+        if crossbow.enabled() and s.aim and s.state == "move" and s.stun <= 0:
+            s.face = sign(s.aim[0] - s.cx) or s.face   # арбалеты в руках всегда смотрят в курсор — герой поворачивается к нему (бег задом — стрейф)
         if s.state != "ladder":
             s.vy = min(s.vy + p["gravity"] * (p["fall_mult"] if s.vy > 0 else 1) * dt, p["max_fall"])
+        if crossbow.enabled(): crossbow.rope_step(s, dt, d)   # гарпуны: подтягивание, раскачивание, ограничение длины верёвки
         s.move(g, dt, drop=s.drop_t > 0)
         if p.get("ledge", True) and s.state == "move" and not s.ground and s.wall and s.wall == d and s.vy > -80 and s.lock <= 0:
             s.ledge(g)
@@ -531,6 +566,7 @@ class Game:
         pl = s.pl
         if pl.h != pl.H0: pl.y -= pl.H0 - pl.h; pl.h = pl.H0
         pl.atk = None; pl.grab = None; pl.state = "ladder" if ladder else "move"
+        crossbow.release_all(pl)   # гарпуны остались в прошлой комнате
         pl.x = max(0, min((s.room.width_px if s.room else MW) - pl.w, rect.centerx - pl.w / 2)); pl.y = rect.bottom - pl.h; pl.vx = pl.vy = 0
     def take_exit(s, z):
         r = s.room; target = s.camp.resolve(r.id, z["entry"]["exit"])
@@ -577,6 +613,8 @@ class Game:
         with use_char(pl.char_id):   # у каждого героя свои правки оружия
             if CFG.get("character", {}).get("spellcaster"):   # маг не подбирает и не носит оружие
                 s.fx.text("Маг не использует оружие", pl.cx, pl.y - 10); return
+            if CFG.get("character", {}).get("crossbows"):     # у арбалетчика руки заняты арбалетами
+                s.fx.text("Руки заняты арбалетами", pl.cx, pl.y - 10); return
             for dr in s.room.drops:
                 if abs(dr.x - pl.cx) < 36 and abs(dr.y - pl.cy) < 50:
                     if not pl.can_use(dr.wid):   # оружие не из списка allowed_weapons персонажа
@@ -584,13 +622,15 @@ class Game:
                     i = CFG["weapons"][dr.wid].get("slot", 1) - 1
                     pl.slots[i], dr.wid = dr.wid, pl.slots[i]; pl.combo = (None, 0, 0)
                     s.fx.text(CFG["weapons"][pl.slots[i]]["name"], pl.cx, pl.y - 10); break
-    ACTIONS = ("jump", "roll", "a1", "a2", "skill", "next", "prev", "pickup")
+    AMMO_ACTIONS = {"xb0_prev": (0, -1), "xb0_next": (0, 1), "xb1_prev": (1, -1), "xb1_next": (1, 1)}   # смена снаряда: (арбалет, направление)
+    ACTIONS = ("jump", "roll", "a1", "a2", "skill", "next", "prev", "pickup") + tuple(AMMO_ACTIONS)
     def apply_action(s, pl, name):
         """Действие игрока pl: прыжок, перекат, атаки, навык, смена навыка, подобрать предмет."""
         if name in ("jump", "roll", "a1", "a2", "skill"): pl.press(name)
         elif name == "next": pl.swap_skill(1)
         elif name == "prev": pl.swap_skill(-1)
         elif name == "pickup": s.pickup(pl)
+        elif name in s.AMMO_ACTIONS: pl.swap_ammo(*s.AMMO_ACTIONS[name])
     def act(s, name):
         """Действие своего игрока. В сетевой игре клиент отправляет его хосту."""
         if s.net:
@@ -659,8 +699,10 @@ class Game:
             if z: s.take_exit(z)
             if s.room is r and not s.done:   # выхода нет — пропасть: урон и назад к месту появления
                 pl.hit(r.d.get("fall_damage", CFG["maps"].get("fall_damage", 15)), pl.cx, fx); s.place(*s.respawn)
-    CONTROL_DEFAULTS = {"jump": "SPACE", "roll": "LSHIFT", "attack1": "J", "attack2": "L", "pickup": "E", "skill": "Q", "skill_next": "C", "skill_prev": "V"}
-    CONTROL_LABELS = {"jump": "Прыжок", "roll": "Уклонение", "attack1": "Атака 1 (клавиша)", "attack2": "Атака 2 (клавиша)", "pickup": "Подобрать предмет", "skill": "Использовать скилл", "skill_next": "Следующий скилл", "skill_prev": "Предыдущий скилл"}
+    CONTROL_DEFAULTS = {"jump": "SPACE", "roll": "LSHIFT", "attack1": "J", "attack2": "L", "pickup": "E", "skill": "Q", "skill_next": "C", "skill_prev": "V",
+                        "ammo1_prev": "1", "ammo1_next": "2", "ammo2_prev": "3", "ammo2_next": "4"}
+    CONTROL_LABELS = {"jump": "Прыжок", "roll": "Уклонение", "attack1": "Атака 1 (клавиша)", "attack2": "Атака 2 (клавиша)", "pickup": "Подобрать предмет", "skill": "Использовать скилл", "skill_next": "Следующий скилл", "skill_prev": "Предыдущий скилл",
+                      "ammo1_prev": "Арбалет ЛКМ: пред. снаряд", "ammo1_next": "Арбалет ЛКМ: след. снаряд", "ammo2_prev": "Арбалет ПКМ: пред. снаряд", "ammo2_next": "Арбалет ПКМ: след. снаряд"}
     def controls(s):
         cfg = SETTINGS.setdefault("controls", {})
         for action, keyname in s.CONTROL_DEFAULTS.items(): cfg.setdefault(action, keyname)
@@ -731,6 +773,8 @@ class Game:
         # Все основные действия читаются из настроек управления.
         for action, buf in (("jump", "jump"), ("roll", "roll"), ("attack1", "a1"), ("attack2", "a2")):
             if pressed(action): s.act(buf); return
+        for action, ev in (("ammo1_prev", "xb0_prev"), ("ammo1_next", "xb0_next"), ("ammo2_prev", "xb1_prev"), ("ammo2_next", "xb1_next")):
+            if pressed(action): s.act(ev); return   # смена снарядов арбалетов (Тень)
         if pressed("pickup"): s.act("pickup")
         elif pressed("skill"): s.act("skill")
         elif pressed("skill_next"): s.act("next")
@@ -899,12 +943,13 @@ class Game:
         if e.type == pg.MOUSEBUTTONDOWN and e.button == 1:
             mx, my = e.pos
             # Приоритет более мелких/поздних элементов, затем бары.
-            for key in ("weapon2", "weapon1", "skill", "player", "mana", "hp"):
-                a = cfg[key]; rect = pg.Rect(a[0], a[1], a[2], a[2] if key not in ("hp", "mana") else a[3])
-                if rect.collidepoint(mx, my): s.hud_selected = key; s.hud_drag = (key, mx-a[0], my-a[1]); return
+            for key in hud.edit_keys():
+                a = cfg[key]; rect = hud.edit_rect(key, a)
+                if rect.collidepoint(mx, my): s.hud_selected = key; s.hud_drag = (key, mx-rect.x, my-rect.y); return
         elif e.type == pg.MOUSEBUTTONUP and e.button == 1: s.hud_drag = None
         elif e.type == pg.MOUSEMOTION and s.hud_drag:
-            key, dx, dy = s.hud_drag; a = cfg[key]; a[0] = max(0, min(W-a[2], e.pos[0]-dx)); a[1] = max(0, min(VIEW_H-(a[3] if key in ("hp", "mana") else a[2]), e.pos[1]-dy)); s.save_settings()
+            key, dx, dy = s.hud_drag; a = cfg[key]; r = hud.edit_rect(key, a); sx = r.x - a[0]   # sx: показ сдвинут относительно записи (слот Q арбалетчика)
+            a[0] = max(0, min(W-r.w, e.pos[0]-dx)) - sx; a[1] = max(0, min(VIEW_H-r.h, e.pos[1]-dy)); s.save_settings()
         elif e.type == pg.MOUSEBUTTONDOWN and e.button in (4, 5):
             key = s.hud_selected; a = cfg[key]; delta = 4 if e.button == 4 else -4
             if key in ("hp", "mana"): a[2] = max(20, min(500, a[2]+delta*2)); a[3] = max(4, min(50, a[3]+delta//2))
@@ -913,8 +958,8 @@ class Game:
     def draw_hud_editor(s):
         s.txt("РЕДАКТОР HUD — перетаскивай элементы мышью | колесо или +/-: размер | F2/Esc: выход", 12, 10, (255, 230, 140), s.small)
         cfg = hud.layout()
-        for key, a in cfg.items():
-            rect = pg.Rect(a[0], a[1], a[2], a[2] if key not in ("hp", "mana") else a[3])
+        for key in hud.edit_keys():
+            a = cfg[key]; rect = hud.edit_rect(key, a)
             pg.draw.rect(s.scr, (255, 220, 100) if key == s.hud_selected else (120, 180, 255), rect, 2)
             s.txt(key.upper(), rect.x, max(25, rect.y-14), (255, 255, 255), s.small)
     def controls_event(s, e):

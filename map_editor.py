@@ -637,11 +637,13 @@ class Editor:
 #  РЕДАКТОР НАВЫКОВ  (вторая вкладка; пишет data/skills.json и привязки в data/characters.json)
 # ======================================================================================
 
-# Типы навыков. active — заклинания/активные навыки (@spell в spells.py); passive — пассивки.
+# Типы навыков. active — заклинания/активные навыки (@spell в spells.py); passive — пассивки;
+# ammo — виды снарядов мини-арбалетов Тени (crossbow.py, окна снарядов в HUD): тип тоже "ammo".
 ACTIVE_TYPES = ["dash", "nova", "heal", "shield", "projectile", "chain_lightning", "strike_area",
                 "telekinesis", "telekinesis_cone", "telekinesis_hold"]
 PASSIVE_TYPES = ["double_jump", "max_hp", "max_mana", "mana_regen", "mana_cost_reduction",
                  "damage", "move_speed"]
+AMMO_TYPES = ["ammo"]
 
 # Числовые/текстовые поля навыка. (ключ, подпись, тип). Пустое поле не пишется в JSON.
 # "подсказка" справа поясняет, для каких типов поле нужно.
@@ -681,6 +683,7 @@ TYPE_FIELDS = {
     "heal": {"amount", "radius"},
     "shield": {"duration", "capacity", "radius"},
     "projectile": {"damage", "count", "spread"},
+    "ammo": {"damage", "count", "spread"},
     "chain_lightning": {"damage", "range", "chain_range", "chains", "falloff", "knockback"},
     "strike_area": {"radius", "damage", "range", "knockback", "stun"},
     "telekinesis": {"range", "radius", "force", "grip", "damage"},
@@ -691,7 +694,7 @@ TYPE_FIELDS = {
     "mana_regen": {"multiplier"}, "mana_cost_reduction": {"amount"},
     "damage": {"multiplier"}, "move_speed": {"multiplier"},
 }
-PROJECTILE_TYPES = {"projectile"}          # у кого есть снаряд-«оболочка»
+PROJECTILE_TYPES = {"projectile", "ammo"}          # у кого есть снаряд-«оболочка»
 EFFECT_TYPES = {"nova", "strike_area"}     # у кого осмыслен эффект на врага
 # Порядок полей/блоков в середине (токен = ключ поля либо спец-блок __имя__).
 LAYOUT_ORDER = ["mana_cost", "cooldown", "recharge", "recharge_delay", "interval", "unlock_level", "__projectile__",
@@ -845,11 +848,11 @@ class SkillEditor:
         r = ttk.Frame(mid); r.pack(fill="x", pady=2)
         ttk.Label(r, text="Категория:", width=18).pack(side="left")
         ttk.Combobox(r, textvariable=self.cat_var, width=12, state="readonly",
-                     values=["active", "passive"]).pack(side="left")
+                     values=["active", "passive", "ammo"]).pack(side="left")
         r2 = ttk.Frame(mid); r2.pack(fill="x", pady=2)
         ttk.Label(r2, text="Тип:", width=18).pack(side="left")
         self.type_combo = ttk.Combobox(r2, textvariable=self.type_var, width=22,
-                                       values=ACTIVE_TYPES + PASSIVE_TYPES)
+                                       values=ACTIVE_TYPES + PASSIVE_TYPES + AMMO_TYPES)
         self.type_combo.pack(side="left")
         self.mode_row = ttk.Frame(mid); self.mode_row.pack(fill="x", pady=2)
         ttk.Label(self.mode_row, text="Вид каста:", width=18).pack(side="left")
@@ -995,7 +998,7 @@ class SkillEditor:
         known = typ in TYPE_FIELDS
         fields = set(TYPE_FIELDS[typ]) if known else set(FIELD_KIND)   # неизвестный тип -> всё
         fields.add("unlock_level")
-        if cat == "active":
+        if cat in ("active", "ammo"):   # у снаряда арбалета «перезарядка» — пауза между выстрелами этого арбалета
             fields.update({"mana_cost", "cooldown"})
         mode = self.mode_key()
         fields -= HOLD_ONLY_FIELDS                      # recharge/interval... — только у потока

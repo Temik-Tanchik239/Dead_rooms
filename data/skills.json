@@ -440,5 +440,83 @@
     ],
     "mana_cost": 25,
     "description": "Накладывает на вас невидимость на 10 секунд: герой становится полупрозрачным, а мобы и босс вас не замечают и не агрятся. Атака из невидимости (удар оружием или боевое заклинание) снимает эффект. Процент прозрачности — data/invisibility.json."
+  },
+  "ammo_arrow": {
+    "name": "Обычная стрела",
+    "category": "ammo",
+    "type": "ammo",
+    "projectile": "xbow_arrow",
+    "cooldown": 0.26,
+    "damage": 8,
+    "mana_cost": 2,
+    "icon": "icons/ammo_arrow.png",
+    "color": [
+      220,
+      200,
+      140
+    ],
+    "description": "Быстрые недорогие стрелы: высокий темп стрельбы и мало маны."
+  },
+  "ammo_fire": {
+    "name": "Огненная стрела",
+    "category": "ammo",
+    "type": "ammo",
+    "projectile": "xbow_fire",
+    "cooldown": 0.55,
+    "damage": 6,
+    "mana_cost": 5,
+    "icon": "icons/ammo_fire.png",
+    "color": [
+      255,
+      140,
+      50
+    ],
+    "description": "Взрывается при попадании мелким огнём и поджигает врага на 3 секунды (7 урона в секунду)."
+  },
+  "ammo_heavy": {
+    "name": "Усиленная стрела",
+    "category": "ammo",
+    "type": "ammo",
+    "projectile": "xbow_heavy",
+    "cooldown": 0.85,
+    "damage": 26,
+    "mana_cost": 9,
+    "icon": "icons/ammo_heavy.png",
+    "color": [
+      140,
+      175,
+      235
+    ],
+    "description": "Тяжёлый болт: большой урон, сильный отброс и пробивает до трёх целей, но стреляет медленно."
+  },
+  "ammo_harpoon": {
+    "name": "Стрела с нитью",
+    "category": "ammo",
+    "type": "ammo",
+    "cooldown": 0.45,
+    "damage": 5,
+    "mana_cost": 6,
+    "icon": "icons/ammo_harpoon.png",
+    "color": [
+      120,
+      215,
+      190
+    ],
+    "hook": {
+      "speed": 1000,
+      "range": 560,
+      "swing_len": 160,
+      "min_len": 56,
+      "reel_speed": 560,
+      "swing_force": 1200,
+      "damp": 0.25,
+      "knockback": 80,
+      "skin": "projectiles/xbow_hook.png",
+      "draw": [
+        34,
+        13
+      ]
+    },
+    "description": "Гарпун на нити: цепляется за стену, пол или потолок и подтягивает героя; в воздухе можно раскачиваться на A/D. Верёвка сама подтягивается до рабочей длины, пока зажата кнопка арбалета — подтягивает ближе. Пробел (или перекат) отцепляет. Из одного арбалета — один гарпун, но можно по одному из каждого; в моба гарпун только бьёт и пропадает."
   }
 }

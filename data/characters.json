@@ -291,7 +291,7 @@
     "shadow": {
       "name": "Тень",
       "role": "Убийца",
-      "description": "Самый быстрый герой с длинным перекатом и почти мгновенным рывком. Мало здоровья — бейте первым и не стойте на месте.",
+      "description": "Самый быстрый герой с длинным перекатом и почти мгновенным рывком, вместо оружия — два мини-арбалета. ЛКМ стреляет левым, ПКМ — правым, каждый заряжается отдельно. У каждого арбалета своё окно снарядов (предыдущий, текущий, следующий): 1/2 — снаряд левого, 3/4 — правого. Стрелы: обычные, огненные, усиленные. Мало здоровья — стреляйте на бегу и не стойте на месте.",
       "assets": "characters/shadow",
       "stats": {
         "hp": 80,
@@ -306,16 +306,40 @@
           "regen": 12
         }
       },
-      "weapons": [
-        "twin_daggers",
-        "short_bow"
-      ],
-      "allowed_weapons": [
-        "twin_daggers",
-        "rusty_sword",
-        "short_bow",
-        "fire_flask"
-      ],
+      "weapons": [],
+      "allowed_weapons": [],
+      "crossbows": {
+        "skin": "weapons/mini_crossbow.png",
+        "draw": [
+          36,
+          20
+        ],
+        "grip": [
+          7,
+          14
+        ],
+        "muzzle": [
+          23,
+          6
+        ],
+        "hands": [
+          [
+            14,
+            -16
+          ],
+          [
+            7,
+            -28
+          ]
+        ],
+        "recoil": 4,
+        "ammo": [
+          "ammo_arrow",
+          "ammo_fire",
+          "ammo_heavy",
+          "ammo_harpoon"
+        ]
+      },
       "base_skills": [
         "dash",
         "invisibility_cloak"
@@ -338,7 +362,7 @@
           "unlock_level": 4
         },
         {
-          "skill": "mana_blades",
+          "skill": "mana_ranged",
           "unlock_level": 5
         },
         {
@@ -360,6 +384,13 @@
           "speed": 760,
           "invulnerability": 0.3,
           "mana_cost": 10
+        },
+        "mana_ranged": {
+          "name": "Экономия маны: арбалеты",
+          "weapons": [
+            "mini_crossbow"
+          ],
+          "description": "На 25% меньше маны для выстрелов из арбалетов"
         }
       },
       "weapon_overrides": {},

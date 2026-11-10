@@ -305,7 +305,7 @@ def local_aim(g):
 def local_mb(g):
     if g.overlay_open(): return (0, 0)
     mb = pg.mouse.get_pressed()
-    return (int(bool(mb[0])), int(bool(mb[2])))
+    return (int(bool(mb[0] or g.key_down("attack1"))), int(bool(mb[2] or g.key_down("attack2"))))   # клавиатурные кнопки атаки зажимаются как мышь (арбалетчик: нить гарпуна)
 
 
 def _num(v, default=0.0):

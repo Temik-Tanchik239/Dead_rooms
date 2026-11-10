@@ -268,7 +268,8 @@
     "draw": [
       40,
       9
-    ]
+    ],
+    "hit_stop": 0
   },
   "xbow_fire": {
     "speed": 600,
@@ -292,7 +293,9 @@
     "draw": [
       40,
       11
-    ]
+    ],
+    "hit_stop": 0,
+    "shake": 0
   },
   "xbow_heavy": {
     "speed": 860,
@@ -309,6 +312,7 @@
     "draw": [
       52,
       11
-    ]
+    ],
+    "hit_stop": 0
   }
 }

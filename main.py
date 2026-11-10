@@ -388,6 +388,7 @@ class Player(Body):
             if s.state == "move" and s.stun <= 0:
                 for i, key in enumerate(crossbow.KEYS):
                     s.xb_held[i] = s.buf.get(key, 0) > full
+                    if dt > 0: crossbow.hold_check(s, i)   # нить держится, пока зажата кнопка арбалета (на паузе dt = 0 — не считаем отпусканием)
                     if s.buf.get(key, 0) > 0:
                         res = crossbow.trigger(s, i, projs, fx)
                         if res != "cd": s.buf[key] = 0
@@ -568,6 +569,12 @@ class Game:
         pl.atk = None; pl.grab = None; pl.state = "ladder" if ladder else "move"
         crossbow.release_all(pl)   # гарпуны остались в прошлой комнате
         pl.x = max(0, min((s.room.width_px if s.room else MW) - pl.w, rect.centerx - pl.w / 2)); pl.y = rect.bottom - pl.h; pl.vx = pl.vy = 0
+    def key_down(s, action):
+        """Зажата ли клавиша действия из настроек управления (attack1/attack2: J/L). Нужна арбалетчику — нить гарпуна держится, пока кнопка зажата,
+        а клавиатурная кнопка иначе давала бы только одиночное нажатие. У остальных героев не меняет поведение (там нажатие приходит из KEYDOWN)."""
+        if not crossbow.enabled(): return False
+        try: return bool(pg.key.get_pressed()[pg.key.key_code(s.controls()[action])])
+        except (ValueError, TypeError, KeyError): return False
     def take_exit(s, z):
         r = s.room; target = s.camp.resolve(r.id, z["entry"]["exit"])
         if target == END: s.done = True; return
@@ -660,8 +667,8 @@ class Game:
         if pl.hp <= 0: return
         mpos = pg.mouse.get_pos(); pl.aim = (mpos[0] / CAMERA_ZOOM + s.cam[0], mpos[1] / CAMERA_ZOOM + s.cam[1]) if SETTINGS.get("mouse_aim", True) else None
         mb = pg.mouse.get_pressed()   # зажатая кнопка = непрерывные атаки / комбо
-        if mb[0] and not s.dev.open: pl.press("a1")   # клики по меню разработчика — не атаки
-        if mb[2] and not s.dev.open: pl.press("a2")
+        if (mb[0] or s.key_down("attack1")) and not s.dev.open: pl.press("a1")   # клики по меню разработчика — не атаки
+        if (mb[2] or s.key_down("attack2")) and not s.dev.open: pl.press("a2")
         pl.drops = r.drops   # телекинез дотягивается до предметов на полу текущей комнаты
         pl.skill_held = s.skill_held()   # удерживаемые заклинания (захват инженера) работают, пока клавиша зажата
         pl.update(sim, pg.key.get_pressed(), r.g, r.mobs, s.projs, fx); pl.update_anim(sim)

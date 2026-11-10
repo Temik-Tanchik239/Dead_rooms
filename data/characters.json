@@ -51,10 +51,6 @@
         {
           "skill": "mana_regen",
           "unlock_level": 7
-        },
-        {
-          "skill": "shield",
-          "unlock_level": 8
         }
       ],
       "skill_overrides": {},

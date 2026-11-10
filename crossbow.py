@@ -1,8 +1,8 @@
 """Мини-арбалеты (герой «Тень»): в каждой руке по арбалету, оружия ближнего боя нет.
 
 ЛКМ стреляет первым арбалетом, ПКМ — вторым; перезарядка у каждого своя, стрелять можно одновременно и на бегу.
-Вид снаряда выбирается как навык: у каждого арбалета своя «книга» видов снарядов (предыдущий / текущий / следующий — два окна в HUD,
-см. hud.ammo_window). Листается клавишами из настроек управления (по умолчанию 1/2 — первый арбалет, 3/4 — второй).
+Вид снаряда выбирается как навык: у каждого арбалета своя «книга» видов снарядов (предыдущий / текущий / следующий — две вертикальные
+колонки у левого края экрана, левая — первый арбалет, правая — второй; смена плавно прокручивает колонку, см. hud.book_draw). Листается клавишами из настроек управления (по умолчанию 1/2 — первый арбалет, 3/4 — второй).
 
 Включается полем "crossbows" героя в data/characters.json (нет поля — модуль ничего не делает):
     "crossbows": {
@@ -19,19 +19,23 @@ cooldown (пауза между выстрелами ЭТОГО арбалета
 пули (как у заклинаний, см. spells.projectile_spec). Эффекты (горение, заморозка, пробитие) — в самом типе пули в projectiles.json.
 Пассивка типа mana_cost_reduction с "mini_crossbow" в списке weapons удешевляет выстрелы.
 
-Стрела с нитью (гарпун): вид снаряда с полем "hook" (см. ammo_harpoon в skills.json). Выстрел выпускает гарпун на нити: он летит до стены/потолка
-(в моба — бьёт и пропадает), цепляется и подтягивает героя; из одного арбалета — один гарпун (пока он в деле, этот арбалет не стреляет), но можно
-по одному из каждого. Верёвка — ограничение длины: герой висит и раскачивается как маятник (в воздухе A/D раскачивают), верёвка автоматически
-подтягивается до swing_len, пока ЗАЖАТА кнопка арбалета — подтягивает до min_len; Пробел (или перекат/лестница) отцепляет, скорость сохраняется.
-Поля "hook": speed, range (дальность полёта), swing_len, min_len, reel_speed, swing_force, damp, skin, draw [w, h]. Состояние: pl.hooks[i]
-(None или {sid, st: "fly"/"hold", x, y, dx, dy, dist, len}), pl.xb_held[i] (кнопка зажата), pl.xb_lock[i] (ждём отпускания кнопки).
+Стрела с нитью (гарпун): вид снаряда с полем "hook" (см. ammo_harpoon в skills.json). Выстрел выпускает гарпун на нити: он летит ровной дугой с
+плавным снижением (gravity) до стены/потолка (в моба — бьёт и пропадает), цепляется и подтягивает героя; из одного арбалета — один гарпун (пока он
+в деле, этот арбалет не стреляет), но можно по одному из каждого. Нить держится, пока ЗАЖАТА кнопка арбалета (hold_to_keep): отпустил — гарпун убран
+(в полёте — отменён); Пробел (или перекат/лестница) тоже отцепляет, скорость сохраняется. Верёвка — ограничение длины: герой висит и раскачивается
+как маятник (в воздухе A/D раскачивают) и сам подтягивается до swing_len.
+Поля "hook" (все необязательны, умолчания — HOOK_DEFAULT): speed, gravity (снижение полёта, px/с²), range (дальность полёта), swing_len, min_len,
+reel_speed, swing_force, damp, knockback, hit_stop (стоп-кадр от попадания гарпуна в моба, по умолчанию 0), hold_to_keep (false — нить остаётся до Пробела; тогда зажатая кнопка подтягивает до min_len),
+skin + draw [w, h] (наконечник — картинка в assets), thread_skin + thread_width (нить — картинка-полоска в assets, тайлится вдоль нити; нет файла —
+рисуется линия thread_color с обводкой thread_outline). Состояние: pl.hooks[i] (None или {sid, st: "fly"/"hold", x, y, vx, vy, dist, len}),
+pl.xb_held[i] (кнопка зажата), pl.xb_lock[i] (ждём отпускания кнопки).
 
 Состояние игрока: xb_ammo[i] — индекс вида снаряда, xb_cd[i] — осталось до следующего выстрела, xb_kick[i] — отдача (для рисования),
 xb_notice[i] — «только что переключили» (подсветка в HUD). Сеть: net_pack / net_apply (хост шлёт в снимке игрока ключ "xb")."""
 import math
 import pygame as pg
 from core import CFG, T, solid, sign
-from anim import sprite
+from anim import sprite, image, ASSETS_EXISTS
 from projectiles import volley
 from spells import projectile_spec
 import invisibility
@@ -70,7 +74,7 @@ def current(pl, i):
 
 
 def book(pl, i):
-    """(предыдущий, текущий, следующий) виды снарядов арбалета i для окна в HUD. При малом числе видов бывают повторы."""
+    """(предыдущий, текущий, следующий) виды снарядов арбалета i для колонки в HUD. При малом числе видов бывают повторы."""
     ids = ammo_ids()
     if not ids: return (None, None, None)
     n = len(ids); k = pl.xb_ammo[i] % n
@@ -155,7 +159,8 @@ def fire(pl, i, projs, fx):
         return "mana"
     x, y, ang = muzzle(pl, i)
     if a.get("hook"):                          # стрела с нитью: не снаряд, а гарпун на верёвке
-        pl.hooks[i] = {"sid": sid, "st": "fly", "x": x, "y": y, "dx": math.cos(ang), "dy": math.sin(ang), "dist": 0.0, "len": 0.0}
+        sp = hook_cfg(sid)["speed"]
+        pl.hooks[i] = {"sid": sid, "st": "fly", "x": x, "y": y, "vx": math.cos(ang) * sp, "vy": math.sin(ang) * sp, "dist": 0.0, "len": 0.0}
         pl.mana -= cost; pl.mana_t = CFG["player"].get("mana", {}).get("regen_delay", .9)
         pl.xb_cd[i] = max(0.0, float(a.get("cooldown", 0.3))); pl.xb_kick[i] = KICK_TIME; pl.xb_lock[i] = True
         invisibility.on_attack(pl, fx)
@@ -171,8 +176,10 @@ def fire(pl, i, projs, fx):
 
 # ---------------- гарпуны (стрела с нитью) ----------------
 
-HOOK_DEFAULT = {"speed": 1000, "range": 560, "swing_len": 160, "min_len": 56, "reel_speed": 560, "swing_force": 1200, "damp": 0.25,
-                "max_speed": 1500, "skin": "projectiles/xbow_hook.png", "draw": [34, 13]}
+HOOK_DEFAULT = {"speed": 1000, "gravity": 320, "range": 560, "swing_len": 160, "min_len": 56, "reel_speed": 560, "swing_force": 1200, "damp": 0.25,
+                "max_speed": 1500, "hold_to_keep": True, "knockback": 80, "hit_stop": 0,
+                "skin": "projectiles/xbow_hook.png", "draw": [34, 13],
+                "thread_skin": "projectiles/xbow_thread.png", "thread_width": 4, "thread_color": [222, 214, 188], "thread_outline": [24, 18, 26]}
 
 
 def hook_cfg(sid):
@@ -193,6 +200,12 @@ def end_hook(pl, i):
     """Гарпун i убран (отцепили, промах, попал в моба): арбалет уходит на перезарядку."""
     h = pl.hooks[i]; pl.hooks[i] = None
     if h: pl.xb_cd[i] = max(pl.xb_cd[i], float(CFG.get("skills", {}).get(h.get("sid"), {}).get("cooldown", 0.3)))
+
+
+def hold_check(pl, i):
+    """Нить держится, пока зажата кнопка арбалета (hold_to_keep): кнопку отпустили — гарпун убран (в полёте — отменён)."""
+    h = pl.hooks[i]
+    if h and not pl.xb_held[i] and hook_cfg(h["sid"])["hold_to_keep"]: end_hook(pl, i)
 
 
 def release_all(pl):
@@ -221,9 +234,11 @@ def hooks_update(pl, dt, g, mobs, fx):
         if h["st"] == "hold":
             if not solid(g, int(h["x"] // T), int(h["y"] // T)): end_hook(pl, i)   # якорь пропал (дверь открылась, другая комната)
             continue
-        total = c["speed"] * dt; n = max(1, math.ceil(total / 6)); step = total / n
+        sp = math.hypot(h["vx"], h["vy"]); total = sp * dt; n = max(1, math.ceil(total / 6)); sub = dt / n
         for _ in range(n):
-            h["x"] += h["dx"] * step; h["y"] += h["dy"] * step; h["dist"] += step
+            h["vy"] += c["gravity"] * sub                      # плавное снижение: гарпун летит дугой
+            sx, sy = h["vx"] * sub, h["vy"] * sub
+            h["x"] += sx; h["y"] += sy; h["dist"] += math.hypot(sx, sy)
             if solid(g, int(h["x"] // T), int(h["y"] // T)):
                 h["st"] = "hold"; h["len"] = math.hypot(pl.cx - h["x"], pl.cy - h["y"]); fx.ring(h["x"], h["y"], 12)
                 break
@@ -231,7 +246,9 @@ def hooks_update(pl, dt, g, mobs, fx):
             for m in mobs:
                 if getattr(m, "hp", 1) > 0 and (m.collides_rect(box) if hasattr(m, "collides_rect") else box.colliderect(m.rect)): hit = m; break
             if hit is not None:   # в моба: ударил и пропал (цепляется только за стены, пол и потолок)
-                hit.hurt(a.get("damage", 5) * pl.dmg_mult(), (sign(h["dx"]) or 1) * float(c.get("knockback", 80)), fx)
+                stop = fx.stop
+                hit.hurt(a.get("damage", 5) * pl.dmg_mult(), (sign(h["vx"]) or 1) * float(c["knockback"]), fx)
+                fx.stop = max(stop, float(c["hit_stop"]))   # стоп-кадр от попадания гарпуна (по умолчанию без него)
                 end_hook(pl, i); break
             if h["dist"] >= c["range"]: end_hook(pl, i); break
 
@@ -248,7 +265,7 @@ def rope_step(pl, dt, d):
     for i, h in live:
         c = hook_cfg(h["sid"]); px, py = pl.cx, pl.cy
         dist = math.hypot(px - h["x"], py - h["y"])
-        floor = c["min_len"] if pl.xb_held[i] else max(c["min_len"], c["swing_len"])
+        floor = c["min_len"] if (pl.xb_held[i] and not c["hold_to_keep"]) else max(c["min_len"], c["swing_len"])
         reeling = h["len"] > floor
         if reeling: h["len"] = max(floor, min(h["len"], dist) - c["reel_speed"] * dt)
         if reeling and h["len"] <= floor and dist > 1e-6:   # подтяжка закончилась: гасим скорость «внутрь», чтобы герой не пролетел мимо рабочей длины (боковая скорость — маятник — остаётся)
@@ -263,18 +280,36 @@ def rope_step(pl, dt, d):
     if sp > c0["max_speed"]: pl.vx, pl.vy = pl.vx * c0["max_speed"] / sp, pl.vy * c0["max_speed"] / sp
 
 
+def _thread(v, pts, c):
+    """Рисует нить по ломаной pts: картинка-полоска thread_skin (тайлится вдоль нити) или, если файла нет, линия цветом thread_color с обводкой."""
+    w = max(1, int(c["thread_width"])); path = c.get("thread_skin")
+    tex = image(path) if path and ASSETS_EXISTS(path) else None
+    if tex is None:
+        pg.draw.lines(v, tuple(c["thread_outline"]), False, pts, w + 2); pg.draw.lines(v, tuple(c["thread_color"]), False, pts, max(1, w - 2)); return
+    tw = max(1, tex.get_width()); strip = sprite(path, tw, w)
+    if strip is None: return
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        ln = math.hypot(x1 - x0, y1 - y0)
+        if ln < 1: continue
+        seg = pg.Surface((max(1, int(math.ceil(ln))), w), pg.SRCALPHA); x = 0
+        while x < ln: seg.blit(strip, (x, 0)); x += tw
+        rot = pg.transform.rotate(seg, -math.degrees(math.atan2(y1 - y0, x1 - x0)))
+        v.blit(rot, rot.get_rect(center=((x0 + x1) / 2, (y0 + y1) / 2)))
+
+
 def draw_hooks(v, pl):
-    """Нить от арбалета до гарпуна (провисает, если ослабла) и наконечник гарпуна."""
+    """Нить от арбалета до гарпуна (в полёте — ровная, на зацепе провисает, если ослабла) и наконечник гарпуна; вид нити и наконечника — картинки в assets (hook в skills.json)."""
     for i, h in enumerate(pl.hooks):
         if not h: continue
         x0, y0, _ = muzzle(pl, i); x1, y1 = h["x"], h["y"]
-        dist = math.hypot(x1 - x0, y1 - y0)
+        c = hook_cfg(h.get("sid") or current(pl, i)); dist = math.hypot(x1 - x0, y1 - y0)
         sag = min(36.0, max(0.0, (h.get("len") or 0) - dist) * 0.5) if h.get("st") == "hold" else 0.0
-        pts = [(int(x0 + (x1 - x0) * k / 12), int(y0 + (y1 - y0) * k / 12 + 4 * sag * (k / 12) * (1 - k / 12))) for k in range(13)]
-        pg.draw.lines(v, (24, 18, 26), False, pts, 4); pg.draw.lines(v, (222, 214, 188), False, pts, 2)
-        c = hook_cfg(h.get("sid") or current(pl, i)); dw, dh = c["draw"]
-        ang = round(-math.degrees(math.atan2(y1 - y0, x1 - x0)) / 6) * 6
-        img = sprite(c["skin"], dw, dh, angle=ang)
+        n = 12 if sag >= 1 else 1   # натянутая нить — один ровный отрезок
+        pts = [(x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n + 4 * sag * (k / n) * (1 - k / n)) for k in range(n + 1)]
+        _thread(v, pts, c)
+        dw, dh = c["draw"]
+        a = math.atan2(h["vy"], h["vx"]) if h.get("st") == "fly" and "vx" in h else math.atan2(y1 - y0, x1 - x0)   # в полёте наконечник смотрит по дуге
+        img = sprite(c["skin"], dw, dh, angle=round(-math.degrees(a) / 6) * 6)
         if img: v.blit(img, img.get_rect(center=(int(x1), int(y1))))
         else: pg.draw.circle(v, (210, 215, 230), (int(x1), int(y1)), 5)
 

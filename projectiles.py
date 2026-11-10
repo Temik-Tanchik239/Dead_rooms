@@ -67,7 +67,10 @@ class Proj:
     def targets(s, w): return w.mobs if s.friendly else (getattr(w, "players", None) or [w.pl])   # мультиплеер: все живые игроки
     def damage(s, target, w, kb_dir):
         if s.friendly:
+            stop = w.fx.stop
             target.hurt(s.dmg, kb_dir * s.kb, w.fx)
+            hs = s.d.get("hit_stop")   # стоп-кадр от попадания (сек): по умолчанию как у любого удара (hurt ставит .05); 0 — без заморозки (быстрострелы: иначе игра «лагает»)
+            if hs is not None: w.fx.stop = max(stop, float(hs))
             eff = s.d.get("effect")   # напр. {"freeze": 2.0} у ледяной пули — применяется только к мобам
             if eff and hasattr(target, "frozen"): status.apply(target, eff, w.fx)
         else: target.hit(s.dmg, s.x, w.fx, s.kb)
@@ -75,7 +78,9 @@ class Proj:
         if s.dead: return
         s.dead = True
         if s.aoe:
-            w.fx.shake = .15; w.fx.ring(s.x, s.y, s.aoe)
+            sh = s.d.get("shake", .15)   # тряска экрана от взрыва (сек), 0 — без тряски
+            if sh: w.fx.shake = float(sh)
+            w.fx.ring(s.x, s.y, s.aoe)
             for m in s.targets(w):
                 if (m.collides_circle(s.x, s.y, s.aoe) if hasattr(m, "collides_circle") else circle_hits_rect(s.x, s.y, s.aoe, m.rect)): s.damage(m, w, sign(m.cx - s.x) or 1)
         for key, fn in DEATH.items():

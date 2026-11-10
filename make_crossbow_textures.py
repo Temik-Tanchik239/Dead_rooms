@@ -4,7 +4,8 @@
   projectiles/xbow_arrow.png             — обычная стрела
   projectiles/xbow_fire/1..3.png         — огненная стрела (кадры горения)
   projectiles/xbow_heavy.png             — усиленный болт
-  projectiles/xbow_hook.png              — наконечник гарпуна («стрела с нитью», нить рисуется кодом)
+  projectiles/xbow_hook.png              — наконечник гарпуна («стрела с нитью»)
+  projectiles/xbow_thread.png            — нить гарпуна: бесшовная полоска (повторяется вдоль нити, высота = hook.thread_width, по умолчанию 4 px)
   icons/ammo_arrow.png / ammo_fire.png / ammo_heavy.png / ammo_harpoon.png — иконки видов снарядов (окна боеприпасов в HUD)
 
 Без --force существующие файлы не трогаются. Запуск:  uv run --with pillow make_crossbow_textures.py [--force]
@@ -182,6 +183,17 @@ def icon_heavy():
     return icon((140, 170, 230, 255), f)
 
 
+def thread():
+    """Нить гарпуна: бесшовная горизонтальная полоска 16x4 (две тёмные кромки и витая бежевая жила). Любая другая полоска подойдёт — она тайлится вдоль нити."""
+    img = Image.new("RGBA", (16, 4), (0, 0, 0, 0)); px = img.load()
+    light, dark = (232, 224, 196, 255), (186, 176, 148, 255)
+    for x in range(16):
+        px[x, 0] = OUT; px[x, 3] = OUT
+        px[x, 1] = light if (x // 2) % 2 == 0 else dark
+        px[x, 2] = dark if (x // 2) % 2 == 0 else light
+    return img
+
+
 def icon_harpoon():
     def f(im):
         d = ImageDraw.Draw(im)
@@ -203,4 +215,5 @@ if __name__ == "__main__":
     save(icon_fire(), "icons/ammo_fire.png")
     save(icon_heavy(), "icons/ammo_heavy.png")
     save(hook_head(), "projectiles/xbow_hook.png")
+    save(thread(), "projectiles/xbow_thread.png")
     save(icon_harpoon(), "icons/ammo_harpoon.png")

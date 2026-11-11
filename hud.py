@@ -1,8 +1,8 @@
 """Нижний левый угол (панель прозрачная, рисуется поверх игры): три квадратные иконки (персонаж, оружие 1 — ЛКМ, оружие 2 — ПКМ) и под иконкой персонажа полоски HP и маны.
 Иконки лежат в assets/icons/: player.png и <id оружия>.png; свои пути — поле icon в data/player.json и data/weapons.json.
 Нет файла иконки — вместо неё рисуется сам скин. Полоски HP и маны. Всё настраивается в data/player.json: hp_bar и mana.bar.
-Вертикальные «книги» у левого края экрана (book_draw): у мага (spellcaster) — колонка заклинаний, у арбалетчика (crossbows — Тень) — две колонки видов
-снарядов (левая — левый арбалет/ЛКМ, правая — правый/ПКМ): предыдущий (сверху, мелко) · текущий (крупно) · следующий (снизу, мелко); при смене список плавно
+Вертикальные «книги» у левого края экрана (book_draw): у мага (spellcaster) — колонка заклинаний, у барда (bard) — колонка нот, у арбалетчика
+(crossbows — Тень) — две колонки видов снарядов (левая — левый арбалет/ЛКМ, правая — правый/ПКМ): предыдущий (сверху, мелко) · текущий (крупно) · следующий (снизу, мелко); при смене список плавно
 прокручивается (book_scroll). Положение и размер — ключ раскладки "book" (F2). У арбалетчика слот навыка Q стоит справа от портрета.
 Поля полоски: x, y (от нижнего края окна, минус — вверх), w, h, color, back, border, flash (цвет рамки, когда не хватило маны),
 ticks (деление через каждые N единиц, 0 — без делений), text (числа на полоске),
@@ -14,6 +14,7 @@ from anim import sprite
 import weapon
 import spells
 import crossbow
+import bard
 from core import SETTINGS, W
 
 ICON, GAP, ICON_Y = 48, 8, -80  # размер квадрата, отступ между иконками, y иконок от нижнего края окна (минус — вверх)
@@ -64,7 +65,7 @@ def draw(scr, pl, font):
     # Заклинатель (spellcaster в data/characters.json — маг/инженер): портрет + окно из трёх умений вместо иконок оружия.
     if CFG.get("character", {}).get("spellcaster"):
         portrait(scr, pl, font); book_draw(scr, pl, font)
-    elif crossbow.enabled():   # арбалетчик (Тень): портрет + две колонки видов снарядов у левого края + навык Q рядом с портретом
+    elif crossbow.enabled() or bard.enabled():   # арбалетчик (Тень) / бард: портрет + колонки у левого края + навык Q рядом с портретом
         portrait(scr, pl, font); book_draw(scr, pl, font)
         sk = layout().get("skill", [176, VIEW_H - 56, 48]); skill_slot(scr, pl, font, [sk[0] + skill_shift(), sk[1], sk[2]])
     else:
@@ -199,7 +200,7 @@ def hold_overlay(scr, pl, sid, r, font, color):
     return True
 
 
-def spell_cell(scr, pl, sid, x, y, size, font, active=False, cost=None):
+def spell_cell(scr, pl, sid, x, y, size, font, active=False, cost=None, per_sec=False):
     """Одна ячейка заклинания: иконка/цвет, рамка, затемнение неактивных, кулдаун и цена маны."""
     sk = CFG.get("skills", {}).get(sid, {})
     color = tuple(sk.get("color", [150, 130, 220]))
@@ -220,8 +221,8 @@ def spell_cell(scr, pl, sid, x, y, size, font, active=False, cost=None):
     hold = spells.is_hold(sk)
     cost = float(sk.get("mana_cost", 10.0 if hold else 0)) if cost is None else cost   # cost — своя цена (арбалеты: с учётом пассивок)
     if cost:
-        enough = pl.mana >= (cost * spells.HOLD_MIN_START if hold else cost)
-        label(scr, font, f"{cost:g}/с" if hold else f"{cost:g}", r.x + 4, r.bottom - font.get_height() - 1, (140, 185, 255) if enough else (255, 120, 120))   # у потока — мана в секунду
+        enough = pl.mana >= (cost * spells.HOLD_MIN_START if (hold or per_sec) else cost)
+        label(scr, font, f"{cost:g}/с" if (hold or per_sec) else f"{cost:g}", r.x + 4, r.bottom - font.get_height() - 1, (140, 185, 255) if enough else (255, 120, 120))   # у потока — мана в секунду
     return r
 
 
@@ -235,8 +236,9 @@ _book_anim = {}                 # ключ колонки -> состояние 
 
 
 def book_kind():
-    """Что показывает книга у текущего героя: "ammo" (арбалетчик), "spell" (заклинатель) или None."""
+    """Что показывает книга у текущего героя: "ammo" (арбалетчик), "note" (бард), "spell" (заклинатель) или None."""
     if crossbow.enabled(): return "ammo"
+    if bard.enabled(): return "note"
     if CFG.get("character", {}).get("spellcaster"): return "spell"
     return None
 
@@ -256,12 +258,12 @@ def book_geom():
 def skill_shift():
     """На сколько слот навыка Q сдвинут от записи раскладки: у арбалетчика руки заняты арбалетами, иконок оружия нет — слот встаёт на место первого оружия
     (сразу справа от портрета); у остальных 0."""
-    return -2 * (ICON + GAP) if crossbow.enabled() else 0
+    return -2 * (ICON + GAP) if (crossbow.enabled() or bard.enabled()) else 0
 
 
 def edit_keys():
     """Какие элементы HUD показывает и двигает редактор (F2), порядок — от верхнего к нижнему при выборе мышью. У мага и арбалетчика вместо иконок оружия — книга."""
-    if book_kind() == "ammo": return ("book", "skill", "player", "mana", "hp")
+    if book_kind() in ("ammo", "note"): return ("book", "skill", "player", "mana", "hp")
     if book_kind() == "spell": return ("book", "player", "mana", "hp")
     return ("weapon2", "weapon1", "skill", "player", "mana", "hp")
 
@@ -279,6 +281,8 @@ def book_ring(pl, key):
     """(список id по кругу, индекс текущего) для колонки: "xb0"/"xb1" — снаряды арбалета 0/1, "mage" — заклинания."""
     if key.startswith("xb"):
         ids = crossbow.ammo_ids(); return ids, (pl.xb_ammo[int(key[2:])] % len(ids) if ids else 0)
+    if key == "bd":
+        ids = bard.note_ids(); return ids, (pl.bd_note % len(ids) if ids else 0)
     act = spells.active_skills(pl); return act, (pl.skill_index % len(act) if act else 0)
 
 
@@ -305,12 +309,12 @@ def label_a(scr, font, text, x, y, col, alpha=1.0):
         s = font.render(text, True, c); s.set_alpha(a); scr.blit(s, (x + dx, y + dy))
 
 
-def book_cell(scr, pl, font, sid, cx, cy, size, alpha, active, cost=None, extra=None):
+def book_cell(scr, pl, font, sid, cx, cy, size, alpha, active, cost=None, extra=None, per_sec=False):
     """Ячейка по центру (cx, cy) заданного размера и прозрачности: рисуется во временную поверхность (с полями под рамку-вспышку), чтобы прозрачность
     действовала на всё сразу. extra(поверхность, rect) дорисовывает поверх (перезарядка арбалета, вспышка смены, точка гарпуна)."""
     size = max(8, int(round(size / 2.0)) * 2); pad = 6   # чётные размеры — меньше разных вариантов картинок в кэше при анимации
     tmp = pg.Surface((size + 2 * pad, size + 2 * pad), pg.SRCALPHA)
-    spell_cell(tmp, pl, sid, pad, pad, size, font, active=active, cost=cost)
+    spell_cell(tmp, pl, sid, pad, pad, size, font, active=active, cost=cost, per_sec=per_sec)
     if extra: extra(tmp, pg.Rect(pad, pad, size, size), sid)
     if alpha < 1: tmp.set_alpha(int(255 * max(0.0, alpha)))
     scr.blit(tmp, (int(cx - tmp.get_width() / 2), int(cy - tmp.get_height() / 2)))
@@ -338,13 +342,24 @@ def spell_extra(pl):
     return f
 
 
+def note_extra(pl):
+    """Дорисовка поверх выбранной ноты барда: вспышка рамки при смене и пульсирующее кольцо, пока нота играет."""
+    def f(tmp, rc, sid):
+        color = tuple(CFG.get("skills", {}).get(sid, {}).get("color", [150, 130, 220]))
+        if pl.bd_notice > 0: book_flash(tmp, rc, color, pl.bd_notice / 0.5)
+        if pl.bd_play:
+            k = 0.5 + 0.5 * math.sin(pg.time.get_ticks() / 1000.0 * 9.0)
+            pg.draw.rect(tmp, tuple(min(255, int(c + (255 - c) * k * 0.6)) for c in color), rc.inflate(4 + int(3 * k), 4 + int(3 * k)), 2, border_radius=10)
+    return f
+
+
 def book_flash(tmp, rc, color, f):
     """Рамка вокруг ячейки, вспыхивающая цветом навыка и гаснущая (f: 1 → 0)."""
     f = max(0.0, min(1.0, f)); glow = tuple(min(255, int(c + (255 - c) * f)) for c in color)
     pg.draw.rect(tmp, glow, rc.inflate(6, 6), 2, border_radius=10)
 
 
-def book_column(scr, pl, font, key, x, gm, title, hint, cost_fn, extra):
+def book_column(scr, pl, font, key, x, gm, title, hint, cost_fn, extra, per_sec=False):
     """Колонка из ячеек: мелкая (предыдущий) сверху · крупная (текущий) · мелкая (следующий) снизу, над ней заголовок, под ней подсказка клавиш.
     Каждая ячейка стоит на «дорожке» с дробным номером r+off (off — прокрутка): размер, положение и прозрачность плавно меняются между якорями
     (текущий → мелкий сосед → исчезающий), поэтому при смене список скользит, а новая крупная ячейка вырастает из мелкой.
@@ -368,7 +383,7 @@ def book_column(scr, pl, font, key, x, gm, title, hint, cost_fn, extra):
     for a, r in sorted(items, reverse=True):   # дальние рисуем первыми, текущий — сверху всех
         sid = ids[(k + r) % n]
         book_cell(scr, pl, font, sid, cx, center(r + off), size_of(a), 1.0 if a <= 1 else 1.0 - (a - 1), a < 0.5,
-                  cost=cost_fn(sid) if cost_fn else None, extra=extra if r == 0 else None)
+                  cost=cost_fn(sid) if cost_fn else None, extra=extra if r == 0 else None, per_sec=per_sec)
     scr.set_clip(prev_clip)
     if gm["labels"]:
         tw = font.size(title)[0]; label(scr, font, title, int(cx - tw / 2), gm["y"], (255, 230, 150))
@@ -388,6 +403,10 @@ def book_draw(scr, pl, font):
             r = book_column(scr, pl, font, f"xb{i}", gm["x"] + i * (gm["big"] + gm["space"]), gm, "ЛКМ" if i == 0 else "ПКМ", hint,
                             lambda sid: crossbow.mana_cost(pl, sid), ammo_extra(pl, i))
             if r: names.append((("ЛКМ: " if i == 0 else "ПКМ: ") + defs.get(r[0], {}).get("name", r[0]), tuple(defs.get(r[0], {}).get("color", [235, 225, 255])), r[1]))
+    elif kind == "note":
+        hint = f"{str(ctl.get('ammo1_prev', '1')).upper()}/{str(ctl.get('ammo1_next', '2')).upper()}"
+        r = book_column(scr, pl, font, "bd", gm["x"], gm, "Ноты", hint, lambda sid: float(defs.get(sid, {}).get("mana_cost", 0)), note_extra(pl), per_sec=True)
+        if r: names.append((defs.get(r[0], {}).get("name", r[0]), tuple(defs.get(r[0], {}).get("color", [235, 225, 255])), r[1]))
     else:
         hint = f"{str(ctl.get('skill_prev', 'V')).upper()}/{str(ctl.get('skill_next', 'C')).upper()}"
         r = book_column(scr, pl, font, "mage", gm["x"], gm, "Заклинания", hint, None, spell_extra(pl))

@@ -26,6 +26,7 @@ from core import CFG, SETTINGS, T, W, VIEW_H, CHAR, use_char, apply_character, c
 import characters as char_menu
 import spells
 import crossbow
+import bard
 import invisibility
 from maps import Campaign, Drop, END, random_weapon
 from mob import Mob, Corpse, normalize, spawn_boss, scale_boss_for_players
@@ -592,6 +593,7 @@ class HostSession(Session):
         s.game_over = bool(players) and all(p.hp <= 0 for p in players)
         if s.game_over: return
         s.feed_local()
+        bard.PLAYERS = [q for q in players if q.hp > 0]   # ноты барда достают до всех живых союзников (сбрасывается после цикла)
         for p in players:
             if p.hp <= 0: continue
             inp = s.inputs.get(p.pid) or Input()
@@ -607,6 +609,7 @@ class HostSession(Session):
                 if int(tp) == p.tp and not p.grab:      # схваченного героя держит рука босса — позу клиента не принимаем
                     p.x, p.y, p.vx, p.vy = x, y, vx, vy
                     p.h = int(max(4, min(p.H0, h))); p.face = 1 if face >= 0 else -1
+        bard.PLAYERS = None   # обратно: вне обновления игроков ноты достают только до самого барда (и предсказание клиента не трогает чужих)
         alive = [p for p in players if p.hp > 0]
         if alive:
             w = SimpleNamespace(g=r.g, pl=alive[0], players=alive, mobs=r.mobs, projs=g.projs, fx=fx)
@@ -708,7 +711,7 @@ class HostSession(Session):
                         "sk": list(p.skills), "si": p.skill_index, "cd": {k: round(v, 2) for k, v in p.skill_cooldowns.items() if v > 0},
                         "lv": p.level, "xp": p.xp, "xn": p.xp_next, "rv": round(p.revive, 2),
                         "tp": p.tp, "hc": p.hitc, "kb": [R(p.kb[0]), R(p.kb[1])], "gr": 1 if p.grab else 0,
-                        "iv": invisibility.net_pack(p), "xb": crossbow.net_pack(p)})   # невидимость: [секунд осталось (-1 — бессрочно), прозрачность %, снимать ли при атаке] или None
+                        "iv": invisibility.net_pack(p), "xb": crossbow.net_pack(p), "bd": bard.net_pack(p)})   # невидимость: [секунд осталось (-1 — бессрочно), прозрачность %, снимать ли при атаке] или None
         return {"t": "snap", "ht": round(time.monotonic(), 4), "room": r.id, "loop": g.camp.loop,
                 "spawned": bool(r.spawned), "locked": r.locked, "cleared": r.cleared,
                 "prog": {mid: [m.visited, m.cleared] for mid, m in g.camp.maps.items()},
@@ -749,6 +752,7 @@ def place(p, rect, ladder, room, dx=0):
     if p.h != p.H0: p.y -= p.H0 - p.h; p.h = p.H0
     p.atk = None; p.grab = None; p.state = "ladder" if ladder and p.hp > 0 else "move"
     crossbow.release_all(p)   # гарпуны остались в прошлой комнате
+    bard.on_room_change(p)    # усилители барда остались в прошлой комнате
     lim = lambda x: max(0, min(room.width_px - p.w, x))
     x = lim(rect.centerx - p.w / 2 + dx); p.y = rect.bottom - p.h; p.vx = p.vy = 0
     if dx and not free(room.g, pg.Rect(int(x), int(p.y), p.w, p.h)): x = lim(rect.centerx - p.w / 2)
@@ -997,6 +1001,7 @@ class ClientSession(Session):
         else:
             if p.channel: p.skill_cast = None
             p.channel = None
+        bard.net_apply(p, ps.get("bd"), local=(p.pid == s.my_id and s.predicting))   # гитара барда: нота и усилители решает хост, «играет» у своего героя считаем сами
         crossbow.net_apply(p, ps.get("xb"), local=(p.pid == s.my_id and s.predicting))   # мини-арбалеты (Тень): вид снаряда решает хост, перезарядку своего героя считаем сами
         spells.hold_net_apply(p, ps.get("hd"), ps.get("hr"))   # потоки: решает хост, у клиента — картинка и запас для HUD
         host_cd = {k: float(v) for k, v in ps.get("cd", {}).items()}

@@ -11,6 +11,7 @@ import weapon
 import hud
 import spells
 import crossbow
+import bard
 import invisibility
 from projectiles import volley
 from mob import Mob, Corpse, spawn_boss
@@ -79,7 +80,7 @@ class Player(Body):
         s.buf = dict(jump=0, roll=0, a1=0, a2=0, skill=0)
         # Стартовое оружие персонажа (data/characters.json -> weapons: [оружие ЛКМ, оружие ПКМ]).
         # Чистый заклинатель (spellcaster — маг/инженер) и арбалетчик (crossbows — Тень) не носят оружие вовсе: слоты пусты.
-        if ch.get("spellcaster") or ch.get("crossbows"): s.slots = [None, None]
+        if ch.get("spellcaster") or ch.get("crossbows") or ch.get("bard"): s.slots = [None, None]
         else: s.slots = [w if w in CFG["weapons"] else DEFAULT_WEAPONS[i] for i, w in enumerate((list(ch.get("weapons", [])) + DEFAULT_WEAPONS[len(ch.get("weapons", [])):])[:2])]
         s.anim, s.anim_t, s.anim_p = "idle", 0.0, None
         s.air_t = 0.0   # сколько секунд подряд герой не касается земли (для анимации прыжка)
@@ -93,6 +94,7 @@ class Player(Body):
         s.shield_time = 0.0; s.shield_hp = 0.0; s.shield_face = s.face; s.shield_asset_cache = {}
         s.last_weapon = s.slots[0]; s.skill_cast = None
         crossbow.init(s)   # мини-арбалеты (Тень): виды снарядов, перезарядка и отдача по каждому арбалету — см. crossbow.py
+        bard.init(s)       # гитара барда: ноты, игра, усилители — см. bard.py
         # Удерживаемое заклинание (skills.json: "channel": true — напр. захват инженера, как ульта Bane): словарь
         # {"sid", "t" (сколько уже колдуем), "max" (лимит, сек), ...} или None. Логика — spells.channel_*.
         s.channel = None
@@ -165,6 +167,7 @@ class Player(Body):
         dw, dh = max(1, int(dw * s.model_scale)), max(1, int(dh * s.model_scale))
         def body():
             xb = crossbow.enabled() and st[0] not in ("roll", "ladder")   # мини-арбалеты в руках видны всегда, кроме переката и лестницы
+            if bard.enabled(): bard.draw_world(v, s)   # аура играющей ноты и усилители — под героем
             if xb: crossbow.draw(v, s, 1)   # второй арбалет (ПКМ) — в дальней руке, за телом
             img = sprite(mob_frame(f"player:{s.char_id}", p, st, s.anim_t, s.anim_p, folder=p.get("folder", "player")), dw, dh, s.face < 0)
             if img: v.blit(img, (r.centerx - dw // 2, r.bottom - dh))
@@ -174,6 +177,7 @@ class Player(Body):
             if st[0] not in ("roll", "ladder"): weapon.draw_held(v, s, s.hand(st[0]))
             if xb: crossbow.draw(v, s, 0)   # первый арбалет (ЛКМ) — в ближней руке, поверх тела
             if crossbow.enabled(): crossbow.draw_hooks(v, s)   # нити гарпунов и их наконечники
+            if bard.enabled() and st[0] not in ("roll", "ladder"): bard.draw_guitar(v, s)   # гитара в руках (в перекате и на лестнице не видна)
         # Невидимость: герой с оружием рисуется прозрачным (процент — data/invisibility.json, у навыка/эффекта может быть свой).
         invisibility.ghost(v, pg.Rect(r.centerx - dw // 2, r.bottom - dh, dw, dh).inflate(200, 80), body, invisibility.alpha(s))
         # Анимация применения навыка: сначала кадры из ассета (skills/<id>/cast — можно заменить
@@ -319,6 +323,7 @@ class Player(Body):
     def swap_ammo(s, i, direction=1):
         """Листает вид снаряда арбалета i (0 — ЛКМ, 1 — ПКМ). У героев без арбалетов ничего не делает."""
         crossbow.swap(s, i, direction)
+        if i == 0: bard.swap(s, direction)   # у барда колонка нот листается теми же клавишами, что левый арбалет
     @in_char
     def use_skill(s, mobs, projs, fx):
         """Использует текущий активный навык/заклинание. Эффекты — реестр @spell в spells.py."""
@@ -398,6 +403,10 @@ class Player(Body):
                 s.xb_held = [False] * crossbow.SIDES
                 if s.state in ("roll", "ladder"): crossbow.release_all(s)
             crossbow.hooks_update(s, dt, g, mobs, fx)
+        # Бард (bard): пока зажата ЛКМ (или J), играет выбранную ноту — эффект расходится вокруг (bard.update). «Зажата» — как у арбалетчика (буфер ввода
+        # только что обновлён); играть нельзя в перекате, на лестнице и в оглушении. Оружия у барда нет, так что кнопка атаки больше ничего не делает.
+        if bard.enabled():
+            bard.update(s, dt, g, mobs, fx, s.state == "move" and s.stun <= 0, dt > 0 and s.buf.get("a1", 0) > p["buffer"] - 1.5 * dt)
         # Регенерация здоровья: начинается после hp_regen_delay секунд без полученного урона.
         s.hp_regen_timer += dt
         hp_regen_delay = max(0.0, float(p.get("hp_regen_delay", 5.0)))
@@ -568,11 +577,12 @@ class Game:
         if pl.h != pl.H0: pl.y -= pl.H0 - pl.h; pl.h = pl.H0
         pl.atk = None; pl.grab = None; pl.state = "ladder" if ladder else "move"
         crossbow.release_all(pl)   # гарпуны остались в прошлой комнате
+        bard.on_room_change(pl)    # усилители остались в прошлой комнате, игра на гитаре прекращается
         pl.x = max(0, min((s.room.width_px if s.room else MW) - pl.w, rect.centerx - pl.w / 2)); pl.y = rect.bottom - pl.h; pl.vx = pl.vy = 0
     def key_down(s, action):
-        """Зажата ли клавиша действия из настроек управления (attack1/attack2: J/L). Нужна арбалетчику — нить гарпуна держится, пока кнопка зажата,
+        """Зажата ли клавиша действия из настроек управления (attack1/attack2: J/L). Нужна арбалетчику и барду — нить гарпуна держится / нота играет, пока кнопка зажата,
         а клавиатурная кнопка иначе давала бы только одиночное нажатие. У остальных героев не меняет поведение (там нажатие приходит из KEYDOWN)."""
-        if not crossbow.enabled(): return False
+        if not (crossbow.enabled() or bard.enabled()): return False
         try: return bool(pg.key.get_pressed()[pg.key.key_code(s.controls()[action])])
         except (ValueError, TypeError, KeyError): return False
     def take_exit(s, z):
@@ -622,6 +632,8 @@ class Game:
                 s.fx.text("Маг не использует оружие", pl.cx, pl.y - 10); return
             if CFG.get("character", {}).get("crossbows"):     # у арбалетчика руки заняты арбалетами
                 s.fx.text("Руки заняты арбалетами", pl.cx, pl.y - 10); return
+            if CFG.get("character", {}).get("bard"):          # у барда — гитара
+                s.fx.text("Руки заняты гитарой", pl.cx, pl.y - 10); return
             for dr in s.room.drops:
                 if abs(dr.x - pl.cx) < 36 and abs(dr.y - pl.cy) < 50:
                     if not pl.can_use(dr.wid):   # оружие не из списка allowed_weapons персонажа
@@ -709,7 +721,7 @@ class Game:
     CONTROL_DEFAULTS = {"jump": "SPACE", "roll": "LSHIFT", "attack1": "J", "attack2": "L", "pickup": "E", "skill": "Q", "skill_next": "C", "skill_prev": "V",
                         "ammo1_prev": "1", "ammo1_next": "2", "ammo2_prev": "3", "ammo2_next": "4"}
     CONTROL_LABELS = {"jump": "Прыжок", "roll": "Уклонение", "attack1": "Атака 1 (клавиша)", "attack2": "Атака 2 (клавиша)", "pickup": "Подобрать предмет", "skill": "Использовать скилл", "skill_next": "Следующий скилл", "skill_prev": "Предыдущий скилл",
-                      "ammo1_prev": "Арбалет ЛКМ: пред. снаряд", "ammo1_next": "Арбалет ЛКМ: след. снаряд", "ammo2_prev": "Арбалет ПКМ: пред. снаряд", "ammo2_next": "Арбалет ПКМ: след. снаряд"}
+                      "ammo1_prev": "Арбалет ЛКМ / нота: пред.", "ammo1_next": "Арбалет ЛКМ / нота: след.", "ammo2_prev": "Арбалет ПКМ: пред. снаряд", "ammo2_next": "Арбалет ПКМ: след. снаряд"}
     def controls(s):
         cfg = SETTINGS.setdefault("controls", {})
         for action, keyname in s.CONTROL_DEFAULTS.items(): cfg.setdefault(action, keyname)
@@ -980,14 +992,15 @@ class Game:
         s.scr.blit(s.veil, (0, 0))
         title = s.big.render("УПРАВЛЕНИЕ", True, (240, 235, 255)); s.scr.blit(title, title.get_rect(center=(W // 2, 42)))
         cfg = s.controls()
+        step = min(38, (VIEW_H - 86 - 56) // max(1, len(s.CONTROL_LABELS))); hh = step - 6   # шаг строк по числу действий: все помещаются на экране
         for i, (action, label) in enumerate(s.CONTROL_LABELS.items()):
-            rect = pg.Rect(W // 2 - 220, 86 + i * 38, 440, 32)
+            rect = pg.Rect(W // 2 - 220, 86 + i * step, 440, hh)
             pg.draw.rect(s.scr, (58, 52, 78) if s.waiting_for_bind != action else (105, 75, 130), rect, border_radius=5)
             pg.draw.rect(s.scr, (130, 120, 165), rect, 1, border_radius=5)
-            s.txt(label, rect.x + 10, rect.y + 7, (235, 235, 245), s.small)
+            s.txt(label, rect.x + 10, rect.y + (hh - 14) // 2, (235, 235, 245), s.small)
             keytext = "НАЖМИ КЛАВИШУ…" if s.waiting_for_bind == action else str(cfg[action]).upper()
-            tw = s.small.render(keytext, True, (255, 220, 130)); s.scr.blit(tw, (rect.right - tw.get_width() - 10, rect.y + 7))
-        s.txt("Нажми на действие и затем нужную клавишу. Esc — отмена/выход.", W // 2 - 215, 86 + len(s.CONTROL_LABELS) * 38 + 8, (190, 190, 215), s.small)
+            tw = s.small.render(keytext, True, (255, 220, 130)); s.scr.blit(tw, (rect.right - tw.get_width() - 10, rect.y + (hh - 14) // 2))
+        s.txt("Нажми на действие и затем нужную клавишу. Esc — отмена/выход.", W // 2 - 215, 86 + len(s.CONTROL_LABELS) * step + 4, (190, 190, 215), s.small)
         s.txt("Настройки сохраняются в data/settings.json", W // 2 - 150, VIEW_H - 28, (160, 220, 175), s.small)
     def reload(s):
         """F5: перечитать JSON и картинки, пересобрать карты; игрок остаётся на месте."""

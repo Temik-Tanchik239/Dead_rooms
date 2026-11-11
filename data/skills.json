@@ -532,5 +532,137 @@
       ]
     },
     "description": "Гарпун на нити: летит ровной дугой с плавным снижением, цепляется за стену, пол или потолок и подтягивает героя. Нить держится, пока зажата кнопка арбалета: отпустил — отцепилась; Пробел или перекат тоже отцепляют, скорость сохраняется. В воздухе на нити можно раскачиваться на A/D. Из одного арбалета — один гарпун, но можно по одному из каждого; в моба гарпун только бьёт и пропадает."
+  },
+  "note_heal": {
+    "name": "Нота исцеления",
+    "category": "note",
+    "type": "note",
+    "effect": "heal",
+    "icon": "icons/note_heal.png",
+    "color": [
+      110,
+      230,
+      140
+    ],
+    "description": "Пока играет, лечит барда и союзников в радиусе (12 здоровья в секунду). Тратит ману каждую секунду.",
+    "radius": 150,
+    "tick": 0.5,
+    "amount": 6,
+    "mana_cost": 10
+  },
+  "note_mana": {
+    "name": "Нота маны",
+    "category": "note",
+    "type": "note",
+    "effect": "mana",
+    "icon": "icons/note_mana.png",
+    "color": [
+      110,
+      170,
+      255
+    ],
+    "description": "Пока играет, восстанавливает ману барду и союзникам в радиусе (14 маны в секунду). Сама ничего не стоит.",
+    "radius": 150,
+    "tick": 0.5,
+    "amount": 7,
+    "mana_cost": 0
+  },
+  "note_stun": {
+    "name": "Нота оглушения",
+    "category": "note",
+    "type": "note",
+    "effect": "stun",
+    "icon": "icons/note_stun.png",
+    "color": [
+      255,
+      220,
+      90
+    ],
+    "description": "Пока играет, все враги в радиусе оглушены: не двигаются и не атакуют (боссы не поддаются). Тратит ману каждую секунду.",
+    "radius": 125,
+    "tick": 0.4,
+    "duration": 0.9,
+    "mana_cost": 12
+  },
+  "note_damage": {
+    "name": "Нота урона",
+    "category": "note",
+    "type": "note",
+    "effect": "damage",
+    "icon": "icons/note_damage.png",
+    "color": [
+      255,
+      100,
+      100
+    ],
+    "description": "Пока играет, наносит урон всем врагам в радиусе (18 в секунду). Тратит ману каждую секунду.",
+    "radius": 135,
+    "tick": 0.5,
+    "amount": 9,
+    "mana_cost": 14
+  },
+  "guitar_pick": {
+    "name": "Медиатор",
+    "category": "active",
+    "type": "projectile",
+    "projectile": "pick",
+    "cooldown": 8.0,
+    "damage": 6,
+    "mana_cost": 16,
+    "icon": "icons/skill_guitar_pick.png",
+    "color": [
+      255,
+      210,
+      120
+    ],
+    "description": "Бросок медиатора: при попадании или падении оглушает всех врагов в радиусе на 2.5 секунды."
+  },
+  "amp": {
+    "name": "Усилитель",
+    "category": "active",
+    "type": "amp",
+    "cooldown": 22.0,
+    "mana_cost": 30,
+    "duration": 20.0,
+    "max": 1,
+    "radius_mult": 0.9,
+    "skin": "skills/amp.png",
+    "draw": [
+      40,
+      44
+    ],
+    "icon": "icons/skill_amp.png",
+    "color": [
+      255,
+      170,
+      90
+    ],
+    "description": "Ставит усилитель на землю: 20 секунд он повторяет ноты, которые играет бард, вокруг себя (радиус 90% от ноты). Одновременно действует один."
+  },
+  "resonance": {
+    "name": "Резонанс",
+    "category": "passive",
+    "type": "note_power",
+    "multiplier": 1.25,
+    "icon": "icons/skill_resonance.png",
+    "color": [
+      255,
+      200,
+      120
+    ],
+    "description": "Ноты сильнее на 25%: лечение, мана, урон и длительность оглушения"
+  },
+  "echo": {
+    "name": "Эхо",
+    "category": "passive",
+    "type": "note_radius",
+    "multiplier": 1.2,
+    "icon": "icons/skill_echo.png",
+    "color": [
+      170,
+      200,
+      255
+    ],
+    "description": "Радиус нот и усилителя больше на 20%"
   }
 }

@@ -314,5 +314,30 @@
       11
     ],
     "hit_stop": 0
+  },
+  "pick": {
+    "speed": 720,
+    "vy": -60,
+    "gravity": 420,
+    "size": 5,
+    "color": [
+      255,
+      210,
+      120
+    ],
+    "life": 1.2,
+    "aoe": 105,
+    "knockback": 0,
+    "shake": 0,
+    "hit_stop": 0,
+    "effect": {
+      "stun": 2.5
+    },
+    "skin": "projectiles/pick.png",
+    "draw": [
+      22,
+      24
+    ],
+    "rotate": false
   }
 }

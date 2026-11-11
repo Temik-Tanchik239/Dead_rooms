@@ -1,27 +1,63 @@
 {
-  "_help": "Персонажи. stats — правки data/player.json (любое поле: hp, speed, jump, dmg_mult, roll_speed, mana.max ...). weapons — [оружие ЛКМ, оружие ПКМ]. allowed_weapons — какое оружие может подбирать и выпадать (null — любое). base_skills — навыки с самого начала. skill_tree — ячейки экрана навыков по порядку: skill + unlock_level (можно lock_icon). skill_overrides / weapon_overrides — правки data/skills.json и data/weapons.json только для этого героя. assets — папка внешнего вида в assets (по умолчанию characters/<id>). model_scale — множитель размера спрайта героя (например 1.2); hitbox — [ширина, высота] физического хитбокса в пикселях. Эти параметры независимы и задаются отдельно для каждого персонажа.",
-  "default": "wanderer",
+  "_help": "Персонажи. stats — правки data/player.json (любое поле: hp, speed, jump, dmg_mult, roll_speed, mana.max ...). weapons — [оружие ЛКМ, оружие ПКМ]. allowed_weapons — какое оружие может подбирать и выпадать (null — любое). base_skills — навыки с самого начала. skill_tree — ячейки экрана навыков по порядку: skill + unlock_level (можно lock_icon). skill_overrides / weapon_overrides — правки data/skills.json и data/weapons.json только для этого героя. assets — папка внешнего вида в assets (по умолчанию characters/<id>). model_scale — множитель размера спрайта героя (например 1.2); hitbox — [ширина, высота] физического хитбокса в пикселях. Эти параметры независимы и задаются отдельно для каждого персонажа. crossbows — арбалетчик (Тень): два мини-арбалета вместо оружия, виды снарядов — навыки category ammo, см. crossbow.py. bard — бард: гитара вместо оружия, ноты (навыки category note: effect heal/mana/stun/damage, radius, tick, amount, mana_cost в секунду), см. bard.py.",
+  "default": "bard",
   "order": [
-    "wanderer",
+    "bard",
     "knight",
     "ranger",
     "mage",
     "shadow"
   ],
   "characters": {
-    "wanderer": {
-      "name": "Странник",
-      "role": "Универсал",
-      "description": "Сбалансированный боец: меч для ближнего боя, лук для дальнего. Хороший выбор для первого забега.",
-      "assets": "characters/wanderer",
-      "stats": {},
-      "weapons": [
-        "rusty_sword",
-        "short_bow"
-      ],
-      "allowed_weapons": null,
+    "bard": {
+      "name": "Бард",
+      "role": "Музыкант",
+      "description": "Странник с гитарой. Зажми ЛКМ — бард играет выбранную ноту (выбор — 1/2), и её эффект расходится вокруг: лечение, мана, оглушение врагов или урон. Навыки: медиатор оглушает врагов в радиусе, усилитель повторяет ноты барда вокруг себя.",
+      "assets": "characters/bard",
+      "bard": {
+        "guitar": {
+          "skin": "weapons/guitar.png",
+          "draw": [
+            46,
+            23
+          ],
+          "grip": [
+            12,
+            12
+          ],
+          "hand": [
+            6,
+            -19
+          ],
+          "angle": 24,
+          "bob": 2.0,
+          "swing": 7,
+          "rate": 3.2
+        },
+        "notes": [
+          "note_heal",
+          "note_mana",
+          "note_stun",
+          "note_damage"
+        ]
+      },
+      "stats": {
+        "hp": 90,
+        "speed": 225,
+        "jump": 1040,
+        "dmg_mult": 1.0,
+        "mana": {
+          "max": 140,
+          "start": 140,
+          "regen": 14,
+          "regen_delay": 0.8
+        }
+      },
+      "weapons": [],
+      "allowed_weapons": [],
       "base_skills": [
-        "dash"
+        "guitar_pick",
+        "amp"
       ],
       "skill_tree": [
         {
@@ -29,28 +65,32 @@
           "unlock_level": 1
         },
         {
-          "skill": "heal",
+          "skill": "resonance",
           "unlock_level": 2
         },
         {
-          "skill": "nova",
+          "skill": "vitality",
           "unlock_level": 3
         },
         {
-          "skill": "double_jump",
+          "skill": "swift",
           "unlock_level": 4
         },
         {
-          "skill": "mana_blades",
+          "skill": "echo",
           "unlock_level": 5
         },
         {
-          "skill": "mana_ranged",
+          "skill": "mana_reserve",
           "unlock_level": 6
         },
         {
-          "skill": "mana_regen",
+          "skill": "double_jump",
           "unlock_level": 7
+        },
+        {
+          "skill": "fury",
+          "unlock_level": 8
         }
       ],
       "skill_overrides": {},

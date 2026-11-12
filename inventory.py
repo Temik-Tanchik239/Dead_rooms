@@ -21,8 +21,11 @@
     левый/правый ботинок (на своих местах тела) и три мультислота артефактов под скелетом. Слоты, их положение и то, какие
     предметы в них подходят, описаны в assets/inventory.json -> equipment.slots; предмет подходит слоту, если его "type"
     (поле предмета в items) есть в списке accepts слота ("*" — любой не-оружейный предмет). ПКМ по предмету в рюкзаке —
-    надеть в подходящий слот (свободный, иначе первый), ПКМ по надетому — снять в рюкзак. Эффектов у предметов пока нет:
-    equipped_items(pl) и item_bonuses(wid) — точки расширения, on_equipment_changed() вызывается при любой смене экипировки.
+    надеть в подходящий слот (свободный, иначе первый), ПКМ по надетому — снять в рюкзак.
+  • АКСЕССУАРЫ (создаются во вкладке «Аксессуары» редактора, accessory_editor.py): у надетого предмета работают поля
+    bonuses (max_hp, max_mana, hp_regen — прибавка; damage, move_speed, mana_regen, armor — проценты; сумма — stat()),
+    skill (навык выдаётся, пока предмет надет — sync_skills(), выданные так навыки в pl.item_skills) и effect
+    (статус-эффект врагу при ударе оружием — hit_effects()). on_equipment_changed() пересчитывает всё при смене экипировки.
 
 Сеть: действия — строки "inv:mv:<откуда>:<куда>", "inv:eq:<ячейка рюкзака>", "inv:ue:<ячейка>", "inv:dr:<ячейка>", где ячейка — "b3" (рюкзак),
 "h0" (рука) или "ehead" (слот экипировки по id); их применяет хост (Game.apply_action), рюкзак и экипировка едут в снимке игрока
@@ -194,11 +197,76 @@ def equipped_items(pl):
     e = equipment(pl); return [(s["id"], e[s["id"]]) for s in slot_defs() if e.get(s["id"])]
 
 def item_bonuses(wid):
-    """Поле "bonuses" предмета из assets/inventory.json -> items (произвольные данные; пока нигде не применяются)."""
-    return (cfg().get("items") or {}).get(wid, {}).get("bonuses") or {}
+    """Поле "bonuses" предмета из assets/inventory.json -> items: {стат: число}."""
+    b = (cfg().get("items") or {}).get(wid, {}).get("bonuses")
+    return b if isinstance(b, dict) else {}
+
+def stat(pl, key):
+    """Сумма бонуса key по всем надетым предметам (max_hp/max_mana/hp_regen — единицы; damage/move_speed/mana_regen/armor — %)."""
+    total = 0.0
+    for _, wid in equipped_items(pl):
+        try: total += float(item_bonuses(wid).get(key, 0) or 0)
+        except (TypeError, ValueError): pass
+    return total
+
+def stat_mult(pl, key):
+    """Множитель от процентного бонуса: +10% -> 1.1 (не ниже 0)."""
+    return max(0.0, 1.0 + stat(pl, key) / 100.0)
+
+def hit_effects(pl):
+    """Статус-эффекты (поле "effect") надетых предметов — накладываются на врага при ударе оружием."""
+    items = cfg().get("items") or {}
+    return [e for _, wid in equipped_items(pl) for e in [items.get(wid, {}).get("effect")] if isinstance(e, dict) and e]
+
+BONUS_TEXT = {"max_hp": "+{v} к здоровью", "max_mana": "+{v} к мане", "hp_regen": "+{v} HP/с", "damage": "+{v}% урона",
+              "move_speed": "+{v}% скорости", "mana_regen": "+{v}% регена маны", "armor": "+{v}% брони"}
+EFFECT_TEXT = {"freeze": "замораживает", "stun": "оглушает", "burn": "поджигает"}
+
+def bonus_lines(wid):
+    """Строки подсказки аксессуара: статы, навык, эффект при ударе."""
+    o = (cfg().get("items") or {}).get(wid, {}); out = []
+    for k, v in item_bonuses(wid).items():
+        try: v = float(v)
+        except (TypeError, ValueError): continue
+        if not v: continue
+        txt = BONUS_TEXT.get(k, "+{v} " + k).format(v=("%g" % v))
+        out.append(txt.replace("+-", "-"))
+    sid = o.get("skill")
+    if sid in CFG.get("skills", {}): out.append("Навык: " + str(CFG["skills"][sid].get("name", sid)))
+    eff = o.get("effect")
+    if isinstance(eff, dict):
+        names = [EFFECT_TEXT.get(k, k) for k in eff if k in EFFECT_TEXT]
+        if names: out.append("При ударе " + ", ".join(names))
+    return out
+
+def sync_skills(pl):
+    """Навыки надетых предметов (поле "skill"): выдать недостающие, забрать навыки снятых. pl.item_skills — выданные предметами
+    (навык, который герой и так знал, туда не попадает и при снятии не пропадает)."""
+    skills = CFG.get("skills", {}); items = cfg().get("items") or {}
+    want = []
+    for _, wid in equipped_items(pl):
+        sid = items.get(wid, {}).get("skill")
+        if sid and sid in skills and sid not in want: want.append(sid)
+    given = [s for s in getattr(pl, "item_skills", []) if s in pl.skills]
+    for sid in given:
+        if sid not in want:
+            import spells   # сняли предмет посреди каста — остановить каст/поток этого навыка
+            if (getattr(pl, "channel", None) or {}).get("sid") == sid: spells.channel_stop(pl, None, "swap")
+            if (getattr(pl, "hold", None) or {}).get("sid") == sid: spells.hold_stop(pl, None, "swap")
+            pl.skills.remove(sid)
+    given = [s for s in given if s in want]
+    for sid in want:
+        if sid not in pl.skills:
+            pl.skills.append(sid); given.append(sid); pl.skill_cooldowns.setdefault(sid, 0.0)
+    pl.item_skills = given
+    n = len([s for s in pl.skills if skills.get(s, {}).get("category", "active") == "active"])
+    pl.skill_index = min(getattr(pl, "skill_index", 0), max(0, n - 1))
 
 def on_equipment_changed(g, pl):
-    """Вызывается после любой смены экипировки (надели, сняли, поменяли, выбросили). Сюда позже добавится пересчёт бонусов."""
+    """Вызывается после любой смены экипировки (надели, сняли, поменяли, выбросили): навыки предметов и запас HP/маны."""
+    if not hasattr(pl, "skills"): return
+    sync_skills(pl)
+    if hasattr(pl, "refresh_mana"): pl.refresh_mana()
 
 def item_type(wid):
     """Тип предмета: "weapon" для оружия, иначе поле "type" из assets/inventory.json -> items (head, neck, glove, belt, boot, artifact...)."""
@@ -624,6 +692,9 @@ def draw(g):
                 y += 4
             elif not w and c.get("show_stats", True) and c.get("stat_type") and item_type(hw) != "misc":   # у вещей — тип (Шлем, Артефакт ...)
                 tn = (c.get("types") or {}).get(item_type(hw), item_type(hw)); scr.blit(small.render(str(c["stat_type"]).format(type=tn), True, sc), (x, y)); y += small.get_height() + 6
+            if not w:   # аксессуар: статы, навык и эффект — зелёными строками перед описанием
+                for line in bonus_lines(hw):
+                    scr.blit(small.render(_fit(line, small, ir.w - 20), True, _col(c.get("bonus_color"), (140, 230, 150))), (x, y)); y += small.get_height() + 1
             for line in _wrap(inf["desc"], small, ir.w - 20):
                 if y > ir.bottom - small.get_height() - 4: break
                 scr.blit(small.render(line, True, tc), (x, y)); y += small.get_height() + 1

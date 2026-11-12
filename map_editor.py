@@ -1451,6 +1451,20 @@ def _build_mobs_tab(nb, root):
         return None
 
 
+def _build_accessories_tab(nb):
+    """Вкладка «Аксессуары» (accessory_editor.py): надеваемые предметы в assets/inventory.json -> items."""
+    tab = ttk.Frame(nb); nb.add(tab, text="  Аксессуары  ")
+    try:
+        import accessory_editor
+        acc = accessory_editor.AccessoryTab(tab); acc.pack(fill="both", expand=True)
+        return acc
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        ttk.Label(tab, text="Вкладка «Аксессуары» не запустилась:\n\n%s: %s" % (type(e).__name__, e),
+                  justify="left", foreground="#b00020").pack(anchor="nw", padx=16, pady=16)
+        return None
+
+
 if __name__ == "__main__":
     root = tk.Tk()
     root.title("DEAD ROOMS — редакторы")
@@ -1462,10 +1476,13 @@ if __name__ == "__main__":
     Editor(maps_tab, window=None)
     SkillEditor(skills_tab)
     mobs_tab = _build_mobs_tab(nb, root)
+    acc_tab = _build_accessories_tab(nb)
 
     def _on_close():
         # несохранённые правки мобов: спросить, как это делает сама вкладка
         if mobs_tab is not None and not mobs_tab.confirm_close():
+            return
+        if acc_tab is not None and not acc_tab.confirm_close():
             return
         root.destroy()
     root.protocol("WM_DELETE_WINDOW", _on_close)

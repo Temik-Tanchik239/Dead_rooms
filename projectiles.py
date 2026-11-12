@@ -73,6 +73,8 @@ class Proj:
             if hs is not None: w.fx.stop = max(stop, float(hs))
             eff = s.d.get("effect")   # напр. {"freeze": 2.0} у ледяной пули — применяется только к мобам
             if eff and hasattr(target, "frozen"): status.apply(target, eff, w.fx)
+            for eff in getattr(s, "extra_eff", ()):   # эффекты надетых аксессуаров стрелка (Player.fire)
+                if hasattr(target, "frozen"): status.apply(target, eff, w.fx)
         else: target.hit(s.dmg, s.x, w.fx, s.kb)
     def die(s, w):
         if s.dead: return

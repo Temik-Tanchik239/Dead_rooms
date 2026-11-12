@@ -14,6 +14,7 @@ import spells
 import crossbow
 import bard
 import invisibility
+import status
 from projectiles import volley
 from mob import Mob, Corpse, spawn_boss
 import characters as char_menu
@@ -89,6 +90,7 @@ class Player(Body):
         s.level = 1; s.xp = 0; s.xp_next = 100
         # Базовые навыки персонажа выдаются сразу и не требуют повышения уровня.
         s.skills = [sid for sid in ch.get("base_skills", BASE_SKILLS) if sid in CFG.get("skills", {})]
+        s.item_skills = []   # навыки, выданные надетыми аксессуарами (inventory.sync_skills)
         s.refresh_mana(True); s.hp = s.maxhp
         s.skill_index = 0; s.air_jumps = 0
         s.skill_cooldowns = {key: 0.0 for key in s.skills}; s.skill_notice = 0.0
@@ -121,6 +123,7 @@ class Player(Body):
         for sid in s.skills:
             d = CFG.get("skills", {}).get(sid, {})
             if d.get("type") == kind: k *= float(d.get("multiplier", 1.0))
+        if kind in ("damage", "move_speed", "mana_regen"): k *= inventory.stat_mult(s, kind)   # бонусы надетых аксессуаров, %
         return k
     def dmg_mult(s): return CFG["player"].get("dmg_mult", 1.0) * s.passive_mult("damage")
     def speed(s): return CFG["player"]["speed"] * s.passive_mult("move_speed")
@@ -266,6 +269,8 @@ class Player(Body):
                 s.shield_hp = 0; s.shield_time = 0
                 fx.text("Щит разрушен", s.cx, s.y - 18)
             if dmg <= 0: return
+        armor = inventory.stat(s, "armor")   # броня аксессуаров, % снижения урона (не больше 90%)
+        if armor: dmg = float(dmg) * (1.0 - max(-100.0, min(90.0, armor)) / 100.0)
         s.hp -= dmg
         if s.channel: spells.channel_stop(s, fx, "damage")   # урон прерывает удерживаемое заклинание
         s.hp_regen_timer = 0.0  # любой полученный урон заново запускает задержку регенерации
@@ -281,6 +286,7 @@ class Player(Body):
             passive = CFG.get("skills", {}).get(sid, {})
             if passive.get("type") == "max_mana": s.maxmana += float(passive.get("amount", 0))
             if passive.get("type") == "max_hp": s.maxhp += float(passive.get("amount", 0))
+        s.maxmana = max(1, s.maxmana + inventory.stat(s, "max_mana")); s.maxhp = max(1, s.maxhp + inventory.stat(s, "max_hp"))   # аксессуары
         if hasattr(s, "hp"): s.hp = min(s.hp, s.maxhp)
         if full: s.mana, s.mana_t, s.mana_flash = min(m.get("start", s.maxmana), s.maxmana), 0, 0
         else: s.mana = min(s.mana, s.maxmana)
@@ -306,13 +312,18 @@ class Player(Body):
         for m in mobs:
             if id(m) not in a["hit"] and (m.collides_rect(s.hitbox) if hasattr(m, "collides_rect") else s.hitbox.colliderect(m.rect)):
                 a["hit"].add(id(m)); m.hurt(st["damage"] * s.dmg_mult(), s.face * st["knockback"], fx)
+                for eff in inventory.hit_effects(s): status.apply(m, eff, fx)   # эффекты надетых аксессуаров
                 s.mana = min(s.maxmana, s.mana + weapon.mana_hit(a["w"], st))   # попадание возвращает ману
     def fire(s, projs, st):
         pr = st["projectile"]; o = pr if isinstance(pr, dict) else {}
         hx, hy = s.hand("shoot"); ang = 0 if s.face > 0 else math.pi
         if s.aim: ang = math.atan2(s.aim[1] - hy, s.aim[0] - hx)   # стреляем в курсор
+        n0 = len(projs)
         volley(projs, pr, hx + math.cos(ang) * 14, hy + math.sin(ang) * 14, ang,
                st["damage"] * s.dmg_mult(), True, o.get("count", 1), o.get("spread", 0))
+        effs = inventory.hit_effects(s)   # эффекты аксессуаров едут и на пулях оружия (Proj.extra_eff)
+        if effs:
+            for p in projs[n0:]: p.extra_eff = effs
     @in_char
     def swap_skill(s, direction=1):
         if s.channel: return   # пока колдуем удерживаемое заклинание, книгу не листаем
@@ -412,7 +423,7 @@ class Player(Body):
         # Регенерация здоровья: начинается после hp_regen_delay секунд без полученного урона.
         s.hp_regen_timer += dt
         hp_regen_delay = max(0.0, float(p.get("hp_regen_delay", 5.0)))
-        hp_regen_rate = max(0.0, float(p.get("hp_regen", 5.0)))
+        hp_regen_rate = max(0.0, float(p.get("hp_regen", 5.0)) + inventory.stat(s, "hp_regen"))
         if s.hp_regen_timer >= hp_regen_delay and s.hp < s.maxhp and s.hp > 0 and hp_regen_rate > 0:
             s.hp = min(s.maxhp, s.hp + hp_regen_rate * dt)
         if s.mana_t <= 0 and s.mana < s.maxmana:
@@ -491,11 +502,12 @@ def award_xp(pl, amount, fx):
             unlocked_slot = next((slot for slot in slots
                                   if slot.get("skill") in defs
                                   and int(slot.get("unlock_level", 999)) <= pl.level
-                                  and slot.get("skill") not in pl.skills), None)
+                                  and (slot.get("skill") not in pl.skills or slot.get("skill") in pl.item_skills)), None)
             sid = None
             if unlocked_slot:
                 sid = unlocked_slot["skill"]
-                pl.skills.append(sid)
+                if sid in pl.item_skills: pl.item_skills.remove(sid)   # был взят у предмета — теперь выучен насовсем
+                else: pl.skills.append(sid)
                 pl.skill_cooldowns.setdefault(sid, 0.0)
             ups.append((pl.level, sid))
             pl.refresh_mana()
@@ -626,6 +638,7 @@ class Game:
         if sid not in CFG.get("skills", {}) or CFG["skills"][sid].get("category", "active") != "active": return
         pl = s.pl
         if sid not in pl.skills: pl.skills.append(sid)
+        if sid in getattr(pl, "item_skills", []): pl.item_skills.remove(sid)   # выучен насовсем — снятие предмета его не заберёт
         active_skills = [key for key in pl.skills if CFG.get("skills", {}).get(key, {}).get("category", "active") == "active"]
         pl.skill_index = active_skills.index(sid)
         pl.skill_cooldowns.setdefault(sid, 0.0)

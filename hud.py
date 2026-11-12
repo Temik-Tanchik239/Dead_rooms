@@ -15,6 +15,7 @@ import weapon
 import spells
 import crossbow
 import bard
+import inventory
 from core import SETTINGS, W
 
 ICON, GAP, ICON_Y = 48, 8, -80  # размер квадрата, отступ между иконками, y иконок от нижнего края окна (минус — вверх)
@@ -64,10 +65,11 @@ def draw(scr, pl, font):
     P = CFG["player"]; y0 = VIEW_H
     # Заклинатель (spellcaster в data/characters.json — маг/инженер): портрет + окно из трёх умений вместо иконок оружия.
     if CFG.get("character", {}).get("spellcaster"):
-        portrait(scr, pl, font); book_draw(scr, pl, font)
+        portrait(scr, pl, font); book_draw(scr, pl, font); weapon_slots(scr, pl, font)   # + оружие в свободной ПКМ, если оно есть
     elif crossbow.enabled() or bard.enabled():   # арбалетчик (Тень) / бард: портрет + колонки у левого края + навык Q рядом с портретом
         portrait(scr, pl, font); book_draw(scr, pl, font)
         sk = layout().get("skill", [176, VIEW_H - 56, 48]); skill_slot(scr, pl, font, [sk[0] + skill_shift(), sk[1], sk[2]])
+        weapon_slots(scr, pl, font)   # у барда оружие в свободной ПКМ (если есть)
     else:
         icons(scr, pl, font)
     bar(scr, {**HP, **P.get("hp_bar", {}), "_layout_key": "hp"}, max(0, pl.hp), pl.maxhp, y0)
@@ -441,21 +443,29 @@ def skill_slot(scr, pl, font, pos=None):
 
 
 def icons(scr, pl, font):
-    Wp = CFG["weapons"]
     portrait(scr, pl, font)
 
     # Сначала оружие (ЛКМ, ПКМ), затем активный навык Q. Пассивные навыки
     # не отображаются в панели и не участвуют в переключении заклинаний.
+    weapon_slots(scr, pl, font)
+    skill_slot(scr, pl, font)   # активный навык рисуется последним, справа от двух оружий
 
+
+def weapon_slots(scr, pl, font):
+    """Оружие в руках (ЛКМ, ПКМ). Занятые способностью героя руки не рисуются. Пустая рука: у обычного героя — пустая ячейка
+    (оружие убрано в рюкзак), у мага/барда/Тени — ничего (у них оружие необязательно)."""
+    Wp = CFG["weapons"]; opened = inventory.open_hands(pl); classic = inventory.uses_weapons(pl)
     for n, (key, wid) in enumerate(zip(("ЛКМ", "ПКМ"), pl.slots[:2])):
+        if not opened[n]: continue
+        if wid not in Wp:   # рука пуста (оружие убрано в рюкзак) — пустая ячейка с подписью
+            if not classic: continue
+            r = slot(scr, n + 1, None, lambda r: None, layout_key="weapon1" if n == 0 else "weapon2"); label(scr, font, key, r.x + 4, r.y + 3, (255, 230, 150)); continue
         w = Wp[wid]; r = slot(scr, n + 1, w.get("icon", f"icons/{wid}.png"), lambda r, wid=wid: weapon.icon(scr, wid, r.centerx, r.centery, int(r.w * .75)), layout_key="weapon1" if n == 0 else "weapon2")
         cost = weapon.mana_cost(wid, w["combo"][0])
         if pl.mana < cost:   # не хватает маны — иконка темнеет
             veil = pg.Surface(r.size, pg.SRCALPHA); pg.draw.rect(veil, (10, 10, 20, 130), veil.get_rect(), border_radius=8); scr.blit(veil, r)
         label(scr, font, key, r.x + 4, r.y + 3, (255, 230, 150))
         t = font.render(str(cost), True, (140, 185, 255)); label(scr, font, str(cost), r.right - t.get_width() - 4, r.bottom - t.get_height() - 2, (140, 185, 255))
-
-    skill_slot(scr, pl, font)   # активный навык рисуется последним, справа от двух оружий
 
 
 def draw_boss_bar(scr, mobs, font):

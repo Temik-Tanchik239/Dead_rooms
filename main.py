@@ -8,6 +8,7 @@ from core import CFG, SETTINGS, DATA, ASSETS, T, COLS, ROWS, W, H, MW, MH, VIEW_
 CAMERA_ZOOM = 0.92  # меньше 1.0 — камера дальше, видно больше окружения
 from anim import clear_cache, sprite, mob_frame
 import weapon
+import inventory
 import hud
 import spells
 import crossbow
@@ -95,6 +96,7 @@ class Player(Body):
         s.last_weapon = s.slots[0]; s.skill_cast = None
         crossbow.init(s)   # мини-арбалеты (Тень): виды снарядов, перезарядка и отдача по каждому арбалету — см. crossbow.py
         bard.init(s)       # гитара барда: ноты, игра, усилители — см. bard.py
+        inventory.init(s)  # рюкзак с оружием (Tab) и стартовые предметы — см. inventory.py, assets/inventory.json
         # Удерживаемое заклинание (skills.json: "channel": true — напр. захват инженера, как ульта Bane): словарь
         # {"sid", "t" (сколько уже колдуем), "max" (лимит, сек), ...} или None. Логика — spells.channel_*.
         s.channel = None
@@ -285,7 +287,7 @@ class Player(Body):
     @in_char
     def start_attack(s, i, fx=None):
         wid = s.slots[i]
-        if not wid or wid not in CFG["weapons"]: return   # у героя нет оружия (маг/инженер) — удара не будет
+        if not wid or wid not in CFG["weapons"] or not inventory.open_hands(s)[i]: return   # руки пусты или кнопка занята способностью героя — удара не будет
         s.last_weapon = wid; steps = CFG["weapons"][wid]["combo"]; sl, stp, left = s.combo
         n = (stp + 1) % len(steps) if sl == wid and left > 0 else 0; st = steps[n]
         s.buf["a1" if i == 0 else "a2"] = 0; cost = weapon.mana_cost(wid, st)
@@ -375,13 +377,13 @@ class Player(Body):
         if s.buf.get("skill", 0) > 0:
             s.buf["skill"] = 0
             s.use_skill(mobs, projs, fx)
-        # Заклинатель (spellcaster — маг/инженер) не использует оружие: ЛКМ кастует текущее умение, ПКМ не нужна.
-        # Кастуем только когда заклинание готово — иначе зажатая ЛКМ спамила бы сообщениями.
+        # Заклинатель (spellcaster — маг/инженер): ЛКМ кастует текущее умение, ПКМ свободна — на ней можно носить оружие (инвентарь, Tab);
+        # пустая ПКМ ничего не делает. Кастуем только когда заклинание готово — иначе зажатая ЛКМ спамила бы сообщениями.
         if CFG.get("character", {}).get("spellcaster"):
             if s.buf.get("a1", 0) > 0 and spells.ready(s):
                 s.buf["a1"] = 0
                 s.use_skill(mobs, projs, fx)
-            s.buf["a2"] = 0
+            if not s.slots[1]: s.buf["a2"] = 0
         # Арбалетчик (crossbows — Тень): ЛКМ стреляет первым арбалетом, ПКМ — вторым, у каждого своя перезарядка; стрелять можно на бегу и в прыжке.
         # Нажатие, пришедшее раньше конца перезарядки, ждёт в буфере; не хватило маны — выстрела нет, полоска маны мигает.
         # «Свежее» нажатие (в этом кадре) или зажатая кнопка — буфер ввода только что обновлён и ещё полный (минус кадр): так отличаем зажатую ЛКМ/ПКМ
@@ -457,7 +459,7 @@ class Player(Body):
                     s.vy = -p["jump"]
                     if s.coy <= 0: s.air_jumps += 1
                 s.buf["jump"] = 0; s.coy = 0
-            elif s.buf["a1"]: s.face = s.facing(d); s.start_attack(0, fx)
+            elif s.buf["a1"] and s.slots[0]: s.face = s.facing(d); s.start_attack(0, fx)   # пустая ЛКМ не мешает ПКМ
             elif s.buf["a2"]: s.face = s.facing(d); s.start_attack(1, fx)
             if s.vy < 0 and not held: s.vy = max(s.vy, -p["jump"] * p["jump_cut"])
         if crossbow.enabled() and s.aim and s.state == "move" and s.stun <= 0:
@@ -506,6 +508,9 @@ def set_app_icon():
 
 class Game:
     show_world = False   # M: карта мира открыта (игра на паузе)
+    inv_open = False     # Tab: инвентарь открыт (игра на паузе, в сети герой стоит) — см. inventory.py
+    inv_hold = None      # ячейка предмета, который несёт курсор ("b3" / "h0" как ("b", 3)); None — ничего не несём
+    inv_msg = None       # (текст, до какого момента показывать) — отказ при переносе
     Player = Player       # мультиплеер создаёт игроков через этот класс
     zoom = CAMERA_ZOOM
     award_xp = staticmethod(award_xp)
@@ -546,6 +551,7 @@ class Game:
         s.menu_veil.fill((6, 6, 12, 72))
         pg.mouse.set_visible(False if s.menu_cursor is not None or SETTINGS.get("mouse_aim", True) else True)
     def new_game(s, loop=0, character=None):
+        s.inv_open = False; s.inv_hold = None
         if loop == 0:
             if character is not None or CHAR["id"] is None:
                 apply_character(character if character is not None else SETTINGS.get("last_character")); clear_cache()
@@ -628,18 +634,19 @@ class Game:
     def pickup(s, pl=None):
         pl = pl or s.pl
         with use_char(pl.char_id):   # у каждого героя свои правки оружия
-            if CFG.get("character", {}).get("spellcaster"):   # маг не подбирает и не носит оружие
-                s.fx.text("Маг не использует оружие", pl.cx, pl.y - 10); return
-            if CFG.get("character", {}).get("crossbows"):     # у арбалетчика руки заняты арбалетами
-                s.fx.text("Руки заняты арбалетами", pl.cx, pl.y - 10); return
-            if CFG.get("character", {}).get("bard"):          # у барда — гитара
-                s.fx.text("Руки заняты гитарой", pl.cx, pl.y - 10); return
             for dr in s.room.drops:
                 if abs(dr.x - pl.cx) < 36 and abs(dr.y - pl.cy) < 50:
+                    if dr.wid not in CFG["weapons"]:   # не оружие (предмет из assets/inventory.json) — просто в рюкзак
+                        inventory.pickup(s, pl, dr); break
                     if not pl.can_use(dr.wid):   # оружие не из списка allowed_weapons персонажа
                         s.fx.text(CFG["weapons"][dr.wid]["name"] + ": не для этого героя", pl.cx, pl.y - 10); break
-                    i = CFG["weapons"][dr.wid].get("slot", 1) - 1
-                    pl.slots[i], dr.wid = dr.wid, pl.slots[i]; pl.combo = (None, 0, 0)
+                    if inventory.pickup(s, pl, dr): break   # оружие ушло в рюкзак (или в свободную руку)
+                    i = inventory.preferred_hand(pl, dr.wid)   # свободная открытая рука, иначе «любимая» (поле slot)
+                    if i is None: break   # открытых рук нет (Тень) и рюкзак полон — брать некуда
+                    if pl.slots[i] is None:   # рука пуста (оружие убрано в рюкзак) — берём в руку
+                        pl.slots[i] = dr.wid; s.room.drops.remove(dr)
+                    else: pl.slots[i], dr.wid = dr.wid, pl.slots[i]
+                    pl.combo = (None, 0, 0)
                     s.fx.text(CFG["weapons"][pl.slots[i]]["name"], pl.cx, pl.y - 10); break
     AMMO_ACTIONS = {"xb0_prev": (0, -1), "xb0_next": (0, 1), "xb1_prev": (1, -1), "xb1_next": (1, 1)}   # смена снаряда: (арбалет, направление)
     ACTIONS = ("jump", "roll", "a1", "a2", "skill", "next", "prev", "pickup") + tuple(AMMO_ACTIONS)
@@ -650,6 +657,10 @@ class Game:
         elif name == "prev": pl.swap_skill(-1)
         elif name == "pickup": s.pickup(pl)
         elif name in s.AMMO_ACTIONS: pl.swap_ammo(*s.AMMO_ACTIONS[name])
+        elif isinstance(name, str) and name.startswith("inv:"): inventory.apply(s, pl, name)   # инвентарь: взять оружие из рюкзака в руку / выбросить
+    def valid_action(s, name):
+        """Можно ли принять такое действие от игрока по сети (хост проверяет события клиентов)."""
+        return name in s.ACTIONS or (isinstance(name, str) and name.startswith("inv:") and len(name) <= 40)
     def act(s, name):
         """Действие своего игрока. В сетевой игре клиент отправляет его хосту."""
         if s.net:
@@ -658,13 +669,13 @@ class Game:
         s.apply_action(s.pl, name)
     def overlay_open(s):
         """Открыто меню/карта/настройки — в сетевой игре свой персонаж в это время стоит на месте."""
-        return s.menu_mode is not None or s.show_world or s.controls_open or s.level_menu or s.hud_edit or s.dev.open
+        return s.menu_mode is not None or s.show_world or s.controls_open or s.level_menu or s.hud_edit or s.dev.open or s.inv_open
     def net_leave(s, message="", menu="mp"):
         """Выйти из сетевой игры (или лобби) в меню мультиплеера; одиночный мир создаётся заново."""
         if s.net: s.net.close()
         s.net = None
         s.new_game(character=SETTINGS.get("last_character"))
-        s.show_world = s.controls_open = s.level_menu = s.hud_edit = False
+        s.show_world = s.controls_open = s.level_menu = s.hud_edit = s.inv_open = False; s.inv_hold = None
         if menu == "connect": mp.open_connect(s)
         else: mp.open_menu(s)
         s.mp_status = message
@@ -672,15 +683,15 @@ class Game:
         mp.housekeeping(s)
         if s.net:   # сетевая игра: хост считает мир, клиент получает его от хоста
             s.net.update(dt); return
-        fx, pl, r = s.fx, s.pl, s.room; sim = 0 if (fx.stop > 0 or s.show_world or s.controls_open or s.menu_mode is not None or s.level_menu or s.dev.open) else dt   # меню ставит игру на паузу
+        fx, pl, r = s.fx, s.pl, s.room; sim = 0 if (fx.stop > 0 or s.show_world or s.controls_open or s.menu_mode is not None or s.level_menu or s.dev.open or s.inv_open) else dt   # меню ставит игру на паузу
         fx.stop = max(0, fx.stop - dt); fx.shake = max(0, fx.shake - dt)
         for it in fx.items: it[4] -= dt
         fx.items = [it for it in fx.items if it[4] > 0]
         if pl.hp <= 0: return
         mpos = pg.mouse.get_pos(); pl.aim = (mpos[0] / CAMERA_ZOOM + s.cam[0], mpos[1] / CAMERA_ZOOM + s.cam[1]) if SETTINGS.get("mouse_aim", True) else None
         mb = pg.mouse.get_pressed()   # зажатая кнопка = непрерывные атаки / комбо
-        if (mb[0] or s.key_down("attack1")) and not s.dev.open: pl.press("a1")   # клики по меню разработчика — не атаки
-        if (mb[2] or s.key_down("attack2")) and not s.dev.open: pl.press("a2")
+        if (mb[0] or s.key_down("attack1")) and not s.dev.open and not s.inv_open: pl.press("a1")   # клики по меню разработчика и инвентарю — не атаки
+        if (mb[2] or s.key_down("attack2")) and not s.dev.open and not s.inv_open: pl.press("a2")
         pl.drops = r.drops   # телекинез дотягивается до предметов на полу текущей комнаты
         pl.skill_held = s.skill_held()   # удерживаемые заклинания (захват инженера) работают, пока клавиша зажата
         pl.update(sim, pg.key.get_pressed(), r.g, r.mobs, s.projs, fx); pl.update_anim(sim)
@@ -719,9 +730,9 @@ class Game:
             if s.room is r and not s.done:   # выхода нет — пропасть: урон и назад к месту появления
                 pl.hit(r.d.get("fall_damage", CFG["maps"].get("fall_damage", 15)), pl.cx, fx); s.place(*s.respawn)
     CONTROL_DEFAULTS = {"jump": "SPACE", "roll": "LSHIFT", "attack1": "J", "attack2": "L", "pickup": "E", "skill": "Q", "skill_next": "C", "skill_prev": "V",
-                        "ammo1_prev": "1", "ammo1_next": "2", "ammo2_prev": "3", "ammo2_next": "4"}
+                        "ammo1_prev": "1", "ammo1_next": "2", "ammo2_prev": "3", "ammo2_next": "4", "inventory": "TAB"}
     CONTROL_LABELS = {"jump": "Прыжок", "roll": "Уклонение", "attack1": "Атака 1 (клавиша)", "attack2": "Атака 2 (клавиша)", "pickup": "Подобрать предмет", "skill": "Использовать скилл", "skill_next": "Следующий скилл", "skill_prev": "Предыдущий скилл",
-                      "ammo1_prev": "Арбалет ЛКМ / нота: пред.", "ammo1_next": "Арбалет ЛКМ / нота: след.", "ammo2_prev": "Арбалет ПКМ: пред. снаряд", "ammo2_next": "Арбалет ПКМ: след. снаряд"}
+                      "ammo1_prev": "Арбалет ЛКМ / нота: пред.", "ammo1_next": "Арбалет ЛКМ / нота: след.", "ammo2_prev": "Арбалет ПКМ: пред. снаряд", "ammo2_next": "Арбалет ПКМ: след. снаряд", "inventory": "Инвентарь"}
     def controls(s):
         cfg = SETTINGS.setdefault("controls", {})
         for action, keyname in s.CONTROL_DEFAULTS.items(): cfg.setdefault(action, keyname)
@@ -747,6 +758,8 @@ class Game:
                 s.skill_unlock_anim = None
                 pg.mouse.set_visible(not SETTINGS.get("mouse_aim", True))
             return
+        if s.inv_open and s.menu_mode is None:   # открыт инвентарь (Tab): Tab/Esc — закрыть, X — выбросить
+            inventory.key(s, k); return
         if s.menu_mode in ("select", "lobby"): char_menu.key(s, k); return
         if s.menu_mode in mp.MENU_MODES: mp.menu_key(s, k); return
         if s.menu_mode is not None:
@@ -795,6 +808,7 @@ class Game:
         for action, ev in (("ammo1_prev", "xb0_prev"), ("ammo1_next", "xb0_next"), ("ammo2_prev", "xb1_prev"), ("ammo2_next", "xb1_next")):
             if pressed(action): s.act(ev); return   # смена снарядов арбалетов (Тень)
         if pressed("pickup"): s.act("pickup")
+        elif pressed("inventory"): inventory.toggle(s)
         elif pressed("skill"): s.act("skill")
         elif pressed("skill_next"): s.act("next")
         elif pressed("skill_prev"): s.act("prev")
@@ -1021,7 +1035,7 @@ class Game:
         lighting.draw_sources(v, r, light_t, light_dt)   # факелы, фонари, кристаллы — с живым пламенем и искрами
         for dr in r.drops:
             dr.draw(v)
-            if abs(dr.x - pl.cx) < 36: v.blit(s.font.render("[E] " + CFG["weapons"][dr.wid]["name"], True, (255, 230, 120)), (dr.x - 60, dr.y - 34))
+            if abs(dr.x - pl.cx) < 36: v.blit(s.font.render("[E] " + inventory.item_info(dr.wid)["name"], True, (255, 230, 120)), (dr.x - 60, dr.y - 34))
         for c in r.corpses: c.draw(v)
         for m in r.mobs: m.draw(v, s.debug)
         for q in s.projs: q.draw(v)
@@ -1080,12 +1094,13 @@ class Game:
         elif pl.hp <= 0: s.txt("ТЫ УМЕР — R: заново", W // 2 - 220, 200, (255, 90, 90), s.big)
         elif s.done: s.txt("ВСЕ КАРТЫ ПРОЙДЕНЫ — Enter: ещё круг", W // 2 - 380, 200, (120, 255, 150), s.big)
         if s.level_menu: s.draw_level_menu()
+        if s.inv_open: inventory.draw(s)
         if s.show_world: s.draw_world()
         if s.controls_open: s.draw_controls()
         if s.hud_edit: s.draw_hud_editor()
         if s.dev.open: s.dev.draw(s.scr)
         if s.menu_mode is not None: s.draw_menu()
-        if pl.aim and s.menu_mode is None and not s.dev.open:   # прицел
+        if pl.aim and s.menu_mode is None and not s.dev.open and not s.inv_open:   # прицел
             mx, my = int((pl.aim[0] - s.cam[0]) * CAMERA_ZOOM), int((pl.aim[1] - s.cam[1]) * CAMERA_ZOOM); col = (255, 255, 255); pg.draw.circle(s.scr, col, (mx, my), 10, 1); pg.draw.circle(s.scr, col, (mx, my), 1)
             for a in ((-17, 0, -7, 0), (7, 0, 17, 0), (0, -17, 0, -7), (0, 7, 0, 17)): pg.draw.line(s.scr, col, (mx + a[0], my + a[1]), (mx + a[2], my + a[3]))
         pg.display.flip()
@@ -1293,7 +1308,7 @@ class Game:
         while True:
             dt = min(s.clock.tick(60) / 1000, 1 / 30)
             # В меню используем курсор из assets; в забеге сохраняем обычное управление мышью.
-            pg.mouse.set_visible(s.menu_mode is not None and s.menu_cursor is None or s.menu_mode is None and not SETTINGS.get("mouse_aim", True) or s.dev.open)
+            pg.mouse.set_visible(s.menu_mode is not None and s.menu_cursor is None or s.menu_mode is None and not SETTINGS.get("mouse_aim", True) or s.dev.open or s.inv_open)
             for e in pg.event.get():
                 if e.type == pg.QUIT:
                     if s.net: s.net.close()
@@ -1304,6 +1319,7 @@ class Game:
                 if s.menu_mode is not None:
                     s.menu_event(e)
                 elif s.hud_edit: s.hud_event(e)
+                elif s.inv_open: inventory.event(s, e)
                 elif e.type == pg.MOUSEBUTTONDOWN and s.controls_open: s.controls_event(e)
                 elif e.type == pg.MOUSEBUTTONDOWN and e.button in (1, 3): s.act("a1" if e.button == 1 else "a2")
             s.step(dt); s.draw()

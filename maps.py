@@ -126,7 +126,10 @@ class Drop:
     def __init__(s, x, y, wid): s.x, s.y, s.wid = x, y, wid
     def draw(s, v):
         bob = math.sin(pg.time.get_ticks() / 300) * 3
-        if not weapon.icon(v, s.wid, s.x, s.y - 12 + bob, 36, 30):
+        if s.wid in CFG["weapons"]: ok = weapon.icon(v, s.wid, s.x, s.y - 12 + bob, 36, 30)
+        else:   # предмет не-оружие (assets/inventory.json -> items)
+            import inventory; ok = inventory.floor_icon(v, s.wid, s.x, s.y - 12 + bob, 32)
+        if not ok:
             pg.draw.polygon(v, (255, 220, 90), [(s.x, s.y - 8), (s.x + 8, s.y), (s.x, s.y + 8), (s.x - 8, s.y)])
 
 def random_weapon():

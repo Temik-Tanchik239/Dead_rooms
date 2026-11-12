@@ -28,6 +28,7 @@ import spells
 import crossbow
 import bard
 import invisibility
+import inventory
 from maps import Campaign, Drop, END, random_weapon
 from mob import Mob, Corpse, normalize, spawn_boss, scale_boss_for_players
 from projectiles import Proj
@@ -451,7 +452,7 @@ class HostSession(Session):
         inp.pose = [_num(v) for v in pose] if isinstance(pose, list) and len(pose) == 7 else None
         p = s.players.get(pid)
         for ev in (msg.get("ev") or [])[:24]:
-            if p and p.hp > 0 and ev in s.g.ACTIONS: s.g.apply_action(p, ev)
+            if p and p.hp > 0 and s.g.valid_action(ev): s.g.apply_action(p, ev)
 
     def drop(s, pid):
         conn = s.conns.pop(pid, None)
@@ -706,7 +707,7 @@ class HostSession(Session):
                         "an": p.anim, "at": round(p.anim_t, 3), "ap": None if p.anim_p is None else round(p.anim_p, 3),
                         "hp": R(p.hp), "mhp": p.maxhp, "mp": R(p.mana), "mmp": p.maxmana, "mf": round(max(0, p.mana_flash), 2),
                         "inv": round(max(0, p.inv), 2), "atk": atk, "aim": [R(p.aim[0]), R(p.aim[1])] if p.aim else None,
-                        "sl": list(p.slots), "lw": p.last_weapon, "sc": cast,
+                        "sl": list(p.slots), "bg": list(getattr(p, "bag", [])), "eq": dict(getattr(p, "equip", {})), "lw": p.last_weapon, "sc": cast,
                         "sh": [round(p.shield_time, 2), p.shield_face, R(p.shield_hp)], "ch": chan, "hd": hd, "hr": hr,
                         "sk": list(p.skills), "si": p.skill_index, "cd": {k: round(v, 2) for k, v in p.skill_cooldowns.items() if v > 0},
                         "lv": p.level, "xp": p.xp, "xn": p.xp_next, "rv": round(p.revive, 2),
@@ -938,7 +939,7 @@ class ClientSession(Session):
         if r.locked != bool(sn["locked"]): r.set_lock(bool(sn["locked"]))
         r.cleared = bool(sn["cleared"])
         r.spawned = bool(sn.get("spawned", True))
-        r.drops = [Drop(x, y, wid) for x, y, wid in sn.get("drops", []) if wid in CFG["weapons_base"]]
+        r.drops = [Drop(x, y, wid) for x, y, wid in sn.get("drops", []) if inventory.is_item(wid)]
         g.done = bool(sn.get("done")); s.game_over = bool(sn.get("over"))
 
     # ---------- игроки ----------
@@ -989,7 +990,7 @@ class ClientSession(Session):
         p.hp, p.maxhp, p.mana, p.maxmana = ps["hp"], ps["mhp"], ps["mp"], ps["mmp"]
         p.mana_flash = max(p.mana_flash, ps["mf"]) if p.pid == s.my_id else ps["mf"]
         p.revive = ps.get("rv", 0); p.downed = p.hp <= 0
-        p.slots = list(ps["sl"])
+        p.slots = list(ps["sl"]); p.bag = list(ps.get("bg", getattr(p, "bag", []))); p.equip = dict(ps.get("eq", getattr(p, "equip", {})))   # рюкзак и экипировку (инвентарь) считает хост
         if p.pid != s.my_id or not s.predicting: p.last_weapon = ps["lw"]
         p.shield_time, p.shield_face, p.shield_hp = ps["sh"]
         p.skills, p.skill_index = list(ps["sk"]), ps["si"]

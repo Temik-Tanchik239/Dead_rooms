@@ -1,0 +1,475 @@
+{
+  "enabled": true,
+  "bag_size": 16,
+  "pickup_mode": "bag",
+  "quick_equip_button": "right",
+  "outside_click": "cancel",
+  "drop_key": "X",
+  "start_items": {
+    "default": [
+      "stub_helmet",
+      "stub_amulet",
+      "stub_glove",
+      "stub_glove",
+      "stub_belt",
+      "stub_boot",
+      "stub_boot",
+      "stub_artifact_red",
+      "stub_artifact_blue",
+      "stub_artifact_green"
+    ],
+    "knight": [
+      "iron_pike",
+      "short_bow",
+      "stub_helmet",
+      "stub_amulet",
+      "stub_glove",
+      "stub_glove",
+      "stub_belt",
+      "stub_boot"
+    ]
+  },
+  "background_image": "",
+  "overlay_color": [
+    5,
+    5,
+    14
+  ],
+  "overlay_alpha": 170,
+  "panel": {
+    "x": 20,
+    "y": 8,
+    "w": 920,
+    "h": 496,
+    "image": "ui/inventory_panel.png",
+    "color": [
+      22,
+      24,
+      36
+    ],
+    "alpha": 238,
+    "border_color": [
+      120,
+      110,
+      160
+    ],
+    "border_width": 2,
+    "radius": 10
+  },
+  "title": "ИНВЕНТАРЬ",
+  "title_size": 28,
+  "title_color": [
+    255,
+    220,
+    130
+  ],
+  "title_x": 24,
+  "title_y": 14,
+  "label_color": [
+    190,
+    190,
+    215
+  ],
+  "bag_label": "РЮКЗАК  {used}/{total}",
+  "bag_label_x": 290,
+  "bag_label_y": 58,
+  "hand_label": "В РУКАХ",
+  "hand_label_x": 630,
+  "hand_label_y": 58,
+  "bag": {
+    "x": 290,
+    "y": 84,
+    "cell": 72,
+    "gap": 6,
+    "columns": 4
+  },
+  "hand": {
+    "x": 630,
+    "y": 84,
+    "cell": 90,
+    "gap": 20
+  },
+  "hand_names": [
+    "ЛКМ",
+    "ПКМ"
+  ],
+  "slot_image": "ui/inventory_slot.png",
+  "hand_slot_image": "ui/inventory_slot_hand.png",
+  "slot_color": [
+    34,
+    38,
+    56
+  ],
+  "slot_border": [
+    88,
+    84,
+    120
+  ],
+  "slot_hover_border": [
+    255,
+    230,
+    150
+  ],
+  "slot_hover_tint": [
+    255,
+    255,
+    255,
+    26
+  ],
+  "slot_corner_radius": 6,
+  "valid_border": [
+    110,
+    220,
+    130
+  ],
+  "invalid_border": [
+    230,
+    90,
+    90
+  ],
+  "hold_alpha": 225,
+  "hold_icon_size": 56,
+  "msg_color": [
+    255,
+    150,
+    130
+  ],
+  "icon_size": 46,
+  "hand_icon_size": 64,
+  "show_names": true,
+  "name_color": [
+    225,
+    225,
+    240
+  ],
+  "hand_key_color": [
+    255,
+    230,
+    150
+  ],
+  "info": {
+    "x": 630,
+    "y": 196,
+    "w": 270,
+    "h": 214,
+    "color": [
+      16,
+      18,
+      28
+    ],
+    "alpha": 200,
+    "border_color": [
+      88,
+      84,
+      120
+    ],
+    "name_size": 18,
+    "text_color": [
+      200,
+      200,
+      220
+    ],
+    "stat_color": [
+      150,
+      205,
+      255
+    ]
+  },
+  "show_stats": true,
+  "stat_damage": "Урон: {damage}",
+  "stat_combo": "Ударов в серии: {steps}",
+  "stat_mana": "Мана: {mana}",
+  "stat_type": "Тип: {type}",
+  "types": {
+    "weapon": "Оружие",
+    "head": "Голова",
+    "neck": "Шея",
+    "glove": "Перчатка",
+    "belt": "Пояс",
+    "boot": "Ботинок",
+    "artifact": "Артефакт"
+  },
+  "empty_slot": "Пустой слот",
+  "slot_accepts": "Подходит: {types}",
+  "empty_info": "Наведи курсор на предмет",
+  "hint": "ЛКМ — взять / положить    ПКМ — надеть / снять    X — выбросить    Tab / Esc — закрыть",
+  "hint_holding": "ЛКМ — положить    ПКМ / Esc — отмена    X — выбросить",
+  "hint_no_hands": "ЛКМ — взять / положить    X — выбросить    Tab / Esc — закрыть",
+  "locked_label": "Занято",
+  "locked_color": [
+    200,
+    150,
+    150
+  ],
+  "locked_hint": {
+    "spellcaster": "ЛКМ занята заклинаниями. Оружие можно держать в правой руке (ПКМ).",
+    "bard": "ЛКМ занята игрой на гитаре. Оружие можно держать в правой руке (ПКМ).",
+    "crossbows": "Обе кнопки заняты арбалетами. Оружие в руках использовать нельзя, но его можно носить в рюкзаке.",
+    "default": "Эта рука занята."
+  },
+  "hint_x": 290,
+  "hint_y": 466,
+  "hint_color": [
+    160,
+    220,
+    175
+  ],
+  "rarities": {
+    "common": {
+      "name": "Обычное",
+      "color": [
+        170,
+        170,
+        185
+      ]
+    },
+    "rare": {
+      "name": "Редкое",
+      "color": [
+        90,
+        160,
+        255
+      ]
+    },
+    "epic": {
+      "name": "Эпическое",
+      "color": [
+        190,
+        110,
+        255
+      ]
+    },
+    "legendary": {
+      "name": "Легендарное",
+      "color": [
+        255,
+        170,
+        60
+      ]
+    }
+  },
+  "default_rarity": "common",
+  "items": {
+    "rusty_sword": {
+      "rarity": "common",
+      "description": "Ржавый, но надёжный меч. Быстрая серия из трёх взмахов."
+    },
+    "iron_pike": {
+      "rarity": "rare",
+      "description": "Длинная пика: колющий удар бьёт далеко вперёд."
+    },
+    "twin_daggers": {
+      "rarity": "rare",
+      "description": "Парные кинжалы. Короткая дистанция, зато серия из четырёх быстрых ударов."
+    },
+    "short_bow": {
+      "rarity": "common",
+      "description": "Короткий лук. Стреляет в курсор. Нужна мана."
+    },
+    "fire_flask": {
+      "rarity": "epic",
+      "description": "Склянка с горючей смесью. Взрывается при ударе и поджигает врагов."
+    },
+    "seeker_staff": {
+      "rarity": "epic",
+      "description": "Посох выпускает самонаводящийся шар, который сам находит цель."
+    },
+    "stub_helmet": {
+      "name": "Шлем-заглушка",
+      "type": "head",
+      "rarity": "common",
+      "description": "Заготовка под шлем. Пока ничего не даёт — бонусы и способности добавишь сам.",
+      "bonuses": {}
+    },
+    "stub_amulet": {
+      "name": "Амулет-заглушка",
+      "type": "neck",
+      "rarity": "rare",
+      "description": "Заготовка под амулет на шею.",
+      "bonuses": {}
+    },
+    "stub_glove": {
+      "name": "Перчатка-заглушка",
+      "type": "glove",
+      "rarity": "common",
+      "description": "Заготовка под перчатку. Подходит и левой, и правой руке.",
+      "bonuses": {}
+    },
+    "stub_belt": {
+      "name": "Пояс-заглушка",
+      "type": "belt",
+      "rarity": "common",
+      "description": "Заготовка под пояс.",
+      "bonuses": {}
+    },
+    "stub_boot": {
+      "name": "Ботинок-заглушка",
+      "type": "boot",
+      "rarity": "common",
+      "description": "Заготовка под ботинок. Подходит и левой, и правой ноге.",
+      "bonuses": {}
+    },
+    "stub_artifact_red": {
+      "name": "Рубиновый артефакт",
+      "type": "artifact",
+      "rarity": "rare",
+      "description": "Заготовка под артефакт. Ляжет в любой из трёх мультислотов.",
+      "bonuses": {}
+    },
+    "stub_artifact_blue": {
+      "name": "Сапфировый артефакт",
+      "type": "artifact",
+      "rarity": "epic",
+      "description": "Заготовка под артефакт. Ляжет в любой из трёх мультислотов.",
+      "bonuses": {}
+    },
+    "stub_artifact_green": {
+      "name": "Изумрудный артефакт",
+      "type": "artifact",
+      "rarity": "legendary",
+      "description": "Заготовка под артефакт. Ляжет в любой из трёх мультислотов.",
+      "bonuses": {}
+    }
+  },
+  "texts": {
+    "bag_full": "Рюкзак полон",
+    "equipped": "{name}",
+    "picked_bag": "+ {name}",
+    "dropped": "Выброшено: {name}",
+    "not_for_hero": "{name}: не для этого героя",
+    "hand_locked": "{name}: эта рука занята",
+    "not_weapon": "{name}: нельзя взять в руку",
+    "wrong_slot": "{name}: не подходит для этого слота",
+    "cannot_equip": "{name}: нельзя надеть"
+  },
+  "equipment": {
+    "label": "ЭКИПИРОВКА",
+    "label_x": 30,
+    "label_y": 58,
+    "multi_label": "АРТЕФАКТЫ",
+    "multi_label_x": 43,
+    "multi_label_y": 384,
+    "model": {
+      "image": "ui/inventory_skeleton.png",
+      "x": 30,
+      "y": 74,
+      "w": 200,
+      "h": 300
+    },
+    "slot_image": "",
+    "slot_color": [
+      16,
+      18,
+      30
+    ],
+    "slot_alpha": 150,
+    "slot_border": [
+      150,
+      140,
+      190
+    ],
+    "icon_scale": 0.78,
+    "slots": [
+      {
+        "id": "head",
+        "name": "Голова",
+        "accepts": [
+          "head"
+        ],
+        "x": 106,
+        "y": 80,
+        "size": 48
+      },
+      {
+        "id": "neck",
+        "name": "Шея",
+        "accepts": [
+          "neck"
+        ],
+        "x": 113,
+        "y": 125,
+        "size": 34
+      },
+      {
+        "id": "glove_l",
+        "name": "Левая перчатка",
+        "accepts": [
+          "glove"
+        ],
+        "x": 39,
+        "y": 259,
+        "size": 42
+      },
+      {
+        "id": "glove_r",
+        "name": "Правая перчатка",
+        "accepts": [
+          "glove"
+        ],
+        "x": 179,
+        "y": 259,
+        "size": 42
+      },
+      {
+        "id": "belt",
+        "name": "Пояс",
+        "accepts": [
+          "belt"
+        ],
+        "x": 109,
+        "y": 219,
+        "size": 42
+      },
+      {
+        "id": "boot_l",
+        "name": "Левый ботинок",
+        "accepts": [
+          "boot"
+        ],
+        "x": 87,
+        "y": 335,
+        "size": 42
+      },
+      {
+        "id": "boot_r",
+        "name": "Правый ботинок",
+        "accepts": [
+          "boot"
+        ],
+        "x": 131,
+        "y": 335,
+        "size": 42
+      },
+      {
+        "id": "art1",
+        "name": "Артефакт 1",
+        "accepts": [
+          "artifact"
+        ],
+        "x": 43,
+        "y": 404,
+        "size": 50
+      },
+      {
+        "id": "art2",
+        "name": "Артефакт 2",
+        "accepts": [
+          "artifact"
+        ],
+        "x": 105,
+        "y": 404,
+        "size": 50
+      },
+      {
+        "id": "art3",
+        "name": "Артефакт 3",
+        "accepts": [
+          "artifact"
+        ],
+        "x": 167,
+        "y": 404,
+        "size": 50
+      }
+    ]
+  }
+}

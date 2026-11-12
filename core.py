@@ -46,6 +46,8 @@ def reload_data():
         CFG["skill_menu"] = json.loads((ASSETS / "skill_menu.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         CFG["skill_menu"] = {}
+    # Инвентарь (рюкзак, смена оружия в руках, оформление окна Tab) — assets/inventory.json, см. inventory.py. Файл необязателен.
+    CFG["inventory"] = read_json(ASSETS / "inventory.json", {})
     # карты: data/maps/<id>.json, файлы на "_" (заготовки) не читаются
     CFG["map_defs"], CFG["map_errors"] = {}, []
     for f in sorted((DATA / "maps").glob("*.json")):

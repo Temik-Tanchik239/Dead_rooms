@@ -1,5 +1,5 @@
 {
-  "_help": "Персонажи. stats — правки data/player.json (любое поле: hp, speed, jump, dmg_mult, roll_speed, mana.max ...). weapons — [оружие ЛКМ, оружие ПКМ]. allowed_weapons — какое оружие может подбирать и выпадать (null — любое). base_skills — навыки с самого начала. skill_tree — ячейки экрана навыков по порядку: skill + unlock_level (можно lock_icon). skill_overrides / weapon_overrides — правки data/skills.json и data/weapons.json только для этого героя. assets — папка внешнего вида в assets (по умолчанию characters/<id>). model_scale — множитель размера спрайта героя (например 1.2); hitbox — [ширина, высота] физического хитбокса в пикселях. Эти параметры независимы и задаются отдельно для каждого персонажа. crossbows — арбалетчик (Тень): два мини-арбалета вместо оружия, виды снарядов — навыки category ammo, см. crossbow.py. bard — бард: гитара вместо оружия, ноты (навыки category note: effect heal/mana/stun/damage, radius, tick, amount, mana_cost в секунду), см. bard.py.",
+  "_help": "Персонажи. stats — правки data/player.json (любое поле: hp, speed, jump, dmg_mult, roll_speed, mana.max ...). weapons — [оружие ЛКМ, оружие ПКМ]. allowed_weapons — какое оружие может подбирать и выпадать (null — любое, [] — оружие герою не выпадает). weapon_hands — [ЛКМ, ПКМ], true/false: можно ли держать оружие в этой руке (нет поля — по классу: маг/инженер и бард — только ПКМ, Тень — ни одной, остальные — обе); см. inventory.py. base_skills — навыки с самого начала. skill_tree — ячейки экрана навыков по порядку: skill + unlock_level (можно lock_icon). skill_overrides / weapon_overrides — правки data/skills.json и data/weapons.json только для этого героя. assets — папка внешнего вида в assets (по умолчанию characters/<id>). model_scale — множитель размера спрайта героя (например 1.2); hitbox — [ширина, высота] физического хитбокса в пикселях. Эти параметры независимы и задаются отдельно для каждого персонажа. crossbows — арбалетчик (Тень): два мини-арбалета вместо оружия, виды снарядов — навыки category ammo, см. crossbow.py. bard — бард: гитара вместо оружия, ноты (навыки category note: effect heal/mana/stun/damage, radius, tick, amount, mana_cost в секунду), см. bard.py.",
   "default": "bard",
   "order": [
     "bard",
@@ -54,7 +54,7 @@
         }
       },
       "weapons": [],
-      "allowed_weapons": [],
+      "allowed_weapons": null,
       "base_skills": [
         "guitar_pick",
         "amp"
@@ -197,7 +197,7 @@
         }
       },
       "weapons": [],
-      "allowed_weapons": [],
+      "allowed_weapons": null,
       "base_skills": [
         "telekinesis",
         "telekinesis_cone",
@@ -282,7 +282,7 @@
         }
       },
       "weapons": [],
-      "allowed_weapons": [],
+      "allowed_weapons": null,
       "base_skills": [
         "black_hole",
         "chain_lightning",

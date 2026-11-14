@@ -301,5 +301,62 @@
       }
     ],
     "xp": 120
+  },
+  "wraith": {
+    "name": "Пепельный призрак",
+    "hp": 34,
+    "w": 24,
+    "h": 34,
+    "speed": 95,
+    "color": [
+      170,
+      195,
+      225
+    ],
+    "weight": 2,
+    "flies": true,
+    "mass": 1.5,
+    "contact": 7,
+    "draw": [
+      44,
+      52
+    ],
+    "skin": "mobs/wraith/wraith.png",
+    "move": {
+      "type": "chase",
+      "speed": 85,
+      "sight": 320,
+      "offset_y": -10
+    },
+    "attacks": [
+      {
+        "type": "melee",
+        "windup": 0.5,
+        "active": 0.12,
+        "recovery": 0.45,
+        "cooldown": 1.5,
+        "damage": 15,
+        "reach": [
+          42,
+          34
+        ],
+        "lunge": 210,
+        "knockback": 240
+      }
+    ],
+    "invisible": {
+      "transparency": 92,
+      "break_on_attack": true
+    },
+    "light": {
+      "color": [
+        150,
+        190,
+        255
+      ],
+      "radius": 80,
+      "intensity": 0.4
+    },
+    "xp": 120
   }
 }

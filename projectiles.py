@@ -64,7 +64,16 @@ class Proj:
             dd = math.hypot(m.cx - s.x, m.cy - s.y)
             if dd < bd: bd, best = dd, m
         return best
-    def targets(s, w): return w.mobs if s.friendly else (getattr(w, "players", None) or [w.pl])   # мультиплеер: все живые игроки
+    def targets(s, w): return w.mobs if s.friendly else (getattr(w, "players", None) or [w.pl])   # мультиплеер: все живые игроки (за ними же гонятся самонаводящиеся и цепные пули)
+    def hit_targets(s, w):
+        """Кого пуля может задеть: цели + ящики комнаты (ящики стоят в стороне от targets, чтобы на них не наводились и не перескакивали)."""
+        t = s.targets(w)
+        return t + list(getattr(w, "containers", ())) if s.friendly else t
+    def wall_hit(s, w):
+        """Пуля упёрлась в стену: если в этой клетке ящик — бьём ящик (его клетки в сетке считаются стеной)."""
+        if not s.friendly: return
+        for ct in getattr(w, "containers", ()):
+            if id(ct) not in s.hit and ct.rect.collidepoint(s.x, s.y): s.hit.add(id(ct)); s.damage(ct, w, sign(s.vx) or 1); return
     def damage(s, target, w, kb_dir):
         if s.friendly:
             stop = w.fx.stop
@@ -83,7 +92,7 @@ class Proj:
             sh = s.d.get("shake", .15)   # тряска экрана от взрыва (сек), 0 — без тряски
             if sh: w.fx.shake = float(sh)
             w.fx.ring(s.x, s.y, s.aoe)
-            for m in s.targets(w):
+            for m in s.hit_targets(w):
                 if (m.collides_circle(s.x, s.y, s.aoe) if hasattr(m, "collides_circle") else circle_hits_rect(s.x, s.y, s.aoe, m.rect)): s.damage(m, w, sign(m.cx - s.x) or 1)
         for key, fn in DEATH.items():
             if key in s.d: fn(s, s.d[key], w)
@@ -95,18 +104,18 @@ class Proj:
         s.vy += s.g * dt; damp = s.d.get("bounce_damp", .8)
         s.x += s.vx * dt
         if solid(w.g, int(s.x // T), int(s.y // T)):
-            s.x -= s.vx * dt
+            s.wall_hit(w); s.x -= s.vx * dt
             if s.bounces <= 0: return s.die(w)
             s.vx *= -damp; s.bounces -= 1
         s.y += s.vy * dt
         if solid(w.g, int(s.x // T), int(s.y // T)):
-            s.y -= s.vy * dt
+            s.wall_hit(w); s.y -= s.vy * dt
             if s.bounces <= 0: return s.die(w)
             s.vy *= -damp; s.bounces -= 1
         s.life -= dt
         if s.life <= 0: return s.die(w)
         box = pg.Rect(int(s.x - s.r), int(s.y - s.r), 2 * s.r, 2 * s.r)
-        for m in s.targets(w):
+        for m in s.hit_targets(w):
             if id(m) in s.hit or not (m.collides_rect(box) if hasattr(m, "collides_rect") else box.colliderect(m.rect)): continue
             if not s.friendly and getattr(m, "state", "") == "roll": continue   # перекат проходит сквозь пули
             s.hit.add(id(m))

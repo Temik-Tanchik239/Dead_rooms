@@ -3,6 +3,14 @@ import json
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, colorchooser
 from pathlib import Path
+try:
+    from container_panel import ContainerPanel   # панель «Ящики и сундуки»; без неё редактор работает как раньше
+except Exception:
+    import traceback; traceback.print_exc(); ContainerPanel = None
+try:
+    from decor_panel import DecorPanel   # панель «Мелкие детали» (пиксельная точность); без неё редактор работает как раньше
+except Exception:
+    import traceback; traceback.print_exc(); DecorPanel = None
 
 ROOT = Path(__file__).resolve().parent
 MAP_DIR = ROOT / "data" / "maps"
@@ -160,6 +168,8 @@ class Editor:
         self.morg_offset = {sid: list(d.get("offset", [0, 0])) for sid, d in self.slots.items()}   # клетки от головы
         self.morg_head = None      # [x, y] 0..1 или None (голова по маркеру C/B либо по умолчанию)
         self.morg_touched = False
+        self.dpanel = None                         # мелкие детали с пиксельной точностью (decor_panel.py)
+        self.containers = []; self.cpanel = None   # ящики и сундуки карты (список записей, см. container_panel.py)
         self._load_preview_images()
         self._ui(); self._draw_all()
 
@@ -204,7 +214,7 @@ class Editor:
         ttk.Spinbox(bar2, from_=0, to=100, increment=5, textvariable=self.darkness_var, width=5).pack(side="left", padx=4)
         ttk.Label(bar2, text="пусто — авто: темно, только если на карте есть блоки света (* факел, o фонарь, + кристалл, % сфера); 0 — светло").pack(side="left", padx=6)
         board = ttk.Frame(right); board.pack(fill="both", expand=True)
-        self.canvas = tk.Canvas(board, width=800, height=520, bg="#15151b", scrollregion=(0, 0, self.map_w*CELL, self.map_h*CELL), highlightthickness=0)
+        self.canvas = tk.Canvas(board, width=800, height=300, bg="#15151b", scrollregion=(0, 0, self.map_w*CELL, self.map_h*CELL), highlightthickness=0)
         sx = ttk.Scrollbar(board, orient="horizontal", command=self.canvas.xview); sy = ttk.Scrollbar(board, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(xscrollcommand=sx.set, yscrollcommand=sy.set)
         self.canvas.grid(row=0, column=0, sticky="nsew"); sy.grid(row=0, column=1, sticky="ns"); sx.grid(row=1, column=0, sticky="ew")
@@ -214,6 +224,16 @@ class Editor:
         ttk.Label(right, textvariable=self.status, wraplength=800).pack(fill="x", pady=(8, 0))
         ttk.Label(right, text="Размер сетки настраивается сверху (от 5×5 до 300×300 клеток). ЛКМ — рисовать, ПКМ — стереть. Разные варианты платформ/стен/лестниц/шипов выбираются в палитре.").pack(anchor="w", pady=(4, 0))
         self._morgart_panel(right)
+        if ContainerPanel is not None:
+            try: self.cpanel = ContainerPanel(self, right, ROOT, CELL, PALETTE)
+            except Exception:
+                import traceback; traceback.print_exc(); self.cpanel = None
+        if DecorPanel is not None:
+            try:
+                self.dpanel = DecorPanel(self, right, ROOT, CELL, PALETTE)
+                self.canvas.bind("<ButtonRelease-1>", lambda e: self.dpanel.release(e) if self.dpanel.active() else None)
+            except Exception:
+                import traceback; traceback.print_exc(); self.dpanel = None
 
     def _morgart_panel(self, parent):
         box = ttk.LabelFrame(parent, text="Моргарт: голова и руки (положение рук — относительно головы)", padding=5)
@@ -287,7 +307,9 @@ class Editor:
             for x, ch in enumerate(row):
                 self._draw_cell(x, y, ch)
         self.canvas.tag_lower("background")
+        if self.dpanel: self.dpanel.draw()          # мелкие детали: «позади» — под клетками, «поверх» — над ними
         self._draw_morgart_anchors()
+        if self.cpanel: self.cpanel.draw()
 
     # ---------- Моргарт ----------
     def _boss_marker(self):
@@ -353,6 +375,7 @@ class Editor:
 
     def _morg_mode_changed(self):
         if self.morg_mode.get():
+            if self.dpanel: self.dpanel.mode.set(False); self.dpanel.body.pack_forget()
             self.status.set("Режим Моргарта: выбери часть справа (голова / рука) и щёлкни или перетащи по карте. Клетки не рисуются.")
         else:
             self.status.set("Режим рисования клеток.")
@@ -514,6 +537,13 @@ class Editor:
         if self.morg_mode.get():
             self.morgart_click(event, press="Press" in str(getattr(event, "type", "")) or str(getattr(event, "type", "")) == "4")
             return
+        if self.dpanel and self.dpanel.active():   # режим деталей: нажатие ставит/хватает, протягивание двигает
+            if "Press" in str(getattr(event, "type", "")) or str(getattr(event, "type", "")) == "4": self.dpanel.press(event)
+            else: self.dpanel.motion_drag(event)
+            return
+        if self.cpanel and self.cpanel.active():   # режим ящиков: ставим/выбираем только по нажатию, а не при протягивании
+            if "Press" in str(getattr(event, "type", "")) or str(getattr(event, "type", "")) == "4": self.cpanel.click(event)
+            return
         x, y = self._cell_from_event(event)
         if 0 <= x < self.map_w and 0 <= y < self.map_h:
             ch = self.brush.get()
@@ -526,6 +556,8 @@ class Editor:
             self._draw_all(); self.status.set(f"Клетка ({x}, {y}): {label}")
 
     def erase(self, event):
+        if self.dpanel and self.dpanel.active(): self.dpanel.erase(event); return   # режим деталей: ПКМ убирает деталь
+        if self.cpanel and self.cpanel.active(): self.cpanel.erase(event); return   # режим ящиков: ПКМ убирает ящик
         self.rows_at(event, ".")
 
     def rows_at(self, event, ch):
@@ -550,13 +582,18 @@ class Editor:
         self.rows = [[old_rows[y][x] if y < len(old_rows) and x < len(old_rows[y]) else "."
                       for x in range(new_w)] for y in range(new_h)]
         self.map_w, self.map_h = new_w, new_h
+        if self.cpanel: self.cpanel.crop(new_w, new_h)
+        if self.dpanel: self.dpanel.crop(new_w, new_h)
         self.canvas.configure(scrollregion=(0, 0, self.map_w * CELL, self.map_h * CELL))
         self._draw_all()
         self.status.set(f"Размер карты: {self.map_w}×{self.map_h} клеток")
 
     def clear(self):
         if messagebox.askyesno("Очистить карту", "Очистить всю сетку?"):
-            self.rows = [["." for _ in range(self.map_w)] for _ in range(self.map_h)]; self._draw_all()
+            self.rows = [["." for _ in range(self.map_w)] for _ in range(self.map_h)]
+            if self.cpanel: self.cpanel.reset()
+            if self.dpanel: self.dpanel.reset()
+            self._draw_all()
 
     def open_map(self):
         path = filedialog.askopenfilename(initialdir=MAP_DIR, filetypes=[("JSON карты", "*.json")])
@@ -577,7 +614,10 @@ class Editor:
             bg_label = {"ruins.png": "Руины", "cave.png": "Пещера", "crypt.png": "Склеп", "bricks_tile.png": "Кирпичная плитка"}.get(bg_name, "Без фона")
             self.background.set(bg_label)
             self.map_id.set(Path(path).stem); self.name.set(data.get("name", Path(path).stem))
-            self._morg_load(data.get("morgart_layout")); self._draw_all()
+            self._morg_load(data.get("morgart_layout"))
+            if self.cpanel: self.cpanel.load(data.get("containers"))
+            if self.dpanel: self.dpanel.load(data.get("decor"))
+            self._draw_all()
             self.status.set(f"Загружена карта: {path}")
         except Exception as e: messagebox.showerror("Ошибка", f"Не удалось открыть карту:\n{e}")
 
@@ -615,6 +655,14 @@ class Editor:
             if ch in self.custom: legend[ch] = self.custom[ch]
         data["legend"] = legend
         if self.morg_touched or "morgart_layout" in self.meta: data["morgart_layout"] = self._morg_layout()
+        if self.cpanel:   # ящики и сундуки: расстановка и содержимое
+            boxes = self.cpanel.dump()
+            if boxes: data["containers"] = boxes
+            else: data.pop("containers", None)
+        if self.dpanel:   # мелкие детали (пиксельные координаты)
+            decor = self.dpanel.dump()
+            if decor: data["decor"] = decor
+            else: data.pop("decor", None)
         try:
             path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             if MAP_CONFIG.exists():

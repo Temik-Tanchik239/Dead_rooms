@@ -17,6 +17,11 @@ data/maps/<id>.json — одна карта: сетка произвольног
   sprite  — картинка клетки из assets (иначе стандартная отрисовка типа), draw [w, h], offset [x, y], color [r, g, b]
   damage  — урон шипов
   light   — блок света: "torch" | "lantern" | "crystal" | "orb" или свой словарь (подробно — lighting.py)
+decor (список в файле карты, не легенда) — мелкие детали с пиксельной точностью, чисто картинки без физики:
+  {"sprite": "environment/wall_1.png", "x": 330, "y": 478, "w": 12, "h": 12, "flip": true, "z": "back"}
+  x, y — левый верхний угол в пикселях карты (клетка = 32 px); w, h — размер (по умолчанию 32); flip — отразить;
+  z — "back": под клетками карты, иначе поверх. Ставятся в редакторе карт (панель «Мелкие детали», decor_panel.py).
+Ящики и сундуки — не символы легенды, а список "containers" в файле карты (ставятся в редакторе, см. containers.py).
 """
 import math, random
 import pygame as pg
@@ -24,6 +29,7 @@ from core import CFG, T, COLS, ROWS, MW
 from anim import sprite, image
 import weapon
 import lighting
+import containers
 from mob import Mob, spawn_boss
 
 END = "__end__"
@@ -159,6 +165,7 @@ class GameMap:
                 if wid in CFG["weapons"]: s.drops.append(Drop(c * T + T / 2, (r + 1) * T - 14, wid))
         s.exits = s.find_exits()
         s.lights = lighting.find_lights(s)   # блоки света: факелы, фонари, кристаллы, сферы
+        s.containers = containers.create(s)   # ящики и сундуки карты (их клетки в физической сетке — стена, см. build)
         s.build()
 
     def cells(s):
@@ -191,6 +198,7 @@ class GameMap:
         if s.locked:
             for z in s.exits:
                 for c, r in z["cells"]: s.g[r][c] = "D"
+        containers.block(s)   # живые ящики не пропускают ни игрока, ни мобов, ни пули
         s.layer = s.render()
 
     # ---------- отрисовка ----------
@@ -207,6 +215,7 @@ class GameMap:
         if dim:
             sh = pg.Surface(surf.get_size(), pg.SRCALPHA); sh.fill((0, 0, 0, int(255 * dim))); surf.blit(sh, (0, 0))
         tiles = dict(CFG["maps"].get("tiles", {})); tiles.update(md.get("tiles", {}))
+        s.draw_decor(surf, "back")   # мелкие детали «позади клеток»
         for c, r, e in s.cells():
             X, Y = c * T, r * T
             if s.g[r][c] == "D": draw_default(surf, "D", X, Y, None); continue
@@ -225,7 +234,17 @@ class GameMap:
                 img = sprite(spr, dw, dh, e.get("flip", False))
                 if img: surf.blit(img, (X + ox, Y + T - dh + oy)); continue
             draw_default(surf, s.g[r][c], X, Y, e.get("color"))
+        s.draw_decor(surf, "front")  # мелкие детали «поверх клеток»
         return surf
+
+    def draw_decor(s, surf, z):
+        """Мелкие детали карты (список "decor"): картинка, x/y — пиксели карты, w/h, flip. z: "back" — под клетками, иначе поверх."""
+        for d in s.d.get("decor") or []:
+            try:
+                if (d.get("z") == "back") != (z == "back"): continue
+                img = sprite(d["sprite"], int(d.get("w", T)), int(d.get("h", T)), bool(d.get("flip", False)))
+                if img: surf.blit(img, (int(d["x"]), int(d["y"])))
+            except (KeyError, TypeError, ValueError, AttributeError): continue
 
     # ---------- выходы и прибытие ----------
     def exit_at(s, x, y):
@@ -345,6 +364,10 @@ class GameMap:
             s.mobs.append(Mob(kind, c * T + (T - d["w"]) / 2, r * T + T - d["h"], s.scale))
         if not s.mobs: s.cleared = True
 
+    def base_cell(s, c, r):
+        """Физика клетки без ящиков (то, что лежит в клетке по карте) — нужна, когда ящик сломан."""
+        return PHYS.get(s.info[r][c]["type"], ".")
+
     def set_lock(s, on):
         if s.locked != on: s.locked = on; s.build()
 
@@ -444,6 +467,10 @@ def check():
                 out.append(f"{mid}: '{ch}' — непонятный цвет света {li['color']} (пример: \"красный\", \"green\", [255, 80, 40], \"#ff8040\")")
         for key in ("background",):
             if md.get(key) and not image(md[key]): out.append(f"{mid}: нет картинки assets/{md[key]}")
+        for i, d in enumerate(md.get("decor") or []):
+            if not isinstance(d, dict) or not d.get("sprite") or not all(isinstance(d.get(k), (int, float)) for k in ("x", "y")):
+                out.append(f"{mid}: decor №{i + 1} — нужны sprite, x и y"); continue
+            if not image(d["sprite"]): out.append(f"{mid}: decor №{i + 1} — нет картинки assets/{d['sprite']}")
     for mid in defs:   # переходы: ведут ли выходы куда надо и есть ли выход обратно
         for ch, ex in used_exits(mid):
             if not valid_exit(ex, defs): continue

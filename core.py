@@ -46,6 +46,8 @@ def reload_data():
         CFG["skill_menu"] = json.loads((ASSETS / "skill_menu.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         CFG["skill_menu"] = {}
+    # Ящики и сундуки (типы, прочность, содержимое по умолчанию) — data/containers.json, см. containers.py. Файл необязателен.
+    CFG["containers"] = read_json(DATA / "containers.json", {})
     # Инвентарь (рюкзак, смена оружия в руках, оформление окна Tab) — assets/inventory.json, см. inventory.py. Файл необязателен.
     CFG["inventory"] = read_json(ASSETS / "inventory.json", {})
     # карты: data/maps/<id>.json, файлы на "_" (заготовки) не читаются

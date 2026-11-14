@@ -1,0 +1,38 @@
+{
+  "_help": "Типы ящиков и сундуков (см. containers.py). Расстановка и содержимое каждого ящика на карте — в редакторе карт (вкладка «Карты», панель «Ящики и сундуки»). w, h — размер в клетках; hp — прочность; interact: break — ломается от ударов, open — открывается на E (удары не вредят), both — и то, и другое; skin / skin_open — картинки в assets (нет файла — рисуется запасной вариант), draw [ширина, высота] и offset [x, y] — размер и сдвиг картинки (низ картинки = низ ящика); color — цвет запасного рисунка и обломков; loot — содержимое по умолчанию (в редакторе его можно переопределить для каждого ящика): item — id оружия, id предмета из assets/inventory.json -> items или random_weapon, chance — шанс 0..1, min / max — сколько штук; loot_mode: independent — каждый пункт бросает свой шанс, pick_one — выпадает не более одного пункта; spread — разброс предметов на полу (px); empty_text — надпись, если ничего не выпало; open_text — подсказка у сундука; reach — на каком расстоянии от сундука работает E (px).",
+  "containers": {
+    "wooden_crate": {
+      "name": "Деревянный ящик", "w": 1, "h": 1, "hp": 20, "interact": "break",
+      "skin": "containers/wooden_crate.png", "color": [150, 105, 60],
+      "loot_mode": "independent",
+      "loot": [
+        {"item": "random_weapon", "chance": 0.12},
+        {"item": "stub_artifact_red", "chance": 0.1},
+        {"item": "stub_boot", "chance": 0.1}
+      ]
+    },
+    "big_crate": {
+      "name": "Большой ящик", "w": 2, "h": 2, "hp": 45, "interact": "break",
+      "skin": "containers/big_crate.png", "color": [135, 95, 55],
+      "loot_mode": "independent",
+      "loot": [
+        {"item": "random_weapon", "chance": 0.25},
+        {"item": "stub_helmet", "chance": 0.2},
+        {"item": "stub_glove", "chance": 0.2, "min": 1, "max": 2},
+        {"item": "stub_artifact_blue", "chance": 0.12}
+      ]
+    },
+    "chest": {
+      "name": "Сундук", "w": 2, "h": 1, "hp": 60, "interact": "both",
+      "skin": "containers/chest.png", "skin_open": "containers/chest_open.png", "draw": [64, 40], "color": [170, 120, 60],
+      "open_text": "Открыть сундук", "empty_text": "Пусто",
+      "loot_mode": "independent",
+      "loot": [
+        {"item": "random_weapon", "chance": 0.5},
+        {"item": "stub_amulet", "chance": 0.4},
+        {"item": "stub_belt", "chance": 0.4},
+        {"item": "stub_artifact_green", "chance": 0.25}
+      ]
+    }
+  }
+}

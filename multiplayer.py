@@ -29,6 +29,7 @@ import crossbow
 import bard
 import invisibility
 import inventory
+import containers
 from maps import Campaign, Drop, END, random_weapon
 from mob import Mob, Corpse, normalize, spawn_boss, scale_boss_for_players
 from projectiles import Proj
@@ -602,7 +603,7 @@ class HostSession(Session):
             if inp.mb[0]: p.press("a1")
             if inp.mb[1]: p.press("a2")
             p.drops = r.drops   # телекинез дотягивается до предметов на полу
-            p.update(dt, inp.keys, r.g, r.mobs, g.projs, fx); p.update_anim(dt)
+            p.update(dt, inp.keys, r.g, r.mobs + r.containers, g.projs, fx); p.update_anim(dt)   # ящики — тоже цели
             if inp.pose and p.pid != s.my_id:
                 # Движение своего героя клиент считает сам (без задержки сети); хост между пакетами
                 # продолжает его по последним клавишам, а пришедшее положение принимает как точное.
@@ -613,7 +614,7 @@ class HostSession(Session):
         bard.PLAYERS = None   # обратно: вне обновления игроков ноты достают только до самого барда (и предсказание клиента не трогает чужих)
         alive = [p for p in players if p.hp > 0]
         if alive:
-            w = SimpleNamespace(g=r.g, pl=alive[0], players=alive, mobs=r.mobs, projs=g.projs, fx=fx)
+            w = SimpleNamespace(g=r.g, pl=alive[0], players=alive, mobs=r.mobs, containers=r.containers, projs=g.projs, fx=fx)
             for m in r.mobs:
                 w.pl = invisibility.pick_target(alive, m)   # моб видит ближайшего видимого игрока (невидимых — см. invisibility.py)
                 m.update(dt, w)
@@ -625,6 +626,7 @@ class HostSession(Session):
                     if xp: g.award_xp(p, xp, fx)          # опыт за уничтоженные руки босса
             for q in g.projs: q.update(dt, w)
         g.projs = [q for q in g.projs if not q.dead]
+        containers.sweep(r, fx)   # сломанные ящики: освобождают клетки и роняют содержимое
         for m in r.mobs:
             if m.hp <= 0:
                 if not getattr(m, "xp_paid", False):
@@ -718,7 +720,7 @@ class HostSession(Session):
                 "prog": {mid: [m.visited, m.cleared] for mid, m in g.camp.maps.items()},
                 "done": g.done, "over": s.game_over, "pl": pls, "mobs": mobs,
                 "corpses": [[c.kind, c.dir, c.rect.x, c.rect.y, c.rect.w, c.rect.h, round(c.t, 3)] for c in r.corpses],
-                "projs": projs, "styles": styles, "drops": [[R(d.x), R(d.y), d.wid] for d in r.drops],
+                "projs": projs, "styles": styles, "drops": [[R(d.x), R(d.y), d.wid] for d in r.drops], "ct": containers.state(r),
                 "fx": [[k, R(x), R(y), R(d) if isinstance(d, (int, float)) else d, round(t, 3)] for k, x, y, d, t in g.fx.items]}
 
     _nid = 0
@@ -927,6 +929,7 @@ class ClientSession(Session):
     def apply_world(s, sn):
         """Карта, двери, предметы и итоги забега — по самому свежему снимку."""
         g = s.g
+        containers.ROLL_SPAWN = False   # какие ящики появились, решает хост; клиент создаёт все и убирает лишние по снимку
         if s.camp is None or s.camp.loop != sn["loop"]:
             s.camp = Campaign(sn["loop"]); s.mobs = {}
         g.camp = s.camp
@@ -940,6 +943,7 @@ class ClientSession(Session):
         r.cleared = bool(sn["cleared"])
         r.spawned = bool(sn.get("spawned", True))
         r.drops = [Drop(x, y, wid) for x, y, wid in sn.get("drops", []) if inventory.is_item(wid)]
+        containers.apply_state(r, sn.get("ct"))   # ящики и сундуки: что сломано / открыто, прочность
         g.done = bool(sn.get("done")); s.game_over = bool(sn.get("over"))
 
     # ---------- игроки ----------

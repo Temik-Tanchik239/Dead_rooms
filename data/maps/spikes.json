@@ -9,7 +9,8 @@
  "mob_pool": {
   "bat": 3,
   "wisp": 2,
-  "bone_caster": 1
+  "bone_caster": 1,
+  "wraith": 1
  },
  "legend": {
   "x": {

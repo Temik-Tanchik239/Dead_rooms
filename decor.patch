@@ -1,0 +1,176 @@
+--- a/map_editor.py	2026-11-13 19:23:56.692833872 +0000
++++ b/map_editor.py	2026-11-13 19:24:13.319945091 +0000
+@@ -7,6 +7,10 @@
+     from container_panel import ContainerPanel   # панель «Ящики и сундуки»; без неё редактор работает как раньше
+ except Exception:
+     import traceback; traceback.print_exc(); ContainerPanel = None
++try:
++    from decor_panel import DecorPanel   # панель «Мелкие детали» (пиксельная точность); без неё редактор работает как раньше
++except Exception:
++    import traceback; traceback.print_exc(); DecorPanel = None
+ 
+ ROOT = Path(__file__).resolve().parent
+ MAP_DIR = ROOT / "data" / "maps"
+@@ -164,6 +168,7 @@
+         self.morg_offset = {sid: list(d.get("offset", [0, 0])) for sid, d in self.slots.items()}   # клетки от головы
+         self.morg_head = None      # [x, y] 0..1 или None (голова по маркеру C/B либо по умолчанию)
+         self.morg_touched = False
++        self.dpanel = None                         # мелкие детали с пиксельной точностью (decor_panel.py)
+         self.containers = []; self.cpanel = None   # ящики и сундуки карты (список записей, см. container_panel.py)
+         self._load_preview_images()
+         self._ui(); self._draw_all()
+@@ -223,6 +228,12 @@
+             try: self.cpanel = ContainerPanel(self, right, ROOT, CELL, PALETTE)
+             except Exception:
+                 import traceback; traceback.print_exc(); self.cpanel = None
++        if DecorPanel is not None:
++            try:
++                self.dpanel = DecorPanel(self, right, ROOT, CELL, PALETTE)
++                self.canvas.bind("<ButtonRelease-1>", lambda e: self.dpanel.release(e) if self.dpanel.active() else None)
++            except Exception:
++                import traceback; traceback.print_exc(); self.dpanel = None
+ 
+     def _morgart_panel(self, parent):
+         box = ttk.LabelFrame(parent, text="Моргарт: голова и руки (положение рук — относительно головы)", padding=5)
+@@ -296,6 +307,7 @@
+             for x, ch in enumerate(row):
+                 self._draw_cell(x, y, ch)
+         self.canvas.tag_lower("background")
++        if self.dpanel: self.dpanel.draw()          # мелкие детали: «позади» — под клетками, «поверх» — над ними
+         self._draw_morgart_anchors()
+         if self.cpanel: self.cpanel.draw()
+ 
+@@ -363,6 +375,7 @@
+ 
+     def _morg_mode_changed(self):
+         if self.morg_mode.get():
++            if self.dpanel: self.dpanel.mode.set(False); self.dpanel.body.pack_forget()
+             self.status.set("Режим Моргарта: выбери часть справа (голова / рука) и щёлкни или перетащи по карте. Клетки не рисуются.")
+         else:
+             self.status.set("Режим рисования клеток.")
+@@ -524,6 +537,10 @@
+         if self.morg_mode.get():
+             self.morgart_click(event, press="Press" in str(getattr(event, "type", "")) or str(getattr(event, "type", "")) == "4")
+             return
++        if self.dpanel and self.dpanel.active():   # режим деталей: нажатие ставит/хватает, протягивание двигает
++            if "Press" in str(getattr(event, "type", "")) or str(getattr(event, "type", "")) == "4": self.dpanel.press(event)
++            else: self.dpanel.motion_drag(event)
++            return
+         if self.cpanel and self.cpanel.active():   # режим ящиков: ставим/выбираем только по нажатию, а не при протягивании
+             if "Press" in str(getattr(event, "type", "")) or str(getattr(event, "type", "")) == "4": self.cpanel.click(event)
+             return
+@@ -539,6 +556,7 @@
+             self._draw_all(); self.status.set(f"Клетка ({x}, {y}): {label}")
+ 
+     def erase(self, event):
++        if self.dpanel and self.dpanel.active(): self.dpanel.erase(event); return   # режим деталей: ПКМ убирает деталь
+         if self.cpanel and self.cpanel.active(): self.cpanel.erase(event); return   # режим ящиков: ПКМ убирает ящик
+         self.rows_at(event, ".")
+ 
+@@ -565,6 +583,7 @@
+                       for x in range(new_w)] for y in range(new_h)]
+         self.map_w, self.map_h = new_w, new_h
+         if self.cpanel: self.cpanel.crop(new_w, new_h)
++        if self.dpanel: self.dpanel.crop(new_w, new_h)
+         self.canvas.configure(scrollregion=(0, 0, self.map_w * CELL, self.map_h * CELL))
+         self._draw_all()
+         self.status.set(f"Размер карты: {self.map_w}×{self.map_h} клеток")
+@@ -573,6 +592,7 @@
+         if messagebox.askyesno("Очистить карту", "Очистить всю сетку?"):
+             self.rows = [["." for _ in range(self.map_w)] for _ in range(self.map_h)]
+             if self.cpanel: self.cpanel.reset()
++            if self.dpanel: self.dpanel.reset()
+             self._draw_all()
+ 
+     def open_map(self):
+@@ -596,6 +616,7 @@
+             self.map_id.set(Path(path).stem); self.name.set(data.get("name", Path(path).stem))
+             self._morg_load(data.get("morgart_layout"))
+             if self.cpanel: self.cpanel.load(data.get("containers"))
++            if self.dpanel: self.dpanel.load(data.get("decor"))
+             self._draw_all()
+             self.status.set(f"Загружена карта: {path}")
+         except Exception as e: messagebox.showerror("Ошибка", f"Не удалось открыть карту:\n{e}")
+@@ -638,6 +659,10 @@
+             boxes = self.cpanel.dump()
+             if boxes: data["containers"] = boxes
+             else: data.pop("containers", None)
++        if self.dpanel:   # мелкие детали (пиксельные координаты)
++            decor = self.dpanel.dump()
++            if decor: data["decor"] = decor
++            else: data.pop("decor", None)
+         try:
+             path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+             if MAP_CONFIG.exists():
+--- a/maps.py	2026-11-13 19:23:56.692973221 +0000
++++ b/maps.py	2026-11-13 19:24:13.321344240 +0000
+@@ -17,6 +17,10 @@
+   sprite  — картинка клетки из assets (иначе стандартная отрисовка типа), draw [w, h], offset [x, y], color [r, g, b]
+   damage  — урон шипов
+   light   — блок света: "torch" | "lantern" | "crystal" | "orb" или свой словарь (подробно — lighting.py)
++decor (список в файле карты, не легенда) — мелкие детали с пиксельной точностью, чисто картинки без физики:
++  {"sprite": "environment/wall_1.png", "x": 330, "y": 478, "w": 12, "h": 12, "flip": true, "z": "back"}
++  x, y — левый верхний угол в пикселях карты (клетка = 32 px); w, h — размер (по умолчанию 32); flip — отразить;
++  z — "back": под клетками карты, иначе поверх. Ставятся в редакторе карт (панель «Мелкие детали», decor_panel.py).
+ Ящики и сундуки — не символы легенды, а список "containers" в файле карты (ставятся в редакторе, см. containers.py).
+ """
+ import math, random
+@@ -211,6 +215,7 @@
+         if dim:
+             sh = pg.Surface(surf.get_size(), pg.SRCALPHA); sh.fill((0, 0, 0, int(255 * dim))); surf.blit(sh, (0, 0))
+         tiles = dict(CFG["maps"].get("tiles", {})); tiles.update(md.get("tiles", {}))
++        s.draw_decor(surf, "back")   # мелкие детали «позади клеток»
+         for c, r, e in s.cells():
+             X, Y = c * T, r * T
+             if s.g[r][c] == "D": draw_default(surf, "D", X, Y, None); continue
+@@ -229,8 +234,18 @@
+                 img = sprite(spr, dw, dh, e.get("flip", False))
+                 if img: surf.blit(img, (X + ox, Y + T - dh + oy)); continue
+             draw_default(surf, s.g[r][c], X, Y, e.get("color"))
++        s.draw_decor(surf, "front")  # мелкие детали «поверх клеток»
+         return surf
+ 
++    def draw_decor(s, surf, z):
++        """Мелкие детали карты (список "decor"): картинка, x/y — пиксели карты, w/h, flip. z: "back" — под клетками, иначе поверх."""
++        for d in s.d.get("decor") or []:
++            try:
++                if (d.get("z") == "back") != (z == "back"): continue
++                img = sprite(d["sprite"], int(d.get("w", T)), int(d.get("h", T)), bool(d.get("flip", False)))
++                if img: surf.blit(img, (int(d["x"]), int(d["y"])))
++            except (KeyError, TypeError, ValueError, AttributeError): continue
++
+     # ---------- выходы и прибытие ----------
+     def exit_at(s, x, y):
+         c, r = int(x // T), int(y // T)
+@@ -452,6 +467,10 @@
+                 out.append(f"{mid}: '{ch}' — непонятный цвет света {li['color']} (пример: \"красный\", \"green\", [255, 80, 40], \"#ff8040\")")
+         for key in ("background",):
+             if md.get(key) and not image(md[key]): out.append(f"{mid}: нет картинки assets/{md[key]}")
++        for i, d in enumerate(md.get("decor") or []):
++            if not isinstance(d, dict) or not d.get("sprite") or not all(isinstance(d.get(k), (int, float)) for k in ("x", "y")):
++                out.append(f"{mid}: decor №{i + 1} — нужны sprite, x и y"); continue
++            if not image(d["sprite"]): out.append(f"{mid}: decor №{i + 1} — нет картинки assets/{d['sprite']}")
+     for mid in defs:   # переходы: ведут ли выходы куда надо и есть ли выход обратно
+         for ch, ex in used_exits(mid):
+             if not valid_exit(ex, defs): continue
+--- a/container_panel.py	2026-11-13 19:23:56.692997408 +0000
++++ b/container_panel.py	2026-11-13 19:24:13.320654258 +0000
+@@ -142,6 +142,8 @@
+     def _mode_changed(self):
+         if self.mode.get():
+             self.ed.morg_mode.set(False)
++            dp = getattr(self.ed, "dpanel", None)
++            if dp: dp.mode.set(False); dp.body.pack_forget(); dp.sel = None
+             self.ed.status.set("Режим ящиков: ЛКМ — поставить ящик (по настройкам кисти) или выбрать, ПКМ — убрать.")
+         self._refresh()
+ 
+--- a/CLAUDE.md	2026-11-13 19:23:56.693241289 +0000
++++ b/CLAUDE.md	2026-11-13 19:33:41.213191955 +0000
+@@ -30,6 +30,7 @@
+ | `inventory.py` | ~456 | **Инвентарь (Tab), у всех героев.** `cfg()` — настройки = `DEFAULTS` + `assets/inventory.json` (`CFG["inventory"]`, грузится в `core.reload_data`). `pl.bag` — список ячеек (id предмета или None; предмет = оружие из weapons.json ИЛИ id из `inventory.json -> items`), создаётся в `init(pl)` из `Player.__init__` вместе со `start_items`. Руки есть у всех героев, но `open_hands(pl)` -> `[ЛКМ, ПКМ]` говорит, какие открыты: кнопка занята способностью класса — рука заблокирована (маг/инженер и бард `[False, True]`, Тень `[False, False]`; явно — поле `weapon_hands` в characters.json); `allowed_in_hand` отказывает с ключом `hand_locked`, `Player.start_attack` в закрытой руке не бьёт, `hud.weapon_slots` её не рисует. ЭКИПИРОВКА: `pl.equip` = {id слота: id предмета}; слоты (голова, шея, 2 перчатки, пояс, 2 ботинка, 3 мультислота артефактов) и их координаты на «скелете» (`ui/inventory_skeleton.png`) — в `assets/inventory.json -> equipment.slots`; предмет подходит слоту, если его `items[...].type` есть в `accepts` слота (`allowed_in_slot`, `fits`; `check_move` общий для рюкзака, рук и слотов); `quick_equip`/`quick_unequip` (ПКМ); **аксессуары** (предметы `items` с полями `bonuses`/`skill`/`effect`/`icon`, создаются во вкладке «Аксессуары» редактора): `stat(pl, key)`/`stat_mult` — сумма бонусов надетого (max_hp/max_mana/hp_regen — единицы, damage/move_speed/mana_regen/armor — %; применяются в `Player.passive_mult`/`refresh_mana`/`hit`/регене HP), `hit_effects(pl)` — статусы врагу при ударе оружием (`Player.strike`, пули — `Proj.extra_eff` из `Player.fire`), `sync_skills(pl)` — навык надетого предмета в `pl.skills`, выданные так — `pl.item_skills` (выучил по уровню — убирается оттуда), `bonus_lines(wid)` — строки подсказки; `on_equipment_changed` = `sync_skills` + `refresh_mana`; слот в клетках — `("e", id)` / строка `"ehead"`, в снимке игрока — ключ `"eq"`. Ячейки адресуются кортежами `("b", i)` (рюкзак) и `("h", n)` (рука `pl.slots[n]`, только у героев с оружием — `open_hands(pl)`); в сети — строками `"b3"`/`"h0"`. Действия: `apply(g, pl, "inv:mv:<откуда>:<куда>" \| "inv:eq:<b>" \| "inv:dr:<ячейка>")` → `move` (обмен содержимого ячеек; `check_move`/`allowed_in_hand` проверяют, что в любую из двух рук идёт оружие, разрешённое герою; поле `slot` в weapons.json — лишь «любимая» рука для быстрой экипировки и подбора, см. `preferred_hand`), `quick_equip`, `drop`; вызываются из `Game.apply_action`, в сети клиент шлёт их событиями (`Game.valid_action` пропускает префикс `inv:`), хост применяет, рюкзак едет в снимке игрока ключом `"bg"`. Перенос кликами — чисто интерфейс: `Game.inv_hold` = ячейка-источник, данные меняются только при втором щелчке (`event`, `key`, `held`). Рука может быть пустой (`None`): HUD и `Game.pickup` это учитывают. `pickup(g, pl, dr)` — подбор с пола (оружие: пустая рука → в руку, есть место → в рюкзак, иначе False и `Game.pickup` делает старый обмен; не-оружие → в рюкзак). `Drop.draw` рисует иконки не-оружия через `floor_icon`. UI: `toggle/draw`, `layout(pl)`, `cell_at(pl, pos)`; `Game.inv_open` входит в `overlay_open()` и ставит `Game.step` на паузу. Клавиша — `controls()["inventory"]` (TAB). Текстуры: `make_inventory_textures.py`. |
+ | `containers.py` | ~210 | **Ящики и сундуки.** Типы — `data/containers.json` (`CFG["containers"]["containers"]`, грузится в `core.reload_data`), расстановка — список `"containers"` в JSON карты (`{type, x, y, chance, hp, loot, loot_mode}`, x/y — нижняя левая клетка). `Container` — объект «как моб» (`hp`, `rect`, `cx/cy`, `d` с `cc_immune`, `hurt(dmg, kb, fx)`, поля статусов), поэтому удары, снаряды, заклинания, ноты и гарпуны бьют его тем же кодом; он лежит в `room.containers`, а НЕ в `room.mobs` (зачистка, двери, опыт от него не зависят). `create(room)` вызывается из `GameMap.__init__` (шанс появления, пропускает стены/выходы/старт), `block(room)` из `GameMap.build` пишет клетки ящиков в `room.g` как стена `#` (игрок, мобы и пули их не проходят), `release/remove` возвращают `room.base_cell`. `sweep(room, fx)` каждый кадр ломает всё с `hp <= 0` (`break_container` → `drop_loot` → `Drop` на полу, `roll_loot` — шансы, `random_weapon` через `maps.random_weapon`); `open_container/try_open` — сундук на E (из `Game.pickup`, ветка `for ... else`); `draw`, `draw_prompts`. Цели урона: `main.step` и хост-цикл `multiplayer` передают `r.mobs + r.containers` в `pl.update`, а `SimpleNamespace` мира несёт `containers`; `Proj.hit_targets` добавляет ящики к попаданиям (но не к самонаведению и цепям), `Proj.wall_hit` бьёт ящик, когда пуля упёрлась в его клетку-стену. Сеть: `state(room)` → ключ снимка `"ct"` (`{uid: [hp, открыт]}`), клиент `apply_state` убирает отсутствующие; `ROLL_SPAWN = False` на клиенте (какие ящики появились, решает хост). Картинки — `make_container_textures.py`. |
+ | `container_panel.py` | ~300 | Панель «Ящики и сундуки» редактора карт (`ContainerPanel`, создаётся в `Editor._ui`, хуки: `_draw_all`, `paint`/`erase` в режиме ящиков, `resize_map`, `clear`, `open_map`, `save_map`). Кисть и выбранный ящик, таблица содержимого (предмет, шанс %, от/до), режим выпадения, шанс появления, HP; `clean_spec/clean_loot` — что пишется в карту. Нельзя ставить на стену/лестницу/выход/старт и друг на друга. |
++| `decor_panel.py` | ~330 | Панель «Мелкие детали» редактора карт (`DecorPanel`, создаётся в `Editor._ui`, хуки: `_draw_all` → `draw`, `paint` → `press`/`motion_drag`, `<ButtonRelease-1>` → `release`, `erase`, `resize_map` → `crop`, `clear` → `reset`, `open_map` → `load`, `save_map` → `dump`; режим взаимоисключающий с режимом ящиков и Моргарта). Декор с точностью до пикселя: картинка, `x`/`y` (левый верхний угол в пикселях карты, клетка = 32), `w`/`h`, `flip`, слой `z` (`back` под клетками / иначе поверх). Привязка 1/2/4/8/16/32 px, стрелки двигают на 1 px (Shift — 8), справа лупа ×4 вокруг выбранной детали. Пишется в карту списком `"decor"`; игра рисует его в `GameMap.draw_decor` (из `render`, запекается в `s.layer`, физики нет); `maps.check()` проверяет `sprite`/`x`/`y`. |
+ | `status.py` | ~80 | Статусные эффекты мобов: `freeze`/`stun`/`burn` (+ `invisible` — делегируется в `invisibility.py`, действует и на игрока). `apply(mob, eff, fx)`, `tick(mob, dt, w)`, `tint(mob)`. Эффект = словарь `{"freeze":2.0}` / `{"stun":2.0}` / `{"burn":{"time":3,"dps":10}}`. Боссы иммунны к контролю (`cc_immune`). |
+ | `invisibility.py` | ~190 | Эффект **невидимости** игрока и мобов (в т.ч. босса). Состояние `e.invis` (`None` или `{t, tr, brk, age}`): `apply(e, spec, fx)` (spec: `True` / секунды / `{time, transparency, break_on_attack}`), `clear`, `on_attack`, `tick`, `is_invisible`; видимость для мобов — `visible_only`/`pick_target`; отрисовка — `alpha(e)` (плавность `fade` + мигание `warn`) и `ghost(v, rect, draw, a)` (рисует `draw()` как обычно и подмешивает результат к фону с альфой — работает с любым кодом рисования); сеть — `net_pack`/`net_apply`. Настройки — `data/invisibility.json` (`CFG["invisibility"]`: `transparency`, `player_transparency`, `mob_transparency`, `fade`, `warn`, `break_on_attack`). |
+ | `maps.py` | 454 | Загрузка карт, сетка мира (`pos`/`world_links`), класс `GameMap` (сетка, спавн, выходы, фон), `Campaign` (круги/масштаб), `check()` — валидация карт. |

@@ -84,6 +84,9 @@
     "h": {
       "mob": "hexer"
     },
+    "a": {
+      "mob": "wraith"
+    },
     "*": {
       "light": "torch"
     },

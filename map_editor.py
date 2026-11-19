@@ -2,6 +2,7 @@
 import json
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, colorchooser
+from fractions import Fraction
 from pathlib import Path
 try:
     from container_panel import ContainerPanel   # панель «Ящики и сундуки»; без неё редактор работает как раньше
@@ -11,6 +12,10 @@ try:
     from decor_panel import DecorPanel   # панель «Мелкие детали» (пиксельная точность); без неё редактор работает как раньше
 except Exception:
     import traceback; traceback.print_exc(); DecorPanel = None
+try:
+    from mech_panel import MechPanel   # панель «Механизмы» (рычаги/кнопки/двери/лифты/порталы/платформы); без неё редактор работает как раньше
+except Exception:
+    import traceback; traceback.print_exc(); MechPanel = None
 
 ROOT = Path(__file__).resolve().parent
 MAP_DIR = ROOT / "data" / "maps"
@@ -22,6 +27,8 @@ PROJ_CONFIG = ROOT / "data" / "projectiles.json"
 ICON_DIR = ROOT / "assets" / "icons"
 SKILLS_ASSET_DIR = ROOT / "assets" / "skills"
 W, H, CELL = 50, 50, 16
+# Ступени масштаба холста (1 клетка = CELL * zoom экранных px).
+ZOOM_STEPS = [0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0]
 MORGART_MARKER = "C"   # символ карты, который ставит Моргарта; другие боссы получат свои маркеры и панели
 TILE = 32            # размер клетки в игре (пикселей) — нужен для перевода смещений рук
 HEAD_DEFAULT = [0.50, 0.20]
@@ -170,70 +177,243 @@ class Editor:
         self.morg_touched = False
         self.dpanel = None                         # мелкие детали с пиксельной точностью (decor_panel.py)
         self.containers = []; self.cpanel = None   # ящики и сундуки карты (список записей, см. container_panel.py)
+        self.mechs = []; self.mpanel = None   # механизмы карты (список записей, см. mech_panel.py)
+        self.zoom = 1.0                       # масштаб холста: 1 клетка = CELL*zoom экранных px
+        self.zoom_var = tk.StringVar(value="100%")
+        self.cell_brush = "#"                # последняя обычная кисть (чтобы вернуть её из вкладок света)
+        self._img_cache = {}                  # (id(PhotoImage), zoom) -> перемасштабированная картинка
+        self._cell_scale_cache = {}
+        self._brush_trace = False
+        self.brush.trace_add("write", self._brush_changed)
         self._load_preview_images()
         self._ui(); self._draw_all()
 
+    def _brush_changed(self, *_):
+        """Запоминаем последнюю «клеточную» кисть (не свет), чтобы вернуть её из вкладки «Свет»."""
+        if self._brush_trace: return
+        v = self.brush.get()
+        if v != LIGHT_BRUSH: self.cell_brush = v
+
     def _ui(self):
         outer = ttk.Frame(self.root, padding=8); outer.pack(fill="both", expand=True)
-        left = ttk.Frame(outer); left.pack(side="left", fill="y")
-        ttk.Label(left, text="Элементы окружения", font=("Arial", 12, "bold")).pack(anchor="w", pady=(0, 6))
-        self._light_panel(left)
-        palette_canvas = tk.Canvas(left, width=250, height=430, highlightthickness=0)
-        palette_scroll = ttk.Scrollbar(left, orient="vertical", command=palette_canvas.yview)
-        palette_canvas.configure(yscrollcommand=palette_scroll.set)
-        palette_scroll.pack(side="right", fill="y"); palette_canvas.pack(side="left", fill="y")
-        palette_frame = ttk.Frame(palette_canvas); palette_canvas.create_window((0, 0), window=palette_frame, anchor="nw")
-        palette_frame.bind("<Configure>", lambda e: palette_canvas.configure(scrollregion=palette_canvas.bbox("all")))
-        for ch, label, _ in PALETTE:
-            b = ttk.Radiobutton(palette_frame, text=f" {ch}  {label}", value=ch, variable=self.brush)
-            b.pack(anchor="w", fill="x", pady=1)
-        right = ttk.Frame(outer); right.pack(side="left", fill="both", expand=True, padx=(12, 0))
-        bar = ttk.Frame(right); bar.pack(fill="x", pady=(0, 8))
-        ttk.Label(bar, text="ID карты:").pack(side="left")
-        ttk.Entry(bar, textvariable=self.map_id, width=14).pack(side="left", padx=4)
-        ttk.Label(bar, text="Название:").pack(side="left", padx=(8, 0))
-        ttk.Entry(bar, textvariable=self.name, width=18).pack(side="left", padx=4)
-        ttk.Button(bar, text="Открыть карту…", command=self.open_map).pack(side="left", padx=4)
-        ttk.Button(bar, text="Сохранить в data/maps", command=self.save_map).pack(side="left", padx=4)
-        ttk.Button(bar, text="Очистить", command=self.clear).pack(side="left", padx=4)
-        ttk.Label(bar, text="Размер (клетки):").pack(side="left", padx=(8, 2))
+        # ---------- строка 1: файл, имя, размер, фон ----------
+        bar = ttk.Frame(outer); bar.pack(fill="x", pady=(0, 5))
+        ttk.Button(bar, text="Открыть карту…", command=self.open_map).pack(side="left")
+        ttk.Button(bar, text="Сохранить", command=self.save_map).pack(side="left", padx=4)
+        ttk.Separator(bar).pack(side="left", fill="y", padx=6)
+        ttk.Label(bar, text="ID:").pack(side="left")
+        ttk.Entry(bar, textvariable=self.map_id, width=13).pack(side="left", padx=3)
+        ttk.Label(bar, text="Назв.:").pack(side="left")
+        ttk.Entry(bar, textvariable=self.name, width=15).pack(side="left", padx=3)
+        ttk.Separator(bar).pack(side="left", fill="y", padx=6)
+        ttk.Label(bar, text="Размер:").pack(side="left")
         self.width_var = tk.StringVar(value=str(self.map_w))
         self.height_var = tk.StringVar(value=str(self.map_h))
-        ttk.Spinbox(bar, from_=5, to=300, increment=1, textvariable=self.width_var, width=5).pack(side="left", padx=2)
+        ttk.Spinbox(bar, from_=5, to=300, increment=1, textvariable=self.width_var, width=4).pack(side="left", padx=2)
         ttk.Label(bar, text="×").pack(side="left")
-        ttk.Spinbox(bar, from_=5, to=300, increment=1, textvariable=self.height_var, width=5).pack(side="left", padx=2)
+        ttk.Spinbox(bar, from_=5, to=300, increment=1, textvariable=self.height_var, width=4).pack(side="left", padx=2)
         ttk.Button(bar, text="Применить", command=self.resize_map).pack(side="left", padx=3)
-        ttk.Label(bar, text="Фон:").pack(side="left", padx=(10, 2))
-        self.bg_combo = ttk.Combobox(bar, textvariable=self.background, width=14, state="readonly",
+        ttk.Separator(bar).pack(side="left", fill="y", padx=6)
+        ttk.Label(bar, text="Фон:").pack(side="left")
+        self.bg_combo = ttk.Combobox(bar, textvariable=self.background, width=12, state="readonly",
                                      values=["Без фона", "Руины", "Пещера", "Склеп", "Кирпичная плитка"])
-        self.bg_combo.pack(side="left", padx=2)
+        self.bg_combo.pack(side="left", padx=3)
         self.bg_combo.bind("<<ComboboxSelected>>", self._background_changed)
-        bar2 = ttk.Frame(right); bar2.pack(fill="x", pady=(0, 8))
+        ttk.Button(bar, text="Очистить карту", command=self.clear).pack(side="right")
+
+        # ---------- строка 2: темнота + масштаб ----------
+        bar2 = ttk.Frame(outer); bar2.pack(fill="x", pady=(0, 5))
         ttk.Label(bar2, text="Темнота карты, %:").pack(side="left")
         self.darkness_var = tk.StringVar(value="")
         ttk.Spinbox(bar2, from_=0, to=100, increment=5, textvariable=self.darkness_var, width=5).pack(side="left", padx=4)
-        ttk.Label(bar2, text="пусто — авто: темно, только если на карте есть блоки света (* факел, o фонарь, + кристалл, % сфера); 0 — светло").pack(side="left", padx=6)
-        board = ttk.Frame(right); board.pack(fill="both", expand=True)
-        self.canvas = tk.Canvas(board, width=800, height=300, bg="#15151b", scrollregion=(0, 0, self.map_w*CELL, self.map_h*CELL), highlightthickness=0)
-        sx = ttk.Scrollbar(board, orient="horizontal", command=self.canvas.xview); sy = ttk.Scrollbar(board, orient="vertical", command=self.canvas.yview)
+        ttk.Label(bar2, text="(пусто — авто: темно, только если на карте есть блоки света; 0 — светло)").pack(side="left", padx=4)
+        ttk.Label(bar2, text="Масштаб:").pack(side="right", padx=(10, 3))
+        ttk.Button(bar2, text="−", width=3, command=lambda: self.zoom_step(-1)).pack(side="right")
+        self.zoom_combo = ttk.Combobox(bar2, textvariable=self.zoom_var, width=6, state="readonly",
+                                       values=[self._zoom_pct(z) for z in ZOOM_STEPS])
+        self.zoom_combo.pack(side="right", padx=2)
+        self.zoom_combo.bind("<<ComboboxSelected>>", self._zoom_selected)
+        ttk.Button(bar2, text="+", width=3, command=lambda: self.zoom_step(1)).pack(side="right")
+        ttk.Button(bar2, text="1:1", command=lambda: self.zoom_set(1.0)).pack(side="right", padx=4)
+        ttk.Button(bar2, text="Fit", command=self.zoom_fit).pack(side="right")
+        ttk.Label(bar2, text="  Ctrl+колесо — масштаб под курсором", foreground="#8a8a98").pack(side="right", padx=(0, 8))
+
+        # ---------- холст карты ----------
+        board = ttk.Frame(outer); board.pack(fill="both", expand=True)
+        self.canvas = tk.Canvas(board, bg="#15151b", highlightthickness=0,
+                                scrollregion=(0, 0, self.map_w * self.cell_size(), self.map_h * self.cell_size()))
+        sx = ttk.Scrollbar(board, orient="horizontal", command=self.canvas.xview)
+        sy = ttk.Scrollbar(board, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(xscrollcommand=sx.set, yscrollcommand=sy.set)
-        self.canvas.grid(row=0, column=0, sticky="nsew"); sy.grid(row=0, column=1, sticky="ns"); sx.grid(row=1, column=0, sticky="ew")
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        sy.grid(row=0, column=1, sticky="ns"); sx.grid(row=1, column=0, sticky="ew")
         board.rowconfigure(0, weight=1); board.columnconfigure(0, weight=1)
         self.canvas.bind("<Button-1>", self.paint); self.canvas.bind("<B1-Motion>", self.paint)
         self.canvas.bind("<Button-3>", self.erase)
-        ttk.Label(right, textvariable=self.status, wraplength=800).pack(fill="x", pady=(8, 0))
-        ttk.Label(right, text="Размер сетки настраивается сверху (от 5×5 до 300×300 клеток). ЛКМ — рисовать, ПКМ — стереть. Разные варианты платформ/стен/лестниц/шипов выбираются в палитре.").pack(anchor="w", pady=(4, 0))
-        self._morgart_panel(right)
+        self.canvas.bind("<MouseWheel>", self._wheel)
+        self.canvas.bind("<Button-4>", self._wheel); self.canvas.bind("<Button-5>", self._wheel)
+
+        # ---------- вкладки аспектов (каждый — свой режим создания) ----------
+        self.aspects = ttk.Notebook(outer); self.aspects.pack(fill="x", pady=(6, 0))
+        self._tab_tiles = ttk.Frame(self.aspects); self.aspects.add(self._tab_tiles, text="  Сетка  ")
+        self._tab_light = ttk.Frame(self.aspects); self.aspects.add(self._tab_light, text="  Свет  ")
+        self._tab_boss = ttk.Frame(self.aspects); self.aspects.add(self._tab_boss, text="  Боссы  ")
+        self._tab_cont = ttk.Frame(self.aspects); self.aspects.add(self._tab_cont, text="  Ящики  ")
+        self._tab_mech = ttk.Frame(self.aspects); self.aspects.add(self._tab_mech, text="  Механизмы  ")
+        self._tab_decor = ttk.Frame(self.aspects); self.aspects.add(self._tab_decor, text="  Детали  ")
+        self.aspects.bind("<<NotebookTabChanged>>", self._aspect_changed)
+        self._palette_tab(self._tab_tiles)
+        self._light_panel(self._tab_light)
+        self._morgart_panel(self._tab_boss)
         if ContainerPanel is not None:
-            try: self.cpanel = ContainerPanel(self, right, ROOT, CELL, PALETTE)
+            try: self.cpanel = ContainerPanel(self, self._tab_cont, ROOT, CELL, PALETTE)
             except Exception:
                 import traceback; traceback.print_exc(); self.cpanel = None
+        if MechPanel is not None:
+            try: self.mpanel = MechPanel(self, self._tab_mech, ROOT, CELL, PALETTE)
+            except Exception:
+                import traceback; traceback.print_exc(); self.mpanel = None
         if DecorPanel is not None:
             try:
-                self.dpanel = DecorPanel(self, right, ROOT, CELL, PALETTE)
+                self.dpanel = DecorPanel(self, self._tab_decor, ROOT, CELL, PALETTE)
                 self.canvas.bind("<ButtonRelease-1>", lambda e: self.dpanel.release(e) if self.dpanel.active() else None)
             except Exception:
                 import traceback; traceback.print_exc(); self.dpanel = None
+
+        # ---------- строка статуса ----------
+        ttk.Label(outer, textvariable=self.status, wraplength=1260).pack(fill="x", pady=(6, 0))
+        ttk.Label(outer, text="ЛКМ — рисовать, ПКМ — стереть; колесо — листать, Ctrl+колесо — масштаб; вкладки внизу: сетка, свет, боссы, ящики, механизмы, детали.",
+                  foreground="#8a8a98").pack(anchor="w", pady=(2, 0))
+
+    # ---------- палитра «Сетка» ----------
+    def _palette_tab(self, parent):
+        wrap = ttk.Frame(parent); wrap.pack(fill="both", expand=True)
+        pc = tk.Canvas(wrap, bg="#16161d", highlightthickness=0)
+        ps = ttk.Scrollbar(wrap, orient="vertical", command=pc.yview)
+        pc.configure(yscrollcommand=ps.set)
+        ps.pack(side="right", fill="y"); pc.pack(side="left", fill="both", expand=True)
+        pf = ttk.Frame(pc)
+        pc.create_window((0, 0), window=pf, anchor="nw")
+        pf.bind("<Configure>", lambda e: pc.configure(scrollregion=pc.bbox("all")))
+        cols = 6
+        for i, (ch, label, _defn) in enumerate(PALETTE):
+            b = ttk.Radiobutton(pf, text="%s  %s" % (ch, label), value=ch, variable=self.brush)
+            b.grid(row=i // cols, column=i % cols, sticky="ew", padx=3, pady=1)
+        for c in range(cols): pf.columnconfigure(c, weight=1)
+        ttk.Label(parent, text="ЛКМ: выбери элемент и рисуй им по карте. Разные текстуры платформ/стен/шипов — отдельные символы.",
+                  foreground="#8a8a98").pack(anchor="w", pady=(4, 2))
+
+    # ---------- вкладки: переключение режима ----------
+    def _aspect_changed(self, _event=None):
+        sel = self.aspects.select()
+        if not sel: return
+        tab = self.aspects.nametowidget(sel)
+        self._deactivate_modes()
+        if tab is self._tab_light:
+            self._use_light()
+            self.status.set("Свой свет: кисть — «" + describe_light(self._light_definition()) + "». ЛКМ — поставить, ПКМ — стереть.")
+        elif tab is self._tab_boss:
+            if self._boss_marker() is None:
+                self.status.set("На карте нет маркера Моргарта (символ C). Поставь его на вкладке «Сетка» — панель Боссов оживёт.")
+            else:
+                self._force_morg(True)
+        elif tab is self._tab_cont and self.cpanel is not None:
+            self._force_mode(self.cpanel, True)
+        elif tab is self._tab_mech and self.mpanel is not None:
+            self._force_mode(self.mpanel, True)
+        elif tab is self._tab_decor and self.dpanel is not None:
+            self._force_mode(self.dpanel, True)
+        else:
+            self.brush.set(self.cell_brush)
+            self.status.set("Режим сетки: выбери элемент в палитре и рисуй. ЛКМ — рисовать, ПКМ — стереть, Ctrl+колесо — масштаб.")
+        self._draw_all()
+
+    def _deactivate_modes(self):
+        """Выключить все режимы создания, кроме базовой «сетки»."""
+        self.morg_mode.set(False)
+        for p in (self.cpanel, self.mpanel, self.dpanel):
+            if p is not None and p.mode.get():
+                p.mode.set(False); p._mode_changed()
+
+    def _force_mode(self, panel, want):
+        if panel is not None and panel.mode.get() != want:
+            panel.mode.set(want); panel._mode_changed()
+
+    def _force_morg(self, want):
+        if self.morg_mode.get() != want:
+            self.morg_mode.set(want); self._morg_mode_changed()
+
+    # ---------- масштаб ----------
+    def cell_size(self):
+        """Текущий экранный размер клетки (CELL * zoom). Панели читают его динамически — всё рисуется с масштабом."""
+        return CELL * self.zoom
+
+    @staticmethod
+    def _zoom_pct(z):
+        return "%d%%" % int(round(z * 100))
+
+    def _sync_zoom(self):
+        self.zoom_var.set(self._zoom_pct(self.zoom))
+
+    def _zoom_selected(self, _e=None):
+        v = self.zoom_var.get().replace("%", "").strip()
+        try: self.zoom_set(float(v) / 100.0)
+        except ValueError: pass
+
+    def zoom_step(self, direction):
+        self.zoom_step_at(direction, None)
+
+    def zoom_step_at(self, direction, ax, ay=None):
+        cur = min(ZOOM_STEPS, key=lambda z: abs(z - self.zoom))
+        i = ZOOM_STEPS.index(cur)
+        i = max(0, min(len(ZOOM_STEPS) - 1, i + (1 if direction > 0 else -1)))
+        self.zoom_set(ZOOM_STEPS[i], (ax, ay) if ax is not None else None)
+
+    def zoom_set(self, zoom, anchor=None):
+        """Установить масштаб. anchor — (экранный x, y), остающийся на месте (None — центр холста).
+        Когда карта меньше окна — холст центрируется отрицательными полями scrollregion."""
+        z = max(ZOOM_STEPS[0], min(ZOOM_STEPS[-1], zoom))
+        if abs(z - self.zoom) < 1e-9: return
+        w = self.canvas.winfo_width(); h = self.canvas.winfo_height()
+        if anchor is None:
+            anchor = (w / 2 if w > 1 else 0, h / 2 if h > 1 else 0)
+        ax, ay = anchor
+        wx = self.canvas.canvasx(ax); wy = self.canvas.canvasy(ay)      # старая виртуальная точка якоря (уже с полями)
+        sr = str(self.canvas.cget("scrollregion")).replace(",", " ").split()
+        sx0 = float(sr[0]) if sr else 0.0; sy0 = float(sr[1]) if len(sr) > 1 else 0.0
+        old = self.zoom
+        self.zoom = z
+        tw, th = self.map_w * CELL * z, self.map_h * CELL * z
+        padx = max(0, (w - tw) / 2.0); pady = max(0, (h - th) / 2.0)
+        self.canvas.configure(scrollregion=(-padx, -pady, tw + padx, th + pady))
+        k = z / old
+        cx = (wx - sx0) * k; cy = (wy - sy0) * k     # точка мира (0..tw) в новых единицах
+        spanx = tw + 2 * padx; spany = th + 2 * pady
+        # Tk: canvasx(px) = sx0 + f*span + px; f ограничено [0, (span-W)/span].
+        fx = (cx - ax) / spanx if spanx > 1 else 0.0
+        fy = (cy - ay) / spany if spany > 1 else 0.0
+        fx = max(0.0, min(max(0.0, (spanx - w) / spanx), fx))
+        fy = max(0.0, min(max(0.0, (spany - h) / spany), fy))
+        self.canvas.xview_moveto(fx)
+        self.canvas.yview_moveto(fy)
+        self._draw_all(); self._sync_zoom()
+
+    def zoom_fit(self):
+        w = self.canvas.winfo_width(); h = self.canvas.winfo_height()
+        if w > 1 and h > 1 and self.map_w > 0 and self.map_h > 0:
+            z = min(w / (self.map_w * CELL), h / (self.map_h * CELL))
+        else:
+            z = 1.0
+        self.zoom_set(z)
+        self.status.set("Карта вписана в окно: масштаб %s." % self._zoom_pct(self.zoom))
+
+    def _wheel(self, event):
+        if getattr(event, "state", 0) & 0x4:   # Ctrl+колесо — масштаб под курсором
+            d = 1 if (getattr(event, "num", 0) == 4 or (getattr(event, "delta", 0) or 0) > 0) else -1
+            self.zoom_step_at(d, event.x, event.y)
+            return "break"
+        units = -3 if (getattr(event, "num", 0) == 4 or (getattr(event, "delta", 0) or 0) > 0) else 3
+        self.canvas.yview_scroll(units, "units")
 
     def _morgart_panel(self, parent):
         box = ttk.LabelFrame(parent, text="Моргарт: голова и руки (положение рук — относительно головы)", padding=5)
@@ -291,18 +471,23 @@ class Editor:
 
     def _draw_all(self):
         self._morg_sync_panel()
+        self._sync_zoom()
         self.canvas.delete("all"); self.rects = {}
+        S = self.cell_size()
         bg = self.background.get()
         bg_img = self.background_images.get(bg)
         if bg_img:
+            bi = self._scaled_image(bg_img, self.zoom)
+            mw, mh = int(self.map_w * S), int(self.map_h * S)
             if bg == "Кирпичная плитка":
-                for by in range(0, self.map_h * CELL, bg_img.height()):
-                    for bx in range(0, self.map_w * CELL, bg_img.width()):
-                        self.canvas.create_image(bx, by, image=bg_img, anchor="nw", tags=("background",))
+                bw, bh = max(1, bi.width()), max(1, bi.height())
+                for by in range(0, mh, bh):
+                    for bx in range(0, mw, bw):
+                        self.canvas.create_image(bx, by, image=bi, anchor="nw", tags=("background",))
             else:
-                self.canvas.create_image((self.map_w * CELL - bg_img.width()) // 2,
-                                         (self.map_h * CELL - bg_img.height()) // 2,
-                                         image=bg_img, anchor="nw", tags=("background",))
+                self.canvas.create_image((mw - bi.width()) // 2,
+                                         (mh - bi.height()) // 2,
+                                         image=bi, anchor="nw", tags=("background",))
         for y, row in enumerate(self.rows):
             for x, ch in enumerate(row):
                 self._draw_cell(x, y, ch)
@@ -310,6 +495,42 @@ class Editor:
         if self.dpanel: self.dpanel.draw()          # мелкие детали: «позади» — под клетками, «поверх» — над ними
         self._draw_morgart_anchors()
         if self.cpanel: self.cpanel.draw()
+        if self.mpanel: self.mpanel.draw()
+
+    # ---------- перемасштабирование картинок ----------
+    def _scaled_image(self, img, factor):
+        """(PhotoImage, во сколько раз) -> картинка этого размера (zoom/subsample с дробным масштабом), с кэшем."""
+        if img is None: return None
+        key = (id(img), round(factor, 4))
+        got = self._img_cache.get(key)
+        if got is not None: return got
+        out = img
+        try:
+            f = Fraction(max(0.1, min(8.0, factor))).limit_denominator(20)
+            ax, bx = max(1, f.numerator), max(1, f.denominator)
+            if ax == bx == 1:
+                out = img
+            elif img.width() * ax > 4096 or img.height() * ax > 4096:
+                out = img.subsample(max(1, bx // max(1, ax)), max(1, bx // max(1, ax)))
+            else:
+                out = img.zoom(ax, ax)
+                if bx > 1: out = out.subsample(bx, bx)
+        except (tk.TclError, ValueError, ZeroDivisionError):
+            out = img
+        self._img_cache[key] = out
+        return out
+
+    def _cell_image(self, ch):
+        """Спрайт клетки, увеличенный ровно до CELL*zoom экранных px (без пересоздания каждый кадр)."""
+        key = (ch, round(self.zoom, 4))
+        got = self._cell_scale_cache.get(key)
+        if got is None:
+            base = self.sprite_images.get(ch)
+            if base is None: got = None
+            else:
+                got = self._scaled_image(base, CELL * self.zoom / max(1, base.width()))
+                self._cell_scale_cache[key] = got
+        return got
 
     # ---------- Моргарт ----------
     def _boss_marker(self):
@@ -344,23 +565,26 @@ class Editor:
 
     def _draw_morgart_anchors(self):
         if not self._morg_visible(): return
-        px = CELL / TILE
-        hx, hy = self._head_cells(); hx, hy = hx * CELL, hy * CELL
+        S = self.cell_size()
+        hx, hy = self._head_cells(); hx, hy = hx * S, hy * S
         sel = self.morg_part.get()
+        f8 = max(7, int(8 * self.zoom)); f9 = max(8, int(9 * self.zoom))
         for sid in self.slots:
             if not self.morg_on[sid].get(): continue
-            cx, cy = (v * CELL for v in self._hand_cells(sid)); col = SLOT_COLORS.get(sid, "#ffffff")
-            bw, bh = self.hand_size[0] * px, self.hand_size[1] * px
+            cx, cy = (v * S for v in self._hand_cells(sid)); col = SLOT_COLORS.get(sid, "#ffffff")
+            bw, bh = self.hand_size[0] * S / TILE, self.hand_size[1] * S / TILE
             self.canvas.create_line(hx, hy, cx, cy, fill=col, dash=(3, 3), tags=("morgart_anchor",))
             self.canvas.create_rectangle(cx - bw / 2, cy - bh / 2, cx + bw / 2, cy + bh / 2, outline=col, width=3 if sel == sid else 1, tags=("morgart_anchor",))
-            self.canvas.create_oval(cx - 4, cy - 4, cx + 4, cy + 4, fill=col, outline="", tags=("morgart_anchor",))
+            r = max(2.0, 4 * self.zoom)
+            self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill=col, outline="", tags=("morgart_anchor",))
             label = f"{SLOT_TITLES.get(sid, sid)}  HP {self.morg_hp[sid].get() or '—'}  [{self.morg_pat[sid].get() or '—'}]"
-            self.canvas.create_text(cx - bw / 2, cy - bh / 2 - 2, text=label, fill=col, anchor="sw", font=("Arial", 8, "bold"), tags=("morgart_anchor",))
+            self.canvas.create_text(cx - bw / 2, cy - bh / 2 - 2, text=label, fill=col, anchor="sw", font=("Arial", f8, "bold"), tags=("morgart_anchor",))
         col = "#fff36b"
-        self.canvas.create_oval(hx - 14, hy - 14, hx + 14, hy + 14, outline=col, width=3 if sel == "head" else 2, tags=("morgart_anchor",))
-        self.canvas.create_line(hx - 20, hy, hx + 20, hy, fill=col, width=2, tags=("morgart_anchor",))
-        self.canvas.create_line(hx, hy - 20, hx, hy + 20, fill=col, width=2, tags=("morgart_anchor",))
-        self.canvas.create_text(hx + 16, hy - 16, text="ГОЛОВА", fill=col, anchor="sw", font=("Arial", 9, "bold"), tags=("morgart_anchor",))
+        hR = max(8.0, 14 * self.zoom); hL = max(10.0, 20 * self.zoom)
+        self.canvas.create_oval(hx - hR, hy - hR, hx + hR, hy + hR, outline=col, width=3 if sel == "head" else 2, tags=("morgart_anchor",))
+        self.canvas.create_line(hx - hL, hy, hx + hL, hy, fill=col, width=2, tags=("morgart_anchor",))
+        self.canvas.create_line(hx, hy - hL, hx, hy + hL, fill=col, width=2, tags=("morgart_anchor",))
+        self.canvas.create_text(hx + 16 * self.zoom, hy - 16 * self.zoom, text="ГОЛОВА", fill=col, anchor="sw", font=("Arial", f9, "bold"), tags=("morgart_anchor",))
 
     def _morg_refresh_info(self):
         hx, hy = self._head_cells()
@@ -384,8 +608,9 @@ class Editor:
     def _morg_pick_nearest(self, x, y):
         """Метка (голова или рука) ближе всего к точке (пиксели холста), если она в пределах ~40 px."""
         best, dist = None, 40.0
-        hx, hy = (v * CELL for v in self._head_cells())
-        cand = [("head", hx, hy)] + [(sid, *(v * CELL for v in self._hand_cells(sid))) for sid in self.slots if self.morg_on[sid].get()]
+        S = self.cell_size()
+        hx, hy = (v * S for v in self._head_cells())
+        cand = [("head", hx, hy)] + [(sid, *(v * S for v in self._hand_cells(sid))) for sid in self.slots if self.morg_on[sid].get()]
         for part, px_, py_ in cand:
             d = ((px_ - x) ** 2 + (py_ - y) ** 2) ** .5
             if d < dist: best, dist = part, d
@@ -397,7 +622,8 @@ class Editor:
             near = self._morg_pick_nearest(x, y)
             if near: self.morg_part.set(near)
         part = self.morg_part.get()
-        cx, cy = x / CELL, y / CELL                      # клетки карты
+        S = self.cell_size()
+        cx, cy = x / S, y / S                      # клетки карты
         cx = max(0.0, min(float(self.map_w), cx)); cy = max(0.0, min(float(self.map_h), cy))
         if part == "head":
             self.morg_head = [round(cx / self.map_w, 4), round(cy / self.map_h, 4)]
@@ -456,7 +682,7 @@ class Editor:
     def _light_panel(self, parent):
         """Панель «Свой свет»: вид светильника, цвет (готовый или любой), сила 1–5."""
         box = ttk.LabelFrame(parent, text="Свой свет (цвет и сила)", padding=6)
-        box.pack(side="bottom", fill="x", pady=(8, 0))
+        box.pack(fill="both", expand=True, pady=(8, 0))
         row = ttk.Frame(box); row.pack(fill="x")
         ttk.Label(row, text="Вид:").pack(side="left")
         kinds = ttk.Combobox(row, textvariable=self.light_kind, state="readonly", width=16, values=[a for a, _ in LIGHT_KINDS])
@@ -512,30 +738,36 @@ class Editor:
         return COLORS.get(ch, "#b08a5a")
 
     def _draw_cell(self, x, y, ch):
-        x0, y0 = x * CELL, y * CELL
-        rid = self.canvas.create_rectangle(x0, y0, x0 + CELL, y0 + CELL,
+        S = self.cell_size()
+        x0, y0 = x * S, y * S
+        rid = self.canvas.create_rectangle(x0, y0, x0 + S, y0 + S,
                                            fill="" if ch == "." else self._cell_color(ch),
                                            outline="#555563", width=1)
         if ch in self.custom:   # свой свет: кружок цвета света, размер = сила
             lvl = self.custom[ch].get("light", {}).get("strength", 3)
-            r = 2 + int(lvl)
-            self.canvas.create_oval(x0 + CELL/2 - r, y0 + CELL/2 - r, x0 + CELL/2 + r, y0 + CELL/2 + r, fill="#fffbe8", outline="#111118")
+            r = max(1.0, (2 + int(lvl)) * self.zoom)
+            self.canvas.create_oval(x0 + S / 2 - r, y0 + S / 2 - r, x0 + S / 2 + r, y0 + S / 2 + r, fill="#fffbe8", outline="#111118")
             self.rects[(x, y)] = rid
             return
-        img = self.sprite_images.get(ch)
+        img = self._cell_image(ch)
         if img:
             self.canvas.create_image(x0, y0, image=img, anchor="nw")
         elif ch != ".":
-            self.canvas.create_text(x0 + CELL/2, y0 + CELL/2, text=ch, fill="#111118", font=("Arial", 9, "bold"))
+            fs = max(7, int(9 * self.zoom))
+            self.canvas.create_text(x0 + S / 2, y0 + S / 2, text=ch, fill="#111118", font=("Arial", fs, "bold"))
         self.rects[(x, y)] = rid
 
     def _cell_from_event(self, event):
-        x = int(self.canvas.canvasx(event.x)//CELL); y = int(self.canvas.canvasy(event.y)//CELL)
+        S = self.cell_size()
+        x = int(self.canvas.canvasx(event.x) // S); y = int(self.canvas.canvasy(event.y) // S)
         return x, y
 
     def paint(self, event):
         if self.morg_mode.get():
             self.morgart_click(event, press="Press" in str(getattr(event, "type", "")) or str(getattr(event, "type", "")) == "4")
+            return
+        if self.mpanel and self.mpanel.active():   # режим механизмов: ставим/выбираем только по нажатию (не при протягивании)
+            if "Press" in str(getattr(event, "type", "")) or str(getattr(event, "type", "")) == "4": self.mpanel.click(event)
             return
         if self.dpanel and self.dpanel.active():   # режим деталей: нажатие ставит/хватает, протягивание двигает
             if "Press" in str(getattr(event, "type", "")) or str(getattr(event, "type", "")) == "4": self.dpanel.press(event)
@@ -556,6 +788,7 @@ class Editor:
             self._draw_all(); self.status.set(f"Клетка ({x}, {y}): {label}")
 
     def erase(self, event):
+        if self.mpanel and self.mpanel.active(): self.mpanel.erase(event); return  # режим механизмов: ПКМ убирает механизм
         if self.dpanel and self.dpanel.active(): self.dpanel.erase(event); return   # режим деталей: ПКМ убирает деталь
         if self.cpanel and self.cpanel.active(): self.cpanel.erase(event); return   # режим ящиков: ПКМ убирает ящик
         self.rows_at(event, ".")
@@ -584,7 +817,8 @@ class Editor:
         self.map_w, self.map_h = new_w, new_h
         if self.cpanel: self.cpanel.crop(new_w, new_h)
         if self.dpanel: self.dpanel.crop(new_w, new_h)
-        self.canvas.configure(scrollregion=(0, 0, self.map_w * CELL, self.map_h * CELL))
+        if self.mpanel: self.mpanel.crop(new_w, new_h)
+        self.canvas.configure(scrollregion=(0, 0, self.map_w * self.cell_size(), self.map_h * self.cell_size()))
         self._draw_all()
         self.status.set(f"Размер карты: {self.map_w}×{self.map_h} клеток")
 
@@ -593,6 +827,7 @@ class Editor:
             self.rows = [["." for _ in range(self.map_w)] for _ in range(self.map_h)]
             if self.cpanel: self.cpanel.reset()
             if self.dpanel: self.dpanel.reset()
+            if self.mpanel: self.mpanel.reset()
             self._draw_all()
 
     def open_map(self):
@@ -617,7 +852,9 @@ class Editor:
             self._morg_load(data.get("morgart_layout"))
             if self.cpanel: self.cpanel.load(data.get("containers"))
             if self.dpanel: self.dpanel.load(data.get("decor"))
-            self._draw_all()
+            if self.mpanel: self.mpanel.load(data.get("mechanisms"))
+            self.canvas.configure(scrollregion=(0, 0, self.map_w * self.cell_size(), self.map_h * self.cell_size()))
+            self._draw_all(); self.zoom_fit()
             self.status.set(f"Загружена карта: {path}")
         except Exception as e: messagebox.showerror("Ошибка", f"Не удалось открыть карту:\n{e}")
 
@@ -663,6 +900,10 @@ class Editor:
             decor = self.dpanel.dump()
             if decor: data["decor"] = decor
             else: data.pop("decor", None)
+        if self.mpanel:   # механизмы: рычаги, кнопки, двери, лифты, телепорты, платформы
+            mechs = self.mpanel.dump()
+            if mechs: data["mechanisms"] = mechs
+            else: data.pop("mechanisms", None)
         try:
             path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             if MAP_CONFIG.exists():
@@ -1513,10 +1754,82 @@ def _build_accessories_tab(nb):
         return None
 
 
+def _build_style(root):
+    """Тёмная «флагманская» тема для всего редактора (ttk clam + база опций для tk-виджетов)."""
+    try:
+        style = ttk.Style(root)
+        style.theme_use("clam")
+    except tk.TclError:
+        return
+    base, panel, darker = "#1b1b22", "#23232b", "#17171d"
+    text, muted, accent = "#e4e4ea", "#9a9aa8", "#3f9bff"
+    style.configure(".", background=base, foreground=text, fieldbackground=panel,
+                    bordercolor=darker, lightcolor=base, darkcolor=darker, insertcolor=text)
+    style.configure("TFrame", background=base)
+    style.configure("TLabel", background=base, foreground=text)
+    style.configure("TNotebook", background=base, borderwidth=0)
+    style.configure("TNotebook.Tab", background=panel, foreground=muted, padding=(16, 7), borderwidth=0)
+    style.map("TNotebook.Tab", background=[("selected", accent)], foreground=[("selected", "#ffffff")])
+    style.configure("TButton", background=panel, foreground=text, padding=4, bordercolor=darker)
+    style.map("TButton", background=[("active", "#2c2c36"), ("pressed", accent)], foreground=[("pressed", "#fff")])
+    style.configure("TLabelframe", background=base, bordercolor="#33333d", relief="flat")
+    style.configure("TLabelframe.Label", background=base, foreground=accent)
+    style.configure("TEntry", fieldbackground=panel, foreground=text, insertcolor=text)
+    style.configure("TSpinbox", fieldbackground=panel, foreground=text, arrowsize=12)
+    style.configure("TCombobox", fieldbackground=panel, foreground=text, arrowcolor=text)
+    style.configure("TRadiobutton", background=base, foreground=text)
+    style.map("TRadiobutton", background=[("active", "#23232b")])
+    style.configure("TCheckbutton", background=base, foreground=text)
+    style.map("TCheckbutton", background=[("active", "#23232b")])
+    style.configure("TSeparator", background="#33333d")
+    style.configure("Treeview", background=panel, fieldbackground=panel, foreground=text, borderwidth=0)
+    style.configure("Treeview.Heading", background=darker, foreground=text, relief="flat")
+    style.configure("TScrollbar", background=panel, troughcolor=darker, bordercolor=darker, arrowcolor=text)
+    style.configure("TScale", background=base, troughcolor=darker)
+    style.configure("Horizontal.TScale", background=base, troughcolor=darker)
+    style.configure("TPanedwindow", background=base)
+    style.configure("TPanedwindow.Sash", background=base)
+    # Классические tk-виджеты (Canvas/Listbox/Text/Menu/Button/Scale/Combobox list):
+    # ttk-стили на них не действуют, поэтому темнота задаётся базой опций окна.
+    root.configure(background=base)
+    root.option_add("*background", base)
+    root.option_add("*foreground", text)
+    root.option_add("*insertBackground", text)
+    root.option_add("*selectBackground", accent)
+    root.option_add("*selectForeground", "#ffffff")
+    root.option_add("*highlightBackground", darker)
+    root.option_add("*Canvas.background", panel)
+    root.option_add("*Listbox.background", panel)
+    root.option_add("*Listbox.foreground", text)
+    root.option_add("*Listbox.selectBackground", accent)
+    root.option_add("*Listbox.selectForeground", "#ffffff")
+    root.option_add("*Listbox.highlightBackground", darker)
+    root.option_add("*Text.background", panel)
+    root.option_add("*Text.foreground", text)
+    root.option_add("*Text.selectBackground", accent)
+    root.option_add("*Text.inactiveselectbackground", accent)
+    root.option_add("*Text.highlightBackground", darker)
+    root.option_add("*Menu.background", panel)
+    root.option_add("*Menu.foreground", text)
+    root.option_add("*Menu.activeBackground", accent)
+    root.option_add("*Menu.activeForeground", "#ffffff")
+    root.option_add("*Button.activeBackground", "#2c2c36")
+    root.option_add("*Button.activeForeground", text)
+    root.option_add("*Scale.background", panel)
+    root.option_add("*Scale.troughcolor", darker)
+    root.option_add("*Scale.activeBackground", accent)
+    root.option_add("*TCombobox*Listbox.background", panel)
+    root.option_add("*TCombobox*Listbox.foreground", text)
+    root.option_add("*TCombobox*Listbox.selectBackground", accent)
+    root.option_add("*TCombobox*Listbox.selectForeground", "#ffffff")
+
+
 if __name__ == "__main__":
     root = tk.Tk()
     root.title("DEAD ROOMS — редакторы")
-    root.geometry("1280x880")
+    root.geometry("1360x920")
+    root.minsize(1200, 820)
+    _build_style(root)
     _apply_editor_icon(root)
     nb = ttk.Notebook(root); nb.pack(fill="both", expand=True)
     maps_tab = ttk.Frame(nb); nb.add(maps_tab, text="  Карты  ")

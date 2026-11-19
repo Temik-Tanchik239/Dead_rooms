@@ -360,7 +360,7 @@ class _Tip:
     def show(self, _):
         self.tip = tk.Toplevel(self.w); self.tip.wm_overrideredirect(True)
         self.tip.wm_geometry(f"+{self.w.winfo_rootx() + 20}+{self.w.winfo_rooty() + 52}")
-        tk.Label(self.tip, text=self.text, bg="#ffffe0", relief="solid", borderwidth=1).pack()
+        tk.Label(self.tip, text=self.text, bg="#2b2b34", fg="#e8e8ee", relief="solid", borderwidth=1).pack()
     def hide(self, _):
         if self.tip: self.tip.destroy(); self.tip = None
 

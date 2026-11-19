@@ -5,7 +5,7 @@ set PYTHONIOENCODING=utf-8
 chcp 65001 >nul
 title DEAD ROOMS - update
 echo ========================================
-echo   DEAD ROOMS - installing update v3
+echo   DEAD ROOMS - installing update v4
 echo ========================================
 echo.
 

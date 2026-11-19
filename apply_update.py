@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""DEAD ROOMS — установка апдейта v3: «Мелкие детали» — декор с пиксельной точностью в редакторе карт и в игре.
+"""DEAD ROOMS — установка апдейта v4: слои мелких деталей (за игроком / поверх игрока), силуэт игрока в лупе, стартовые спрайты.
 
 Правки вносятся по СОДЕРЖИМОМУ файлов (а не по номерам строк), поэтому накладываются и на вашу локальную версию.
 Каждый файл — всё или ничего. Перед изменением делается копия <файл>.bak_before_update. Повторный запуск безопасен.
 Если какой-то файл не подошёл, скрипт предложит заменить его целиком (ваши правки в нём пропадут, копия останется).
 Весь вывод дублируется в update_log.txt — пришлите его, если что-то пошло не так.
 Запуск:  python apply_update.py [--full]   (--full — сразу заменять целиком те файлы, куда правки не легли)."""
-import difflib, json, os, platform, py_compile, shutil, sys, tempfile, traceback
+import base64, difflib, json, os, platform, py_compile, shutil, sys, tempfile, traceback
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -117,7 +117,7 @@ def check_valid(rel, text):
 
 
 def main():
-    say("DEAD ROOMS — установка апдейта v3")
+    say("DEAD ROOMS — установка апдейта v4")
     say(f"Python {platform.python_version()} · {platform.system()} · папка проекта: {ROOT}")
     if not (ROOT / "main.py").is_file():
         say("ОШИБКА: не нашёл main.py. Положите содержимое архива в папку проекта (где main.py) и запустите оттуда.")
@@ -130,6 +130,14 @@ def main():
     force = "--full" in sys.argv
     say("")
     failed = []                                                    # (rel, причина, обязательный)
+    for rel, b64 in (data.pop("_binary", None) or {}).items():   # картинки: создаём, чужие файлы не трогаем
+        path = ROOT / rel
+        try:
+            if path.exists(): say(f"[уже есть] {rel}"); continue
+            path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(base64.b64decode(b64))
+            say(f"[создан]   {rel}")
+        except Exception:
+            say(f"[ОШИБКА]   {rel}: не удалось создать картинку (не критично)\n" + traceback.format_exc())
     for rel, spec in data.items():
         path = ROOT / rel
         try:

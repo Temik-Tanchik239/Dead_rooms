@@ -1,10 +1,15 @@
-DEAD ROOMS — установка апдейта v3
+DEAD ROOMS — установка апдейта v4
 Python 3.15.0 · Windows · папка проекта: C:\Users\artem\Desktop\DEAD_ROOMS
 
+[уже есть] assets/decor/bone.png
+[уже есть] assets/decor/cobweb.png
+[уже есть] assets/decor/crack.png
+[уже есть] assets/decor/pebbles.png
+[уже есть] assets/decor/shards.png
+[уже есть] assets/decor/skull.png
 [уже есть] decor_panel.py
-[обновлён] map_editor.py  (правок: 11)
 [уже есть] maps.py
-[уже есть] container_panel.py
+[уже есть] main.py
 [уже есть] CLAUDE.md
 
 ГОТОВО. Игра: F5 (или перезапуск). Редактор: launch_map_editor.bat — вкладка «Карты», внизу панель «Мелкие детали».

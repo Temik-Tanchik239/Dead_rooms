@@ -20,7 +20,9 @@ data/maps/<id>.json — одна карта: сетка произвольног
 decor (список в файле карты, не легенда) — мелкие детали с пиксельной точностью, чисто картинки без физики:
   {"sprite": "environment/wall_1.png", "x": 330, "y": 478, "w": 12, "h": 12, "flip": true, "z": "back"}
   x, y — левый верхний угол в пикселях карты (клетка = 32 px); w, h — размер (по умолчанию 32); flip — отразить;
-  z — "back": под клетками карты, иначе поверх. Ставятся в редакторе карт (панель «Мелкие детали», decor_panel.py).
+  z — слой: "back" под клетками карты; "front" (по умолчанию) над клетками, но ЗА игроком и мобами (они проходят «сквозь»
+  деталь, деталь их не закрывает); "over" ПОВЕРХ игрока, мобов и пуль (деталь закрывает их при проходе).
+  Ставятся в редакторе карт (панель «Мелкие детали», decor_panel.py).
 Ящики и сундуки — не символы легенды, а список "containers" в файле карты (ставятся в редакторе, см. containers.py).
 """
 import math, random
@@ -30,6 +32,7 @@ from anim import sprite, image
 import weapon
 import lighting
 import containers
+import mechs
 from mob import Mob, spawn_boss
 
 END = "__end__"
@@ -166,6 +169,7 @@ class GameMap:
         s.exits = s.find_exits()
         s.lights = lighting.find_lights(s)   # блоки света: факелы, фонари, кристаллы, сферы
         s.containers = containers.create(s)   # ящики и сундуки карты (их клетки в физической сетке — стена, см. build)
+        s.mechs = mechs.create(s)   # механизмы карты (рычаги, кнопки, двери, лифты, порталы, платформы)
         s.build()
 
     def cells(s):
@@ -199,7 +203,9 @@ class GameMap:
             for z in s.exits:
                 for c, r in z["cells"]: s.g[r][c] = "D"
         containers.block(s)   # живые ящики не пропускают ни игрока, ни мобов, ни пули
+        mechs.block(s)        # закрытые двери механизмов — стены
         s.layer = s.render()
+        s.decor_over = list(s.decor_items("over"))   # детали «поверх игрока»: (картинка, позиция), рисуются каждый кадр после героя и мобов
 
     # ---------- отрисовка ----------
     def render(s):
@@ -237,14 +243,22 @@ class GameMap:
         s.draw_decor(surf, "front")  # мелкие детали «поверх клеток»
         return surf
 
-    def draw_decor(s, surf, z):
-        """Мелкие детали карты (список "decor"): картинка, x/y — пиксели карты, w/h, flip. z: "back" — под клетками, иначе поверх."""
+    def decor_items(s, z):
+        """Мелкие детали карты (список "decor") одного слоя z: "back" / "front" / "over" -> (картинка, (x, y)). x/y — пиксели карты."""
         for d in s.d.get("decor") or []:
             try:
-                if (d.get("z") == "back") != (z == "back"): continue
+                dz = d.get("z")
+                if (dz if dz in ("back", "over") else "front") != z: continue
                 img = sprite(d["sprite"], int(d.get("w", T)), int(d.get("h", T)), bool(d.get("flip", False)))
-                if img: surf.blit(img, (int(d["x"]), int(d["y"])))
+                if img: yield img, (int(d["x"]), int(d["y"]))
             except (KeyError, TypeError, ValueError, AttributeError): continue
+
+    def draw_decor(s, surf, z):
+        for img, pos in s.decor_items(z): surf.blit(img, pos)
+
+    def draw_decor_over(s, v):
+        """Детали со слоем "over": поверх героя, мобов и пуль (вызывается из main.draw после них, до эффектов и темноты)."""
+        for img, pos in getattr(s, "decor_over", ()): v.blit(img, pos)
 
     # ---------- выходы и прибытие ----------
     def exit_at(s, x, y):
@@ -367,6 +381,10 @@ class GameMap:
     def base_cell(s, c, r):
         """Физика клетки без ящиков (то, что лежит в клетке по карте) — нужна, когда ящик сломан."""
         return PHYS.get(s.info[r][c]["type"], ".")
+
+    def mech_by_id(s, mid):
+        """Механизм комнаты по id (для связи рычаг/кнопка -> дверь/лифт/портал, и порталы в пары)."""
+        return getattr(s, "_mech_by_id", {}).get(mid)
 
     def set_lock(s, on):
         if s.locked != on: s.locked = on; s.build()

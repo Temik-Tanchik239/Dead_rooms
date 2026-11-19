@@ -15,10 +15,16 @@
 Холст редактора показывает карту вдвое меньше игры (1 px игры = 0.5 px экрана), поэтому справа есть ЛУПА:
 она увеличивает в 4 раза область вокруг выбранной детали (или курсора) — смещения на 1 px видны сразу.
 
-Результат пишется в карту, поле "decor" (читает maps.GameMap.draw_decor):
-  {"sprite": "environment/wall_1.png", "x": 330, "y": 478, "w": 12, "h": 12, "flip": true, "z": "back"}
+Слой каждой детали (поле «Слой») решает, как она рисуется относительно клеток, героя и мобов:
+  «позади клеток»            — z "back": под клетками карты (виден только в пустых местах и сквозь прозрачные клетки);
+  «за игроком (над клетками)» — z "front" (по умолчанию): над клетками, но ЗА героем и мобами — они проходят «сквозь» деталь;
+  «поверх игрока и мобов»     — z "over": поверх героя, мобов и пуль — деталь закрывает их при проходе (паутина, трава, дым).
+В лупе серый силуэт игрока (20x34) показывает, что кого перекрывает. Детали не влияют на физику, ни моб, ни игрок их не замечают.
+
+Результат пишется в карту, поле "decor" (читает maps.GameMap.decor_items):
+  {"sprite": "decor/skull.png", "x": 330, "y": 478, "w": 12, "h": 12, "flip": true, "z": "over"}
 x, y — левый верхний угол в пикселях карты (клетка с, р = x // 32, y // 32); w, h — размер в игре;
-flip — отразить по горизонтали (по умолчанию нет); z — "back" под клетками карты, иначе поверх них.
+flip — отразить по горизонтали (по умолчанию нет); z — слой (см. выше; "front" в файл не пишется).
 """
 import tkinter as tk
 from fractions import Fraction
@@ -27,12 +33,20 @@ from tkinter import ttk, filedialog
 
 TILE = 32                                   # размер клетки в игре (px)
 STEPS = [1, 2, 4, 8, 16, 32]                # шаги привязки, px игры
-LAYERS = [("front", "поверх клеток"), ("back", "позади клеток")]
+LAYERS = [("front", "за игроком (над клетками)"), ("over", "поверх игрока и мобов"), ("back", "позади клеток")]
 LAYER_LABEL = dict(LAYERS)
-SPRITE_DIRS = ("environment", "tiles", "containers", "icons", "weapons", "projectiles")
+LAYER_RANK = {"back": 0, "front": 1, "over": 2}     # порядок рисования и «верхности» при выборе мышью
+LAYER_COLOR = {"back": "#6fa8dc", "front": "#8fd18b", "over": "#e58fe0"}   # рамки деталей в режиме деталей
+PLAYER_SIZE = (20, 34)                              # запасной размер хитбокса игрока (px), если нет data/characters.json
+SPRITE_DIRS = ("decor", "environment", "tiles", "containers", "icons", "weapons", "projectiles")
 MAX_SIZE = 1024                             # больше деталь быть не может
 LOUPE_S, LOUPE_W, LOUPE_H = 4, 64, 48       # лупа: увеличение, видимая область в px игры
-SEL_COLOR, ITEM_COLOR = "#ffd54a", "#6fa8dc"
+SEL_COLOR = "#ffd54a"
+
+
+def ed_cpanel(ed):
+    """Панель ящиков редактора (если есть) — чтобы встать над ней."""
+    return getattr(ed, "cpanel", None)
 
 
 def _int(v, default):
@@ -55,6 +69,8 @@ class DecorPanel:
         self.x_var, self.y_var = tk.StringVar(), tk.StringVar()
         self.flip_var = tk.BooleanVar(value=False)
         self.layer_var = tk.StringVar(value=LAYER_LABEL["front"])
+        self.sil_var = tk.BooleanVar(value=True)            # силуэт игрока в лупе
+        self.player_size = self._player_size()
         self.snap_var = tk.StringVar(value="4")
         self.title_var, self.info_var = tk.StringVar(), tk.StringVar()
         self._base_cache, self._photo_cache, self._cell_cache = {}, {}, {}
@@ -66,7 +82,11 @@ class DecorPanel:
     # ---------- интерфейс ----------
     def _ui(self, parent):
         box = ttk.LabelFrame(parent, text="Мелкие детали (картинки с точностью до пикселя)", padding=5)
-        box.pack(fill="x", pady=(8, 0)); self.box = box
+        cp_box = getattr(ed_cpanel(self.ed), "box", None)
+        has_same_parent = cp_box is not None and getattr(cp_box, "master", None) is parent
+        if has_same_parent: box.pack(fill="x", pady=(8, 0), before=cp_box)
+        else: box.pack(fill="x", pady=(8, 0))
+        self.box = box
         top = ttk.Frame(box); top.pack(fill="x")
         ttk.Checkbutton(top, text="Режим деталей: ЛКМ — поставить / выбрать и двигать, ПКМ — удалить (клетки не рисуются)",
                         variable=self.mode, command=self._mode_changed).pack(side="left")
@@ -93,7 +113,7 @@ class DecorPanel:
         ttk.Checkbutton(r2, text="отразить", variable=self.flip_var, command=self._fields_changed).pack(side="left", padx=4)
         r3 = ttk.Frame(ctl); r3.pack(fill="x", pady=(4, 0))
         ttk.Label(r3, text="Слой:").pack(side="left")
-        lc = ttk.Combobox(r3, textvariable=self.layer_var, state="readonly", width=14, values=[t for _, t in LAYERS])
+        lc = ttk.Combobox(r3, textvariable=self.layer_var, state="readonly", width=24, values=[t for _, t in LAYERS])
         lc.pack(side="left", padx=(2, 12)); lc.bind("<<ComboboxSelected>>", lambda e: self._fields_changed())
         ttk.Label(r3, text="Шаг привязки, px:").pack(side="left")
         ttk.Combobox(r3, textvariable=self.snap_var, state="readonly", width=3, values=[str(s) for s in STEPS]).pack(side="left", padx=2)
@@ -108,14 +128,27 @@ class DecorPanel:
         for text, cmd in (("Дублировать", self.duplicate), ("Удалить", self.delete_selected), ("Снять выбор", self.deselect),
                           ("Выше", lambda: self.reorder(1)), ("Ниже", lambda: self.reorder(-1))):
             ttk.Button(r5, text=text, command=cmd).pack(side="left", padx=(0, 4))
-        ttk.Label(ctl, text="◄ ► ▲ ▼ и стрелки на клавиатуре (щёлкни по карте, чтобы дать ей фокус) двигают на 1 px, Shift — на 8 px. "
-                            "Выше / Ниже — порядок рисования внутри слоя.",
+        ttk.Label(ctl, text="Рамки: зелёная — за игроком, розовая — поверх игрока, синяя — позади клеток. "
+                            "Стрелки — 1 px (Shift — 8).",
                   wraplength=470, foreground="#555").pack(anchor="w", pady=(4, 0))
         loupe_box = ttk.Frame(cols); loupe_box.pack(side="left", padx=(10, 0), anchor="n")
         ttk.Label(loupe_box, text="Лупа ×%d (яркие линии — клетки, слабые — 4 px)" % LOUPE_S, foreground="#555").pack(anchor="w")
         self.loupe = tk.Canvas(loupe_box, width=LOUPE_W * LOUPE_S, height=LOUPE_H * LOUPE_S, bg="#101016", highlightthickness=1,
                                highlightbackground="#555563")
         self.loupe.pack()
+        ttk.Checkbutton(loupe_box, text="силуэт игрока (20×34) — что кого перекрывает", variable=self.sil_var,
+                        command=self.draw_loupe).pack(anchor="w")
+
+    def _player_size(self):
+        """Размер хитбокса героя из data/characters.json (первый найденный), иначе 20x34."""
+        try:
+            import json
+            ch = json.loads((self.root / "data" / "characters.json").read_text(encoding="utf-8")).get("characters", {})
+            for v in ch.values():
+                hb = v.get("hitbox")
+                if isinstance(hb, list) and len(hb) == 2: return max(4, int(hb[0])), max(4, int(hb[1]))
+        except (OSError, ValueError, AttributeError, TypeError): pass
+        return PLAYER_SIZE
 
     def _sprite_list(self):
         out = []
@@ -178,7 +211,7 @@ class DecorPanel:
         sprite = str(d["sprite"]).replace("\\", "/")
         return {"sprite": sprite, "x": _int(d.get("x", 0), 0), "y": _int(d.get("y", 0), 0),
                 "w": max(1, min(MAX_SIZE, _int(d.get("w", TILE), TILE))), "h": max(1, min(MAX_SIZE, _int(d.get("h", TILE), TILE))),
-                "flip": bool(d.get("flip", False)), "z": "back" if d.get("z") == "back" else "front"}
+                "flip": bool(d.get("flip", False)), "z": d.get("z") if d.get("z") in ("back", "over") else "front"}
 
     def _brush(self):
         rel = self.sprite_var.get().strip()
@@ -270,12 +303,12 @@ class DecorPanel:
 
     # ---------- мышь ----------
     def _point(self, event):
-        s = self.cell / TILE
+        s = self.ed.cell_size() / TILE
         return self.ed.canvas.canvasx(event.x) / s, self.ed.canvas.canvasy(event.y) / s
 
     def hit(self, p):
         """Индекс верхней детали под точкой p (px игры) или None. Верхние: слой «поверх», затем поздние в списке."""
-        order = sorted(range(len(self.items)), key=lambda i: (self.items[i].get("z") != "back", i))
+        order = sorted(range(len(self.items)), key=lambda i: (LAYER_RANK.get(self.items[i].get("z"), 1), i))
         for i in reversed(order):
             it = self.items[i]
             if it["x"] <= p[0] < it["x"] + it["w"] and it["y"] <= p[1] < it["y"] + it["h"]: return i
@@ -360,7 +393,7 @@ class DecorPanel:
         self.redraw_items(); self.draw_loupe()
 
     def redraw_items(self):
-        c, s = self.ed.canvas, self.cell / TILE
+        c, s = self.ed.canvas, self.ed.cell_size() / TILE
         c.delete("decor")
         for i, it in enumerate(self.items):
             x0, y0 = it["x"] * s, it["y"] * s
@@ -373,7 +406,7 @@ class DecorPanel:
                 c.create_text((x0 + x1) / 2, (y0 + y1) / 2, text="?", fill="#ff6a6a", tags=tags)
             if self.active():
                 sel = i == self.sel
-                c.create_rectangle(x0, y0, x1, y1, outline=SEL_COLOR if sel else ITEM_COLOR, width=2 if sel else 1,
+                c.create_rectangle(x0, y0, x1, y1, outline=SEL_COLOR if sel else LAYER_COLOR.get(it.get("z"), LAYER_COLOR["front"]), width=2 if sel else 1,
                                    dash=() if sel else (2, 2), tags=("decor",))
         c.tag_lower("decor_back"); c.tag_lower("background")      # «позади клеток» — под клетками и над фоном
 
@@ -419,8 +452,15 @@ class DecorPanel:
                 img = self._cell_image(ch)
                 if img: c.create_image(lx, ly, image=img, anchor="nw")
                 else: c.create_rectangle(lx, ly, lx + TILE * S, ly + TILE * S, fill=ed._cell_color(ch), outline="")
-        for d in self.items:                                                # поверх клеток
-            if d.get("z") != "back": self._loupe_item(c, d, x0, y0, d is it)
+        for d in self.items:                                                # над клетками, за игроком
+            if d.get("z") not in ("back", "over"): self._loupe_item(c, d, x0, y0, d is it)
+        if self.sil_var.get():                                              # силуэт игрока: «over» рисуется поверх него, остальное — под ним
+            pw, ph = self.player_size
+            sx0, sy0 = (cx - pw / 2 - x0) * S, (cy - ph / 2 - y0) * S
+            c.create_rectangle(sx0, sy0, sx0 + pw * S, sy0 + ph * S, fill="#9fb2c8", stipple="gray50", outline="#cfe0f5")
+            c.create_text(sx0 + pw * S / 2, sy0 + ph * S + 1, anchor="n", fill="#cfe0f5", text="игрок", font=("Arial", 8))
+        for d in self.items:                                                # поверх игрока и мобов
+            if d.get("z") == "over": self._loupe_item(c, d, x0, y0, d is it)
         # сетка: линии клеток ярче, каждые 4 px — слабые
         g0, g1 = int(x0) - 1, int(x0 + LOUPE_W) + 1
         for gx in range(g0 - g0 % 4, g1 + 1, 4):
@@ -450,7 +490,7 @@ class DecorPanel:
         for it in self.items:
             d = {"sprite": it["sprite"], "x": int(it["x"]), "y": int(it["y"]), "w": int(it["w"]), "h": int(it["h"])}
             if it.get("flip"): d["flip"] = True
-            if it.get("z") == "back": d["z"] = "back"
+            if it.get("z") in ("back", "over"): d["z"] = it["z"]
             out.append(d)
         return out
 

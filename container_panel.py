@@ -291,7 +291,7 @@ class ContainerPanel:
 
     def draw(self):
         """Ящики поверх сетки: цвет типа, подпись, шанс появления; выбранный — белая рамка."""
-        cv, cs = self.ed.canvas, self.cell
+        cv, cs = self.ed.canvas, self.ed.cell_size()
         for i, s in enumerate(self.ed.containers):
             w, h = self.type_size(s["type"]); d = self.types.get(s["type"], {})
             x0, y0 = s["x"] * cs, (s["y"] - h + 1) * cs; x1, y1 = x0 + w * cs, y0 + h * cs

@@ -148,7 +148,7 @@
     "unlock_level": 1,
     "mana_cost": 10,
     "cast_anim": "skills/shield/cast",
-    "cast_animation": 4,
+    "cast_animation": 1,
     "recharge": 10,
     "recharge_delay": 0.5,
     "hold": true

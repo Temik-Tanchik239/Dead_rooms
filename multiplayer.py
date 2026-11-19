@@ -30,6 +30,7 @@ import bard
 import invisibility
 import inventory
 import containers
+import mechs
 from maps import Campaign, Drop, END, random_weapon
 from mob import Mob, Corpse, normalize, spawn_boss, scale_boss_for_players
 from projectiles import Proj
@@ -596,6 +597,7 @@ class HostSession(Session):
         if s.game_over: return
         s.feed_local()
         bard.PLAYERS = [q for q in players if q.hp > 0]   # ноты барда достают до всех живых союзников (сбрасывается после цикла)
+        mechs.presolve(r, [p for p in players if p.hp > 0])   # кнопки/рычаги -> сигналы каналов; двери обновляют клетки ДО физики
         for p in players:
             if p.hp <= 0: continue
             inp = s.inputs.get(p.pid) or Input()
@@ -627,6 +629,7 @@ class HostSession(Session):
             for q in g.projs: q.update(dt, w)
         g.projs = [q for q in g.projs if not q.dead]
         containers.sweep(r, fx)   # сломанные ящики: освобождают клетки и роняют содержимое
+        mechs.update(r, dt, alive[0] if alive else None, fx)   # лифты/платформы несут героя и мобов; порталы телепортируют
         for m in r.mobs:
             if m.hp <= 0:
                 if not getattr(m, "xp_paid", False):
@@ -721,6 +724,7 @@ class HostSession(Session):
                 "done": g.done, "over": s.game_over, "pl": pls, "mobs": mobs,
                 "corpses": [[c.kind, c.dir, c.rect.x, c.rect.y, c.rect.w, c.rect.h, round(c.t, 3)] for c in r.corpses],
                 "projs": projs, "styles": styles, "drops": [[R(d.x), R(d.y), d.wid] for d in r.drops], "ct": containers.state(r),
+                "mc": mechs.state(r),
                 "fx": [[k, R(x), R(y), R(d) if isinstance(d, (int, float)) else d, round(t, 3)] for k, x, y, d, t in g.fx.items]}
 
     _nid = 0
@@ -944,6 +948,7 @@ class ClientSession(Session):
         r.spawned = bool(sn.get("spawned", True))
         r.drops = [Drop(x, y, wid) for x, y, wid in sn.get("drops", []) if inventory.is_item(wid)]
         containers.apply_state(r, sn.get("ct"))   # ящики и сундуки: что сломано / открыто, прочность
+        mechs.apply_state(r, sn.get("mc"))   # механизмы: рычаги/кнопки/двери/лифты/порталы
         g.done = bool(sn.get("done")); s.game_over = bool(sn.get("over"))
 
     # ---------- игроки ----------

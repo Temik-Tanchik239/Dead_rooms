@@ -10,6 +10,7 @@ from anim import clear_cache, sprite, mob_frame
 import weapon
 import inventory
 import containers
+import mechs
 import hud
 import spells
 import crossbow
@@ -662,8 +663,9 @@ class Game:
                     else: pl.slots[i], dr.wid = dr.wid, pl.slots[i]
                     pl.combo = (None, 0, 0)
                     s.fx.text(CFG["weapons"][pl.slots[i]]["name"], pl.cx, pl.y - 10); break
-            else:   # рядом нет предметов на полу — E открывает сундук рядом (containers.py)
-                containers.try_open(s.room, pl, s.fx)
+            else:   # рядом нет предметов на полу — E открывает сундук рядом или дёргает рычаг (containers.py / mechs.py)
+                if not containers.try_open(s.room, pl, s.fx):
+                    mechs.try_toggle(s.room, pl, s.fx)
     AMMO_ACTIONS = {"xb0_prev": (0, -1), "xb0_next": (0, 1), "xb1_prev": (1, -1), "xb1_next": (1, 1)}   # смена снаряда: (арбалет, направление)
     ACTIONS = ("jump", "roll", "a1", "a2", "skill", "next", "prev", "pickup") + tuple(AMMO_ACTIONS)
     def apply_action(s, pl, name):
@@ -710,6 +712,7 @@ class Game:
         if (mb[2] or s.key_down("attack2")) and not s.dev.open and not s.inv_open: pl.press("a2")
         pl.drops = r.drops   # телекинез дотягивается до предметов на полу текущей комнаты
         pl.skill_held = s.skill_held()   # удерживаемые заклинания (захват инженера) работают, пока клавиша зажата
+        mechs.presolve(r, pl)   # кнопки/рычаги -> сигналы каналов; двери обновляют клетки ДО физики
         pl.update(sim, pg.key.get_pressed(), r.g, r.mobs + r.containers, s.projs, fx); pl.update_anim(sim)   # ящики — тоже цели ударов и заклинаний
         w = SimpleNamespace(g=r.g, pl=pl, mobs=r.mobs, containers=r.containers, projs=s.projs, fx=fx)   # «мир» для мобов и пуль
         for m in r.mobs:
@@ -720,6 +723,7 @@ class Game:
         for q in s.projs: q.update(sim, w)
         s.projs = [q for q in s.projs if not q.dead]
         containers.sweep(r, fx)   # сломанные ящики: освобождают клетки и роняют содержимое
+        mechs.update(r, sim, pl, fx)   # лифты/платформы несут героя и мобов; порталы телепортируют
         for m in r.mobs:
             if m.hp <= 0:
                 if not getattr(m, "xp_paid", False):
@@ -1052,6 +1056,8 @@ class Game:
         lighting.draw_sources(v, r, light_t, light_dt)   # факелы, фонари, кристаллы — с живым пламенем и искрами
         containers.draw(r, v)   # ящики и сундуки (под предметами, мобами и героем)
         containers.draw_prompts(v, r, pl, s.font)
+        mechs.draw(r, v)   # механизмы: рычаги, кнопки, двери, лифты, порталы, платформы
+        mechs.draw_prompts(v, r, pl, s.font)
         for dr in r.drops:
             dr.draw(v)
             if abs(dr.x - pl.cx) < 36: v.blit(s.font.render("[E] " + inventory.item_info(dr.wid)["name"], True, (255, 230, 120)), (dr.x - 60, dr.y - 34))
@@ -1063,6 +1069,7 @@ class Game:
             pl.draw(v)
         for m in r.mobs:
             if hasattr(m, "draw_front"): m.draw_front(v)      # рука, держащая игрока, поверх него
+        r.draw_decor_over(v)   # мелкие детали карты со слоем "over" — поверх героя, мобов и пуль
         if s.debug:
             # Зелёный — физический хитбокс персонажа, белый — активная атакующая зона.
             pg.draw.rect(v, (0, 255, 120), pl.rect, 2)

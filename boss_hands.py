@@ -349,8 +349,10 @@ class Hand:
     @property
     def holding(s): return s.held is not None or s.net_hold
     def targets(s, w):
-        """Кого рука может выбрать целью. Невидимых игроков (invisibility.py) не выбирает — но зона уже начатого удара их заденет."""
-        return [p for p in seen_players(w) if p.hp > 0 and not getattr(p, "grab", None) and not getattr(p, "downed", False)]
+        """Кого рука может выбрать целью. Невидимых игроков (invisibility.py) не выбирает — но зона уже начатого удара их заденет.
+        Клонов героев (clone.py) не хватает: у клона нет борьбы за освобождение; зоны ударов его задевают (через players_of)."""
+        return [p for p in seen_players(w) if p.hp > 0 and not getattr(p, "grab", None) and not getattr(p, "downed", False)
+                and not getattr(p, "is_clone", False)]
     def nearest(s, w):
         ts = s.targets(w); return min(ts, key=lambda p: (p.cx - s.x) ** 2 + (p.cy - s.y) ** 2) if ts else None
 

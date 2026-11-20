@@ -24,7 +24,10 @@ def held_pose(pl):
     def rest(wid):
         w = W[wid]; return w.get("rest_angle", -30) if w.get("rotate", True) else w.get("fixed_angle", 0)
     if pl.state == "attack" and pl.atk:
-        a = pl.atk; wid = a["w"]; w = W[wid]; st = a["step"]; t, wu, ac, rec = a["t"], a["wu"], a["ac"], max(a["rec"], 1e-6)
+        a = pl.atk; wid = a["w"]
+        if wid not in W:
+            return None, 0, 0, None   # атака без оружия (базовая атака клона) — оружия в руке нет
+        w = W[wid]; st = a["step"]; t, wu, ac, rec = a["t"], a["wu"], a["ac"], max(a["rec"], 1e-6)
         if "projectile" in st:
             if not w.get("rotate", True): return wid, w.get("fixed_angle", 0), -3 * ease(t / max(wu, 1e-6)) if t < wu else 0, None
             aim = pl.aim_deg(); ang = 0 if aim is None else aim

@@ -4,9 +4,159 @@
     4,
     0
   ],
-  "background": "backgrounds/crystal.png",
-  "bg_mode": "cover",
   "darkness": 0.58,
+  "containers": [
+    {
+      "type": "big_crate",
+      "x": 6,
+      "y": 45
+    },
+    {
+      "type": "big_crate",
+      "x": 9,
+      "y": 45
+    },
+    {
+      "type": "big_crate",
+      "x": 12,
+      "y": 45
+    },
+    {
+      "type": "big_crate",
+      "x": 14,
+      "y": 45
+    },
+    {
+      "type": "big_crate",
+      "x": 16,
+      "y": 45
+    },
+    {
+      "type": "big_crate",
+      "x": 14,
+      "y": 43
+    },
+    {
+      "type": "big_crate",
+      "x": 10,
+      "y": 43
+    },
+    {
+      "type": "big_crate",
+      "x": 8,
+      "y": 43
+    },
+    {
+      "type": "big_crate",
+      "x": 6,
+      "y": 43
+    },
+    {
+      "type": "big_crate",
+      "x": 7,
+      "y": 41
+    },
+    {
+      "type": "big_crate",
+      "x": 12,
+      "y": 40
+    },
+    {
+      "type": "big_crate",
+      "x": 14,
+      "y": 40
+    },
+    {
+      "type": "big_crate",
+      "x": 10,
+      "y": 38
+    },
+    {
+      "type": "big_crate",
+      "x": 7,
+      "y": 39
+    },
+    {
+      "type": "big_crate",
+      "x": 4,
+      "y": 40
+    },
+    {
+      "type": "big_crate",
+      "x": 4,
+      "y": 43
+    },
+    {
+      "type": "big_crate",
+      "x": 2,
+      "y": 45
+    }
+  ],
+  "decor": [
+    {
+      "sprite": "decor/crack.png",
+      "x": 480,
+      "y": 1362,
+      "w": 28,
+      "h": 28
+    },
+    {
+      "sprite": "decor/pebbles.png",
+      "x": 1190,
+      "y": 1266,
+      "w": 28,
+      "h": 28,
+      "flip": true
+    },
+    {
+      "sprite": "decor/lantern.png",
+      "x": 538,
+      "y": 1330,
+      "w": 28,
+      "h": 28
+    },
+    {
+      "sprite": "decor/lantern.png",
+      "x": 1274,
+      "y": 1266,
+      "w": 28,
+      "h": 28
+    },
+    {
+      "sprite": "decor/pebbles.png",
+      "x": 1222,
+      "y": 1266,
+      "w": 28,
+      "h": 28
+    },
+    {
+      "sprite": "decor/lantern.png",
+      "x": 1312,
+      "y": 1234,
+      "w": 28,
+      "h": 28,
+      "flip": true
+    },
+    {
+      "sprite": "decor/lantern.png",
+      "x": 1222,
+      "y": 1426,
+      "w": 28,
+      "h": 28,
+      "flip": true
+    }
+  ],
+  "legend": {
+    "a": {
+      "type": "wall",
+      "sprite": "environment/wall_1.png"
+    },
+    "w": {
+      "type": "spikes",
+      "damage": 10,
+      "sprite": "environment/spikes_3.png"
+    }
+  },
   "rows": [
     "##################################################",
     "#................................................#",
@@ -52,77 +202,11 @@
     "#................................................#",
     "#................................................#",
     "#................................................#",
-    "#............................................+...#",
-    "#.......................P.....................%..R",
+    "#............................................+...R",
+    "#.......................P........???..........%..R",
     "###.####################?######?#######xxxxx###+.#",
     "##################################################",
     "##################################################",
     "##################################################"
-  ],
-  "containers": [],
-  "decor": [
-    {
-      "sprite": "decor/crack.png",
-      "x": 480,
-      "y": 1362,
-      "w": 28,
-      "h": 28,
-      "z": "front",
-      "flip": false
-    },
-    {
-      "sprite": "decor/pebbles.png",
-      "x": 1190,
-      "y": 1266,
-      "w": 28,
-      "h": 28,
-      "z": "front",
-      "flip": true
-    },
-    {
-      "sprite": "decor/lantern.png",
-      "x": 538,
-      "y": 1330,
-      "w": 28,
-      "h": 28,
-      "z": "front",
-      "flip": false
-    },
-    {
-      "sprite": "decor/lantern.png",
-      "x": 1274,
-      "y": 1266,
-      "w": 28,
-      "h": 28,
-      "z": "front",
-      "flip": false
-    },
-    {
-      "sprite": "decor/pebbles.png",
-      "x": 1222,
-      "y": 1266,
-      "w": 28,
-      "h": 28,
-      "z": "front",
-      "flip": false
-    },
-    {
-      "sprite": "decor/lantern.png",
-      "x": 1312,
-      "y": 1234,
-      "w": 28,
-      "h": 28,
-      "z": "front",
-      "flip": true
-    },
-    {
-      "sprite": "decor/lantern.png",
-      "x": 1222,
-      "y": 1426,
-      "w": 28,
-      "h": 28,
-      "z": "front",
-      "flip": true
-    }
   ]
 }

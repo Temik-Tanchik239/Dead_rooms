@@ -1,668 +1,719 @@
 {
-  "dash": {
-    "name": "Рывок",
-    "category": "active",
-    "type": "dash",
-    "cooldown": 4.0,
-    "speed": 620,
-    "invulnerability": 0.18,
-    "radius": 24,
-    "icon": "icons/skill_dash.png",
-    "color": [
-      90,
-      210,
-      255
-    ],
-    "unlock_level": 2,
-    "mana_cost": 15
+ "dash": {
+  "name": "Рывок",
+  "category": "active",
+  "type": "dash",
+  "cooldown": 4.0,
+  "speed": 620,
+  "invulnerability": 0.18,
+  "radius": 24,
+  "icon": "icons/skill_dash.png",
+  "color": [
+   90,
+   210,
+   255
+  ],
+  "unlock_level": 2,
+  "mana_cost": 15
+ },
+ "nova": {
+  "name": "Импульс",
+  "category": "active",
+  "type": "nova",
+  "cooldown": 7.0,
+  "radius": 105,
+  "damage": 28,
+  "knockback": 220,
+  "icon": "icons/skill_nova.png",
+  "color": [
+   255,
+   150,
+   70
+  ],
+  "unlock_level": 9,
+  "mana_cost": 25
+ },
+ "heal": {
+  "name": "Лечение",
+  "category": "active",
+  "type": "heal",
+  "cooldown": 12.0,
+  "amount": 30,
+  "radius": 42,
+  "icon": "icons/skill_heal.png",
+  "color": [
+   100,
+   235,
+   140
+  ],
+  "unlock_level": 3,
+  "mana_cost": 30
+ },
+ "double_jump": {
+  "name": "Двойной прыжок",
+  "category": "passive",
+  "type": "double_jump",
+  "icon": "icons/skill_double_jump.png",
+  "color": [
+   120,
+   220,
+   255
+  ],
+  "unlock_level": 4,
+  "description": "Позволяет прыгнуть ещё раз в воздухе"
+ },
+ "mana_blades": {
+  "name": "Экономия маны: клинки",
+  "category": "passive",
+  "type": "mana_cost_reduction",
+  "weapons": [
+   "rusty_sword",
+   "twin_daggers"
+  ],
+  "amount": 0.25,
+  "icon": "icons/skill_mana_blades.png",
+  "color": [
+   130,
+   180,
+   255
+  ],
+  "unlock_level": 5,
+  "description": "На 25% меньше маны для меча и кинжалов"
+ },
+ "mana_ranged": {
+  "name": "Экономия маны: дальнее",
+  "category": "passive",
+  "type": "mana_cost_reduction",
+  "weapons": [
+   "short_bow",
+   "seeker_staff"
+  ],
+  "amount": 0.25,
+  "icon": "icons/skill_mana_ranged.png",
+  "color": [
+   130,
+   180,
+   255
+  ],
+  "unlock_level": 6,
+  "description": "На 25% меньше маны для лука и посоха"
+ },
+ "mana_regen": {
+  "name": "Поток маны",
+  "category": "passive",
+  "type": "mana_regen",
+  "multiplier": 1.5,
+  "icon": "icons/skill_mana_regen.png",
+  "color": [
+   120,
+   255,
+   190
+  ],
+  "unlock_level": 7,
+  "description": "Регенерация маны увеличена на 50%"
+ },
+ "mana_reserve": {
+  "name": "Глубокий резерв",
+  "category": "passive",
+  "type": "max_mana",
+  "amount": 25,
+  "icon": "icons/skill_mana_reserve.png",
+  "color": [
+   170,
+   140,
+   255
+  ],
+  "unlock_level": 8,
+  "description": "Максимум маны увеличен на 25"
+ },
+ "shield": {
+  "name": "Щит",
+  "category": "active",
+  "type": "shield",
+  "duration": 5,
+  "capacity": 100,
+  "radius": 42,
+  "icon": "icons/skill_shield.png",
+  "visual": "skills/shield/shield_effect.png",
+  "visual_size": [
+   70,
+   78
+  ],
+  "visual_y_offset": 2,
+  "color": [
+   245,
+   1,
+   10
+  ],
+  "unlock_level": 1,
+  "mana_cost": 10,
+  "cast_anim": "skills/shield/cast",
+  "cast_animation": 1,
+  "recharge": 10,
+  "recharge_delay": 0.5,
+  "hold": true
+ },
+ "vitality": {
+  "name": "Живучесть",
+  "category": "passive",
+  "type": "max_hp",
+  "amount": 30,
+  "icon": "icons/skill_vitality.png",
+  "color": [
+   235,
+   90,
+   90
+  ],
+  "description": "Максимум здоровья увеличен на 30"
+ },
+ "fury": {
+  "name": "Ярость",
+  "category": "passive",
+  "type": "damage",
+  "multiplier": 1.15,
+  "icon": "icons/skill_fury.png",
+  "color": [
+   255,
+   130,
+   60
+  ],
+  "description": "Весь урон увеличен на 15%"
+ },
+ "swift": {
+  "name": "Лёгкий шаг",
+  "category": "passive",
+  "type": "move_speed",
+  "multiplier": 1.12,
+  "icon": "icons/skill_swift.png",
+  "color": [
+   150,
+   240,
+   170
+  ],
+  "description": "Скорость бега увеличена на 12%"
+ },
+ "chain_lightning": {
+  "name": "Удар молнией",
+  "category": "active",
+  "type": "chain_lightning",
+  "cooldown": 2.2,
+  "damage": 24,
+  "range": 340,
+  "chain_range": 150,
+  "chains": 3,
+  "falloff": 0.75,
+  "knockback": 120,
+  "icon": "icons/skill_chain_lightning.png",
+  "color": [
+   140,
+   200,
+   255
+  ],
+  "mana_cost": 14,
+  "description": "Бьёт по цели и перескакивает на ближайших врагов"
+ },
+ "thunderstrike": {
+  "name": "Мощный удар молнией",
+  "category": "active",
+  "type": "strike_area",
+  "cooldown": 6.0,
+  "radius": 90,
+  "damage": 46,
+  "stun": 2.0,
+  "knockback": 200,
+  "icon": "icons/skill_thunderstrike.png",
+  "color": [
+   180,
+   170,
+   255
+  ],
+  "mana_cost": 32,
+  "description": "Молния бьёт сверху в выбранную область и оглушает врагов на 2 секунды"
+ },
+ "fireball": {
+  "name": "Огненный выстрел",
+  "category": "active",
+  "type": "projectile",
+  "projectile": "fire_bolt",
+  "cooldown": 0.9,
+  "damage": 22,
+  "icon": "icons/skill_fireball.png",
+  "color": [
+   255,
+   140,
+   50
+  ],
+  "mana_cost": 12,
+  "description": "Огненный снаряд, взрывается при попадании"
+ },
+ "fire_stream": {
+  "name": "Огненный поток",
+  "category": "active",
+  "type": "projectile",
+  "projectile": "fire_bolt",
+  "hold": true,
+  "duration": 3.0,
+  "recharge": 6.0,
+  "interval": 0.2,
+  "damage": 9,
+  "spread": 0,
+  "mana_cost": 14,
+  "icon": "icons/skill_fireball.png",
+  "color": [
+   255,
+   120,
+   40
+  ],
+  "description": "Зажмите клавишу — огненные снаряды летят в курсор, пока держите (можно бежать и прыгать). Запас 3 с, мана тратится 14 в секунду; отпустили — запас восстанавливается с того места, где остановились (полностью за 6 с)."
+ },
+ "ice_shard": {
+  "name": "Ледяной выстрел",
+  "category": "active",
+  "type": "projectile",
+  "projectile": "ice_bolt",
+  "cooldown": 1.3,
+  "damage": 16,
+  "icon": "icons/skill_ice_shard.png",
+  "color": [
+   120,
+   220,
+   255
+  ],
+  "mana_cost": 16,
+  "description": "Замораживает врага при попадании"
+ },
+ "arcane_orb": {
+  "name": "Чародейская сфера",
+  "category": "active",
+  "type": "projectile",
+  "projectile": "arcane_bolt",
+  "cooldown": 2.0,
+  "damage": 20,
+  "icon": "icons/skill_arcane_orb.png",
+  "color": [
+   190,
+   130,
+   255
+  ],
+  "mana_cost": 18,
+  "description": "Самонаводящаяся сфера, пробивает несколько врагов"
+ },
+ "frost_nova": {
+  "name": "Морозная волна",
+  "category": "active",
+  "type": "nova",
+  "cooldown": 7.0,
+  "radius": 120,
+  "damage": 18,
+  "knockback": 160,
+  "effect": {
+   "freeze": 1.6
   },
-  "nova": {
-    "name": "Импульс",
-    "category": "active",
-    "type": "nova",
-    "cooldown": 7.0,
-    "radius": 105,
-    "damage": 28,
-    "knockback": 220,
-    "icon": "icons/skill_nova.png",
-    "color": [
-      255,
-      150,
-      70
-    ],
-    "unlock_level": 9,
-    "mana_cost": 25
+  "icon": "icons/skill_frost_nova.png",
+  "color": [
+   150,
+   230,
+   255
+  ],
+  "mana_cost": 26,
+  "description": "Взрыв холода вокруг игрока, замораживает врагов рядом"
+ },
+ "telekinesis": {
+  "name": "Телекинез",
+  "category": "active",
+  "type": "telekinesis",
+  "cooldown": 3.0,
+  "range": 280,
+  "radius": 72,
+  "force": 460,
+  "grip": 96,
+  "damage": 0,
+  "icon": "icons/skill_telekinesis.png",
+  "cast_anim": "skills/telekinesis/cast",
+  "cast_size": [
+   104,
+   104
+  ],
+  "cast_offset": [
+   30,
+   0
+  ],
+  "cast_animation": 0.5,
+  "color": [
+   150,
+   110,
+   255
+  ],
+  "mana_cost": 16,
+  "description": "Телекинез по области у курсора: дальних врагов и предметы притягивает к себе, ближних — отталкивает."
+ },
+ "telekinesis_cone": {
+  "name": "Волна отталкивания",
+  "category": "active",
+  "type": "telekinesis_cone",
+  "cooldown": 5.0,
+  "range": 230,
+  "angle": 55,
+  "knockback": 540,
+  "damage": 12,
+  "icon": "icons/skill_telekinesis_cone.png",
+  "cast_anim": "skills/telekinesis_cone/cast",
+  "cast_size": [
+   128,
+   112
+  ],
+  "cast_offset": [
+   48,
+   0
+  ],
+  "cast_animation": 0.5,
+  "color": [
+   120,
+   170,
+   255
+  ],
+  "mana_cost": 24,
+  "description": "Телекинетическая волна: отталкивает всех врагов в конусе перед собой."
+ },
+ "telekinesis_hold": {
+  "name": "Телекинетический захват",
+  "category": "active",
+  "type": "telekinesis_hold",
+  "cooldown": 7.0,
+  "channel": true,
+  "range": 340,
+  "duration": 2.5,
+  "damage": 0,
+  "icon": "icons/skill_telekinesis_hold.png",
+  "cast_anim": "skills/telekinesis_hold/cast",
+  "cast_size": [
+   96,
+   96
+  ],
+  "cast_offset": [
+   26,
+   0
+  ],
+  "cast_animation": 0.6,
+  "color": [
+   200,
+   120,
+   255
+  ],
+  "mana_cost": 26,
+  "description": "Зажмите клавишу и стойте на месте: ближайший к курсору враг остаётся в стане, пока вы колдуете (максимум 2.5 с). Движение, приседание, прыжок, перекат, атака, получение урона или отпущенная клавиша прерывают захват — навык уходит в перезарядку."
+ },
+ "meteor": {
+  "name": "Метеор",
+  "category": "active",
+  "type": "strike_area",
+  "cooldown": 10.0,
+  "radius": 120,
+  "damage": 60,
+  "knockback": 240,
+  "effect": {
+   "burn": {
+    "time": 3,
+    "dps": 10
+   }
   },
-  "heal": {
-    "name": "Лечение",
-    "category": "active",
-    "type": "heal",
-    "cooldown": 12.0,
-    "amount": 30,
-    "radius": 42,
-    "icon": "icons/skill_heal.png",
-    "color": [
-      100,
-      235,
-      140
-    ],
-    "unlock_level": 3,
-    "mana_cost": 30
+  "icon": "icons/skill_meteor.png",
+  "color": [
+   255,
+   120,
+   50
+  ],
+  "mana_cost": 42,
+  "description": "Падает метеор: большой урон по области и поджигает врагов"
+ },
+ "invisibility_cloak": {
+  "name": "Мантия невидимости",
+  "category": "active",
+  "type": "invisibility",
+  "cooldown": 20.0,
+  "duration": 10.0,
+  "icon": "icons/skill_invisibility_cloak.png",
+  "color": [
+   170,
+   140,
+   255
+  ],
+  "mana_cost": 25,
+  "description": "Накладывает на вас невидимость на 10 секунд: герой становится полупрозрачным, а мобы и босс вас не замечают и не агрятся. Атака из невидимости (удар оружием или боевое заклинание) снимает эффект. Процент прозрачности — data/invisibility.json."
+ },
+ "ammo_arrow": {
+  "name": "Обычная стрела",
+  "category": "ammo",
+  "type": "ammo",
+  "projectile": "xbow_arrow",
+  "cooldown": 0.26,
+  "damage": 8,
+  "mana_cost": 2,
+  "icon": "icons/ammo_arrow.png",
+  "color": [
+   220,
+   200,
+   140
+  ],
+  "description": "Быстрые недорогие стрелы: высокий темп стрельбы и мало маны."
+ },
+ "ammo_fire": {
+  "name": "Огненная стрела",
+  "category": "ammo",
+  "type": "ammo",
+  "projectile": "xbow_fire",
+  "cooldown": 0.55,
+  "damage": 6,
+  "mana_cost": 5,
+  "icon": "icons/ammo_fire.png",
+  "color": [
+   255,
+   140,
+   50
+  ],
+  "description": "Взрывается при попадании мелким огнём и поджигает врага на 3 секунды (7 урона в секунду)."
+ },
+ "ammo_heavy": {
+  "name": "Усиленная стрела",
+  "category": "ammo",
+  "type": "ammo",
+  "projectile": "xbow_heavy",
+  "cooldown": 0.85,
+  "damage": 26,
+  "mana_cost": 9,
+  "icon": "icons/ammo_heavy.png",
+  "color": [
+   140,
+   175,
+   235
+  ],
+  "description": "Тяжёлый болт: большой урон, сильный отброс и пробивает до трёх целей, но стреляет медленно."
+ },
+ "ammo_harpoon": {
+  "name": "Стрела с нитью",
+  "category": "ammo",
+  "type": "ammo",
+  "cooldown": 0.45,
+  "damage": 5,
+  "mana_cost": 6,
+  "icon": "icons/ammo_harpoon.png",
+  "color": [
+   120,
+   215,
+   190
+  ],
+  "hook": {
+   "speed": 1000,
+   "gravity": 320,
+   "range": 560,
+   "hold_to_keep": true,
+   "swing_len": 160,
+   "min_len": 56,
+   "reel_speed": 560,
+   "swing_force": 1200,
+   "damp": 0.25,
+   "knockback": 80,
+   "skin": "projectiles/xbow_hook.png",
+   "draw": [
+    34,
+    13
+   ],
+   "thread_skin": "projectiles/xbow_thread.png",
+   "thread_width": 4,
+   "thread_color": [
+    222,
+    214,
+    188
+   ],
+   "thread_outline": [
+    24,
+    18,
+    26
+   ]
   },
-  "double_jump": {
-    "name": "Двойной прыжок",
-    "category": "passive",
-    "type": "double_jump",
-    "icon": "icons/skill_double_jump.png",
-    "color": [
-      120,
-      220,
-      255
-    ],
-    "unlock_level": 4,
-    "description": "Позволяет прыгнуть ещё раз в воздухе"
-  },
-  "mana_blades": {
-    "name": "Экономия маны: клинки",
-    "category": "passive",
-    "type": "mana_cost_reduction",
-    "weapons": [
-      "rusty_sword",
-      "twin_daggers"
-    ],
-    "amount": 0.25,
-    "icon": "icons/skill_mana_blades.png",
-    "color": [
-      130,
-      180,
-      255
-    ],
-    "unlock_level": 5,
-    "description": "На 25% меньше маны для меча и кинжалов"
-  },
-  "mana_ranged": {
-    "name": "Экономия маны: дальнее",
-    "category": "passive",
-    "type": "mana_cost_reduction",
-    "weapons": [
-      "short_bow",
-      "seeker_staff"
-    ],
-    "amount": 0.25,
-    "icon": "icons/skill_mana_ranged.png",
-    "color": [
-      130,
-      180,
-      255
-    ],
-    "unlock_level": 6,
-    "description": "На 25% меньше маны для лука и посоха"
-  },
-  "mana_regen": {
-    "name": "Поток маны",
-    "category": "passive",
-    "type": "mana_regen",
-    "multiplier": 1.5,
-    "icon": "icons/skill_mana_regen.png",
-    "color": [
-      120,
-      255,
-      190
-    ],
-    "unlock_level": 7,
-    "description": "Регенерация маны увеличена на 50%"
-  },
-  "mana_reserve": {
-    "name": "Глубокий резерв",
-    "category": "passive",
-    "type": "max_mana",
-    "amount": 25,
-    "icon": "icons/skill_mana_reserve.png",
-    "color": [
-      170,
-      140,
-      255
-    ],
-    "unlock_level": 8,
-    "description": "Максимум маны увеличен на 25"
-  },
-  "shield": {
-    "name": "Щит",
-    "category": "active",
-    "type": "shield",
-    "duration": 5,
-    "capacity": 100,
-    "radius": 42,
-    "icon": "icons/skill_shield.png",
-    "visual": "skills/shield/shield_effect.png",
-    "visual_size": [
-      70,
-      78
-    ],
-    "visual_y_offset": 2,
-    "color": [
-      245,
-      1,
-      10
-    ],
-    "unlock_level": 1,
-    "mana_cost": 10,
-    "cast_anim": "skills/shield/cast",
-    "cast_animation": 1,
-    "recharge": 10,
-    "recharge_delay": 0.5,
-    "hold": true
-  },
-  "vitality": {
-    "name": "Живучесть",
-    "category": "passive",
-    "type": "max_hp",
-    "amount": 30,
-    "icon": "icons/skill_vitality.png",
-    "color": [
-      235,
-      90,
-      90
-    ],
-    "description": "Максимум здоровья увеличен на 30"
-  },
-  "fury": {
-    "name": "Ярость",
-    "category": "passive",
-    "type": "damage",
-    "multiplier": 1.15,
-    "icon": "icons/skill_fury.png",
-    "color": [
-      255,
-      130,
-      60
-    ],
-    "description": "Весь урон увеличен на 15%"
-  },
-  "swift": {
-    "name": "Лёгкий шаг",
-    "category": "passive",
-    "type": "move_speed",
-    "multiplier": 1.12,
-    "icon": "icons/skill_swift.png",
-    "color": [
-      150,
-      240,
-      170
-    ],
-    "description": "Скорость бега увеличена на 12%"
-  },
-  "chain_lightning": {
-    "name": "Удар молнией",
-    "category": "active",
-    "type": "chain_lightning",
-    "cooldown": 2.2,
-    "damage": 24,
-    "range": 340,
-    "chain_range": 150,
-    "chains": 3,
-    "falloff": 0.75,
-    "knockback": 120,
-    "icon": "icons/skill_chain_lightning.png",
-    "color": [
-      140,
-      200,
-      255
-    ],
-    "mana_cost": 14,
-    "description": "Бьёт по цели и перескакивает на ближайших врагов"
-  },
-  "thunderstrike": {
-    "name": "Мощный удар молнией",
-    "category": "active",
-    "type": "strike_area",
-    "cooldown": 6.0,
-    "radius": 90,
-    "damage": 46,
-    "stun": 2.0,
-    "knockback": 200,
-    "icon": "icons/skill_thunderstrike.png",
-    "color": [
-      180,
-      170,
-      255
-    ],
-    "mana_cost": 32,
-    "description": "Молния бьёт сверху в выбранную область и оглушает врагов на 2 секунды"
-  },
-  "fireball": {
-    "name": "Огненный выстрел",
-    "category": "active",
-    "type": "projectile",
-    "projectile": "fire_bolt",
-    "cooldown": 0.9,
-    "damage": 22,
-    "icon": "icons/skill_fireball.png",
-    "color": [
-      255,
-      140,
-      50
-    ],
-    "mana_cost": 12,
-    "description": "Огненный снаряд, взрывается при попадании"
-  },
-  "fire_stream": {
-    "name": "Огненный поток",
-    "category": "active",
-    "type": "projectile",
-    "projectile": "fire_bolt",
-    "hold": true,
-    "duration": 3.0,
-    "recharge": 6.0,
-    "interval": 0.2,
-    "damage": 9,
-    "spread": 0,
-    "mana_cost": 14,
-    "icon": "icons/skill_fireball.png",
-    "color": [
-      255,
-      120,
-      40
-    ],
-    "description": "Зажмите клавишу — огненные снаряды летят в курсор, пока держите (можно бежать и прыгать). Запас 3 с, мана тратится 14 в секунду; отпустили — запас восстанавливается с того места, где остановились (полностью за 6 с)."
-  },
-  "ice_shard": {
-    "name": "Ледяной выстрел",
-    "category": "active",
-    "type": "projectile",
-    "projectile": "ice_bolt",
-    "cooldown": 1.3,
-    "damage": 16,
-    "icon": "icons/skill_ice_shard.png",
-    "color": [
-      120,
-      220,
-      255
-    ],
-    "mana_cost": 16,
-    "description": "Замораживает врага при попадании"
-  },
-  "arcane_orb": {
-    "name": "Чародейская сфера",
-    "category": "active",
-    "type": "projectile",
-    "projectile": "arcane_bolt",
-    "cooldown": 2.0,
-    "damage": 20,
-    "icon": "icons/skill_arcane_orb.png",
-    "color": [
-      190,
-      130,
-      255
-    ],
-    "mana_cost": 18,
-    "description": "Самонаводящаяся сфера, пробивает несколько врагов"
-  },
-  "frost_nova": {
-    "name": "Морозная волна",
-    "category": "active",
-    "type": "nova",
-    "cooldown": 7.0,
-    "radius": 120,
-    "damage": 18,
-    "knockback": 160,
-    "effect": {
-      "freeze": 1.6
-    },
-    "icon": "icons/skill_frost_nova.png",
-    "color": [
-      150,
-      230,
-      255
-    ],
-    "mana_cost": 26,
-    "description": "Взрыв холода вокруг игрока, замораживает врагов рядом"
-  },
-  "telekinesis": {
-    "name": "Телекинез",
-    "category": "active",
-    "type": "telekinesis",
-    "cooldown": 3.0,
-    "range": 280,
-    "radius": 72,
-    "force": 460,
-    "grip": 96,
-    "damage": 0,
-    "icon": "icons/skill_telekinesis.png",
-    "cast_anim": "skills/telekinesis/cast",
-    "cast_size": [
-      104,
-      104
-    ],
-    "cast_offset": [
-      30,
-      0
-    ],
-    "cast_animation": 0.5,
-    "color": [
-      150,
-      110,
-      255
-    ],
-    "mana_cost": 16,
-    "description": "Телекинез по области у курсора: дальних врагов и предметы притягивает к себе, ближних — отталкивает."
-  },
-  "telekinesis_cone": {
-    "name": "Волна отталкивания",
-    "category": "active",
-    "type": "telekinesis_cone",
-    "cooldown": 5.0,
-    "range": 230,
-    "angle": 55,
-    "knockback": 540,
-    "damage": 12,
-    "icon": "icons/skill_telekinesis_cone.png",
-    "cast_anim": "skills/telekinesis_cone/cast",
-    "cast_size": [
-      128,
-      112
-    ],
-    "cast_offset": [
-      48,
-      0
-    ],
-    "cast_animation": 0.5,
-    "color": [
-      120,
-      170,
-      255
-    ],
-    "mana_cost": 24,
-    "description": "Телекинетическая волна: отталкивает всех врагов в конусе перед собой."
-  },
-  "telekinesis_hold": {
-    "name": "Телекинетический захват",
-    "category": "active",
-    "type": "telekinesis_hold",
-    "cooldown": 7.0,
-    "channel": true,
-    "range": 340,
-    "duration": 2.5,
-    "damage": 0,
-    "icon": "icons/skill_telekinesis_hold.png",
-    "cast_anim": "skills/telekinesis_hold/cast",
-    "cast_size": [
-      96,
-      96
-    ],
-    "cast_offset": [
-      26,
-      0
-    ],
-    "cast_animation": 0.6,
-    "color": [
-      200,
-      120,
-      255
-    ],
-    "mana_cost": 26,
-    "description": "Зажмите клавишу и стойте на месте: ближайший к курсору враг остаётся в стане, пока вы колдуете (максимум 2.5 с). Движение, приседание, прыжок, перекат, атака, получение урона или отпущенная клавиша прерывают захват — навык уходит в перезарядку."
-  },
-  "meteor": {
-    "name": "Метеор",
-    "category": "active",
-    "type": "strike_area",
-    "cooldown": 10.0,
-    "radius": 120,
-    "damage": 60,
-    "knockback": 240,
-    "effect": {
-      "burn": {
-        "time": 3,
-        "dps": 10
-      }
-    },
-    "icon": "icons/skill_meteor.png",
-    "color": [
-      255,
-      120,
-      50
-    ],
-    "mana_cost": 42,
-    "description": "Падает метеор: большой урон по области и поджигает врагов"
-  },
-  "invisibility_cloak": {
-    "name": "Мантия невидимости",
-    "category": "active",
-    "type": "invisibility",
-    "cooldown": 20.0,
-    "duration": 10.0,
-    "icon": "icons/skill_invisibility_cloak.png",
-    "color": [
-      170,
-      140,
-      255
-    ],
-    "mana_cost": 25,
-    "description": "Накладывает на вас невидимость на 10 секунд: герой становится полупрозрачным, а мобы и босс вас не замечают и не агрятся. Атака из невидимости (удар оружием или боевое заклинание) снимает эффект. Процент прозрачности — data/invisibility.json."
-  },
-  "ammo_arrow": {
-    "name": "Обычная стрела",
-    "category": "ammo",
-    "type": "ammo",
-    "projectile": "xbow_arrow",
-    "cooldown": 0.26,
-    "damage": 8,
-    "mana_cost": 2,
-    "icon": "icons/ammo_arrow.png",
-    "color": [
-      220,
-      200,
-      140
-    ],
-    "description": "Быстрые недорогие стрелы: высокий темп стрельбы и мало маны."
-  },
-  "ammo_fire": {
-    "name": "Огненная стрела",
-    "category": "ammo",
-    "type": "ammo",
-    "projectile": "xbow_fire",
-    "cooldown": 0.55,
-    "damage": 6,
-    "mana_cost": 5,
-    "icon": "icons/ammo_fire.png",
-    "color": [
-      255,
-      140,
-      50
-    ],
-    "description": "Взрывается при попадании мелким огнём и поджигает врага на 3 секунды (7 урона в секунду)."
-  },
-  "ammo_heavy": {
-    "name": "Усиленная стрела",
-    "category": "ammo",
-    "type": "ammo",
-    "projectile": "xbow_heavy",
-    "cooldown": 0.85,
-    "damage": 26,
-    "mana_cost": 9,
-    "icon": "icons/ammo_heavy.png",
-    "color": [
-      140,
-      175,
-      235
-    ],
-    "description": "Тяжёлый болт: большой урон, сильный отброс и пробивает до трёх целей, но стреляет медленно."
-  },
-  "ammo_harpoon": {
-    "name": "Стрела с нитью",
-    "category": "ammo",
-    "type": "ammo",
-    "cooldown": 0.45,
-    "damage": 5,
-    "mana_cost": 6,
-    "icon": "icons/ammo_harpoon.png",
-    "color": [
-      120,
-      215,
-      190
-    ],
-    "hook": {
-      "speed": 1000,
-      "gravity": 320,
-      "range": 560,
-      "hold_to_keep": true,
-      "swing_len": 160,
-      "min_len": 56,
-      "reel_speed": 560,
-      "swing_force": 1200,
-      "damp": 0.25,
-      "knockback": 80,
-      "skin": "projectiles/xbow_hook.png",
-      "draw": [
-        34,
-        13
-      ],
-      "thread_skin": "projectiles/xbow_thread.png",
-      "thread_width": 4,
-      "thread_color": [
-        222,
-        214,
-        188
-      ],
-      "thread_outline": [
-        24,
-        18,
-        26
-      ]
-    },
-    "description": "Гарпун на нити: летит ровной дугой с плавным снижением, цепляется за стену, пол или потолок и подтягивает героя. Нить держится, пока зажата кнопка арбалета: отпустил — отцепилась; Пробел или перекат тоже отцепляют, скорость сохраняется. В воздухе на нити можно раскачиваться на A/D. Из одного арбалета — один гарпун, но можно по одному из каждого; в моба гарпун только бьёт и пропадает."
-  },
-  "note_heal": {
-    "name": "Нота исцеления",
-    "category": "note",
-    "type": "note",
-    "effect": "heal",
-    "icon": "icons/note_heal.png",
-    "color": [
-      110,
-      230,
-      140
-    ],
-    "description": "Пока играет, лечит барда и союзников в радиусе (12 здоровья в секунду). Тратит ману каждую секунду.",
-    "radius": 150,
-    "tick": 0.5,
-    "amount": 6,
-    "mana_cost": 10
-  },
-  "note_mana": {
-    "name": "Нота маны",
-    "category": "note",
-    "type": "note",
-    "effect": "mana",
-    "icon": "icons/note_mana.png",
-    "color": [
-      110,
-      170,
-      255
-    ],
-    "description": "Пока играет, восстанавливает ману барду и союзникам в радиусе (14 маны в секунду). Сама ничего не стоит.",
-    "radius": 150,
-    "tick": 0.5,
-    "amount": 7,
-    "mana_cost": 0
-  },
-  "note_stun": {
-    "name": "Нота оглушения",
-    "category": "note",
-    "type": "note",
-    "effect": "stun",
-    "icon": "icons/note_stun.png",
-    "color": [
-      255,
-      220,
-      90
-    ],
-    "description": "Пока играет, все враги в радиусе оглушены: не двигаются и не атакуют (боссы не поддаются). Тратит ману каждую секунду.",
-    "radius": 125,
-    "tick": 0.4,
-    "duration": 0.9,
-    "mana_cost": 12
-  },
-  "note_damage": {
-    "name": "Нота урона",
-    "category": "note",
-    "type": "note",
-    "effect": "damage",
-    "icon": "icons/note_damage.png",
-    "color": [
-      255,
-      100,
-      100
-    ],
-    "description": "Пока играет, наносит урон всем врагам в радиусе (18 в секунду). Тратит ману каждую секунду.",
-    "radius": 135,
-    "tick": 0.5,
-    "amount": 9,
-    "mana_cost": 14
-  },
-  "guitar_pick": {
-    "name": "Медиатор",
-    "category": "active",
-    "type": "projectile",
-    "projectile": "pick",
-    "cooldown": 8.0,
-    "damage": 6,
-    "mana_cost": 16,
-    "icon": "icons/skill_guitar_pick.png",
-    "color": [
-      255,
-      210,
-      120
-    ],
-    "description": "Бросок медиатора: при попадании или падении оглушает всех врагов в радиусе на 2.5 секунды."
-  },
-  "amp": {
-    "name": "Усилитель",
-    "category": "active",
-    "type": "amp",
-    "cooldown": 22.0,
-    "mana_cost": 30,
-    "duration": 20.0,
-    "max": 1,
-    "radius_mult": 0.9,
-    "skin": "skills/amp.png",
-    "draw": [
-      40,
-      44
-    ],
-    "icon": "icons/skill_amp.png",
-    "color": [
-      255,
-      170,
-      90
-    ],
-    "description": "Ставит усилитель на землю: 20 секунд он повторяет ноты, которые играет бард, вокруг себя (радиус 90% от ноты). Одновременно действует один."
-  },
-  "resonance": {
-    "name": "Резонанс",
-    "category": "passive",
-    "type": "note_power",
-    "multiplier": 1.25,
-    "icon": "icons/skill_resonance.png",
-    "color": [
-      255,
-      200,
-      120
-    ],
-    "description": "Ноты сильнее на 25%: лечение, мана, урон и длительность оглушения"
-  },
-  "echo": {
-    "name": "Эхо",
-    "category": "passive",
-    "type": "note_radius",
-    "multiplier": 1.2,
-    "icon": "icons/skill_echo.png",
-    "color": [
-      170,
-      200,
-      255
-    ],
-    "description": "Радиус нот и усилителя больше на 20%"
-  }
+  "description": "Гарпун на нити: летит ровной дугой с плавным снижением, цепляется за стену, пол или потолок и подтягивает героя. Нить держится, пока зажата кнопка арбалета: отпустил — отцепилась; Пробел или перекат тоже отцепляют, скорость сохраняется. В воздухе на нити можно раскачиваться на A/D. Из одного арбалета — один гарпун, но можно по одному из каждого; в моба гарпун только бьёт и пропадает."
+ },
+ "note_heal": {
+  "name": "Нота исцеления",
+  "category": "note",
+  "type": "note",
+  "effect": "heal",
+  "icon": "icons/note_heal.png",
+  "color": [
+   110,
+   230,
+   140
+  ],
+  "description": "Пока играет, лечит барда и союзников в радиусе (12 здоровья в секунду). Тратит ману каждую секунду.",
+  "radius": 150,
+  "tick": 0.5,
+  "amount": 6,
+  "mana_cost": 10
+ },
+ "note_mana": {
+  "name": "Нота маны",
+  "category": "note",
+  "type": "note",
+  "effect": "mana",
+  "icon": "icons/note_mana.png",
+  "color": [
+   110,
+   170,
+   255
+  ],
+  "description": "Пока играет, восстанавливает ману барду и союзникам в радиусе (14 маны в секунду). Сама ничего не стоит.",
+  "radius": 150,
+  "tick": 0.5,
+  "amount": 7,
+  "mana_cost": 0
+ },
+ "note_stun": {
+  "name": "Нота оглушения",
+  "category": "note",
+  "type": "note",
+  "effect": "stun",
+  "icon": "icons/note_stun.png",
+  "color": [
+   255,
+   220,
+   90
+  ],
+  "description": "Пока играет, все враги в радиусе оглушены: не двигаются и не атакуют (боссы не поддаются). Тратит ману каждую секунду.",
+  "radius": 125,
+  "tick": 0.4,
+  "duration": 0.9,
+  "mana_cost": 12
+ },
+ "note_damage": {
+  "name": "Нота урона",
+  "category": "note",
+  "type": "note",
+  "effect": "damage",
+  "icon": "icons/note_damage.png",
+  "color": [
+   255,
+   100,
+   100
+  ],
+  "description": "Пока играет, наносит урон всем врагам в радиусе (18 в секунду). Тратит ману каждую секунду.",
+  "radius": 135,
+  "tick": 0.5,
+  "amount": 9,
+  "mana_cost": 14
+ },
+ "guitar_pick": {
+  "name": "Медиатор",
+  "category": "active",
+  "type": "projectile",
+  "projectile": "pick",
+  "cooldown": 8.0,
+  "damage": 6,
+  "mana_cost": 16,
+  "icon": "icons/skill_guitar_pick.png",
+  "color": [
+   255,
+   210,
+   120
+  ],
+  "description": "Бросок медиатора: при попадании или падении оглушает всех врагов в радиусе на 2.5 секунды."
+ },
+ "amp": {
+  "name": "Усилитель",
+  "category": "active",
+  "type": "amp",
+  "cooldown": 22.0,
+  "mana_cost": 30,
+  "duration": 20.0,
+  "max": 1,
+  "radius_mult": 0.9,
+  "skin": "skills/amp.png",
+  "draw": [
+   40,
+   44
+  ],
+  "icon": "icons/skill_amp.png",
+  "color": [
+   255,
+   170,
+   90
+  ],
+  "description": "Ставит усилитель на землю: 20 секунд он повторяет ноты, которые играет бард, вокруг себя (радиус 90% от ноты). Одновременно действует один."
+ },
+ "resonance": {
+  "name": "Резонанс",
+  "category": "passive",
+  "type": "note_power",
+  "multiplier": 1.25,
+  "icon": "icons/skill_resonance.png",
+  "color": [
+   255,
+   200,
+   120
+  ],
+  "description": "Ноты сильнее на 25%: лечение, мана, урон и длительность оглушения"
+ },
+ "echo": {
+  "name": "Эхо",
+  "category": "passive",
+  "type": "note_radius",
+  "multiplier": 1.2,
+  "icon": "icons/skill_echo.png",
+  "color": [
+   170,
+   200,
+   255
+  ],
+  "description": "Радиус нот и усилителя больше на 20%"
+ },
+ "telekinesis_drag": {
+  "name": "Телекинез-перчатка",
+  "category": "active",
+  "type": "telekinesis_drag",
+  "channel": true,
+  "cooldown": 3.0,
+  "duration": 6.0,
+  "range": 420,
+  "mana_cost": 5,
+  "mana_per_sec": 10,
+  "icon": "icons/skill_telekinesis.png",
+  "cast_anim": "skills/telekinesis/cast",
+  "cast_size": [
+   104,
+   104
+  ],
+  "cast_offset": [
+   30,
+   0
+  ],
+  "cast_animation": 0.5,
+  "color": [
+   200,
+   120,
+   255
+  ],
+  "description": "Зажмите клавишу навыка: ближайший к курсору предмет на полу (ресурс, оружие, артефакт) тянется за курсором. Мана — в секунду; движение/прыжок/урон прерывают."
+ },
+ "clone": {
+  "name": "Клон",
+  "category": "active",
+  "type": "clone",
+  "cooldown": 30.0,
+  "mana_cost": 35,
+  "hp": 100,
+  "duration": 25.0,
+  "max": 2,
+  "damage_mult": 0.7,
+  "basic_damage": 10,
+  "sight": 400,
+  "speed_mult": 0.95,
+  "follow": 90,
+  "leash": 1100,
+  "icon": "icons/skill_clone.png",
+  "color": [
+   130,
+   220,
+   255
+  ],
+  "description": "Призывает клона героя (100 HP): он сам ищет врагов, бьёт тем оружием, которое было у героя в руке в момент призыва, и отвлекает врагов на себя. Живёт 25 секунд; максимум 2 клона."
+ }
 }

@@ -60,10 +60,13 @@ def roll_loot(loot, mode="independent", rng=random):
     return out
 
 def _resolve(item):
-    """random_weapon -> случайное оружие героя (None, если герою оно не выпадает); иначе id, если такой предмет есть в игре."""
+    """random_weapon -> случайное оружие героя (None, если герою оно не выпадает); иначе id, если такой предмет есть в игре
+    (или ресурс инженера из data/crafting.json — напр. "wood", "metal")."""
     import inventory
+    import crafting
     from maps import random_weapon
     if item == RANDOM_WEAPON: return random_weapon()
+    if crafting.is_resource(item): return item
     return item if inventory.is_item(item) else None
 
 # ---------------- объект ящика ----------------
@@ -172,14 +175,18 @@ def remove(room, ct):
     release(room, ct); settle(room)
 
 def drop_loot(room, ct, fx):
-    """Выбросить содержимое: предметы кучкой на полу под ящиком."""
+    """Выбросить содержимое: предметы кучкой на полу под ящиком (ресурсы инженера — отдельным видом, crafting.ResourceDrop)."""
     from maps import Drop
+    import crafting
     items = roll_loot(ct.loot, ct.loot_mode); n = len(items); spread = float(ct.def_["spread"])
     if not items and ct.def_["empty_text"]: fx.text(ct.def_["empty_text"], ct.cx, ct.y - 14)
     for i, wid in enumerate(items):
         x = max(ct.x + 6, min(ct.x + ct.w - 6, ct.cx + (i - (n - 1) / 2) * spread))
         gy = floor_below(room.g, x, ct.y + ct.h - 2); y = (gy if gy is not None else ct.y + ct.h) - 14
-        room.drops.append(Drop(x, y, wid))
+        if crafting.is_resource(wid):
+            room.drops.append(crafting.ResourceDrop(x, y, wid))
+        else:
+            room.drops.append(Drop(x, y, wid))
 
 def break_container(room, ct, fx):
     """Ящик сломан: освобождаем клетки, эффекты, выпадает содержимое (из открытого сундука уже ничего не выпадет)."""

@@ -10,11 +10,17 @@ from anim import clear_cache, sprite, mob_frame
 import weapon
 import inventory
 import containers
+import crafting   # крафт инженера: ресурсы на полу, очки-зрение, перчатка-телекинез, турели
 import mechs
 import hud
 import spells
 import crossbow
 import bard
+import clone       # клоны героев (навык "Клон" в spells.py)
+import save_io     # система сохранений: полный сейв забега в saves/save_<N>.json
+import saves_menu  # вкладка "СОХРАНЕНИЯ" в главном меню и меню загрузки из паузы
+import pause_menu  # новое меню паузы (Esc): продолжить/герой/сохранить/загрузить/главное меню
+import swap        # смена героя посреди забега ("ВЫБОР ПЕРСОНАЖА" в паузе)
 import invisibility
 import status
 from projectiles import volley
@@ -111,6 +117,7 @@ class Player(Body):
         # hold_rest — пауза перед восстановлением; hold_latch — запас/мана кончились при зажатой клавише, ждём отпускания;
         # hold_view — клиент сетевой игры (поток считает хост). Логика — spells.hold_*.
         s.hold = None; s.hold_pool = {}; s.hold_rest = {}; s.hold_latch = False; s.hold_view = False
+        s.goggles = False   # очки инженера: G включает «зрение» (жёлтый фильтр + подсветка ресурсов), см. crafting.py
         # Мультиплеер: номер и имя игрока, прогресс воскрешения, «отошёл от входа» (для выходов).
         s.pid, s.name, s.revive, s.armed, s.downed = 0, "", 0.0, False, False
         # tp — номер «телепорта» (хост переставил игрока), hitc/kb — счётчик попаданий и отброс: клиент повторяет их у себя.
@@ -364,6 +371,9 @@ class Player(Body):
     def update(s, dt, k, g, mobs, projs, fx):
         p = CFG["player"]; s.hitbox = None
         for b in s.buf: s.buf[b] = max(0, s.buf[b] - dt)
+        if getattr(s, "no_skills", False):   # крафт/установка постройки: скиллы и атаки не работают
+            for b in ("skill", "a1", "a2"):
+                if b in s.buf: s.buf[b] = 0
         s.inv -= dt; s.lock -= dt; s.drop_t -= dt; s.mana_t -= dt; s.mana_flash -= dt
         s.skill_notice = max(0.0, s.skill_notice - dt)
         invisibility.tick(s, dt, fx)   # время невидимости тает; кончилось — эффект снимается
@@ -525,6 +535,8 @@ class Game:
     inv_open = False     # Tab: инвентарь открыт (игра на паузе, в сети герой стоит) — см. inventory.py
     inv_hold = None      # ячейка предмета, который несёт курсор ("b3" / "h0" как ("b", 3)); None — ничего не несём
     inv_msg = None       # (текст, до какого момента показывать) — отказ при переносе
+    crafting = None      # активный крафт инженера (см. crafting.py): None или dict; Esc — отмена
+    placing = None        # режим установки постройки (турель): None или dict; ЛКМ — поставить, Esc — отмена
     Player = Player       # мультиплеер создаёт игроков через этот класс
     zoom = CAMERA_ZOOM
     award_xp = staticmethod(award_xp)
@@ -566,6 +578,7 @@ class Game:
         pg.mouse.set_visible(False if s.menu_cursor is not None or SETTINGS.get("mouse_aim", True) else True)
     def new_game(s, loop=0, character=None):
         s.inv_open = False; s.inv_hold = None
+        s.crafting = None; s.placing = None; s.place_lock = 0.0; s.place_hold = False; s.craft_sel = 0
         if loop == 0:
             if character is not None or CHAR["id"] is None:
                 apply_character(character if character is not None else SETTINGS.get("last_character")); clear_cache()
@@ -577,6 +590,8 @@ class Game:
         first = s.camp.first
         if first is None: print("нет ни одной карты в data/maps/"); pg.quit(); sys.exit()
         s.go(first, None)
+        if loop == 0: swap.init(s)   # хранилище героев забега (смена героя + система сохранений)
+        else: swap.register(s)       # новый круг — тот же забег: обновляем снапшот текущего героя
     def warn(s, msgs):
         """Ошибки в картах — в консоль и на экран (держатся 8 секунд)."""
         for m in msgs: print("[карты]", m)
@@ -650,6 +665,14 @@ class Game:
         pl = pl or s.pl
         with use_char(pl.char_id):   # у каждого героя свои правки оружия
             for dr in s.room.drops:
+                rid = getattr(dr, "rid", None)   # ресурсы инженера (crafting.ResourceDrop)
+                if rid is not None:
+                    if abs(dr.x - pl.cx) < 36 and abs(dr.y - pl.cy) < 50 and inventory.is_resource_item(rid):
+                        inventory.add_resource(pl, rid)   # E — ресурс на «склад» инженера (в количестве)
+                        inventory._say(s, pl, "picked_resource", name=inventory.item_info(rid)["name"])
+                        s.room.drops.remove(dr)
+                    continue   # ресурс собран/вне радиуса — ищем и другие капли рядом (оружие, предмет)
+                if not hasattr(dr, "wid"): continue
                 if abs(dr.x - pl.cx) < 36 and abs(dr.y - pl.cy) < 50:
                     if dr.wid not in CFG["weapons"]:   # не оружие (предмет из assets/inventory.json) — просто в рюкзак
                         inventory.pickup(s, pl, dr); break
@@ -705,23 +728,37 @@ class Game:
         fx.stop = max(0, fx.stop - dt); fx.shake = max(0, fx.shake - dt)
         for it in fx.items: it[4] -= dt
         fx.items = [it for it in fx.items if it[4] > 0]
+        clone.update_all(pl, sim, r.g, r.mobs + r.containers, s.projs, fx)   # клоны героев: свой ИИ, атаки, растворение
         if pl.hp <= 0: return
         mpos = pg.mouse.get_pos(); pl.aim = (mpos[0] / CAMERA_ZOOM + s.cam[0], mpos[1] / CAMERA_ZOOM + s.cam[1]) if SETTINGS.get("mouse_aim", True) else None
         mb = pg.mouse.get_pressed()   # зажатая кнопка = непрерывные атаки / комбо
-        if (mb[0] or s.key_down("attack1")) and not s.dev.open and not s.inv_open: pl.press("a1")   # клики по меню разработчика и инвентарю — не атаки
-        if (mb[2] or s.key_down("attack2")) and not s.dev.open and not s.inv_open: pl.press("a2")
+        # Крафт/установка постройки: скиллы и атаки выключены, чтобы не «сбивать» постройку
+        # (у мага/инженера ЛКМ — и скилл-клавиша, и кнопка установки: клик по месту не должен кастовать).
+        # place_lock — короткий таймер после установки/отмены; place_hold — пока всё ещё зажата та кнопка.
+        s.place_lock = max(0.0, (getattr(s, "place_lock", 0.0) or 0.0) - sim)
+        if getattr(s, "place_hold", False) and not mb[0]:
+            s.place_hold = False   # кнопку, которой ставили, отпустили — блок больше не нужен
+        no_skills = bool(s.placing or s.crafting) or bool(getattr(s, "place_hold", False)) or s.place_lock > 0
+        if (mb[0] or s.key_down("attack1")) and not s.dev.open and not s.inv_open and not no_skills: pl.press("a1")   # клики по меню разработчика и инвентарю — не атаки
+        if (mb[2] or s.key_down("attack2")) and not s.dev.open and not s.inv_open and not no_skills: pl.press("a2")
         pl.drops = r.drops   # телекинез дотягивается до предметов на полу текущей комнаты
-        pl.skill_held = s.skill_held()   # удерживаемые заклинания (захват инженера) работают, пока клавиша зажата
+        pl.grid = r.g        # сетка комнаты: клон ищет по ней свободное место призыва (clone.spawn)
+        pl.no_skills = no_skills
+        pl.skill_held = s.skill_held() and not no_skills   # удерживаемые заклинания (захват инженера) работают, пока клавиша зажата; при установке — выключены
         mechs.presolve(r, pl)   # кнопки/рычаги -> сигналы каналов; двери обновляют клетки ДО физики
         pl.update(sim, pg.key.get_pressed(), r.g, r.mobs + r.containers, s.projs, fx); pl.update_anim(sim)   # ящики — тоже цели ударов и заклинаний
-        w = SimpleNamespace(g=r.g, pl=pl, mobs=r.mobs, containers=r.containers, projs=s.projs, fx=fx)   # «мир» для мобов и пуль
+        w = SimpleNamespace(g=r.g, pl=pl, mobs=r.mobs, containers=r.containers, projs=s.projs, fx=fx, turrets=r.turrets, clones=clone.alive(pl))   # «мир» для мобов и пуль (турели инженера, клоны)
+        pl0 = w.pl
         for m in r.mobs:
+            w.pl = clone.decoy(w, m)   # клон-приманка: враг переключается на клона, пока тот жив
             m.update(sim, w)
             if m.d.get("contact") and (m.touches_rect(pl.rect) if hasattr(m, "touches_rect") else pl.rect.colliderect(m.rect)): pl.hit(m.d["contact"], m.cx, fx)
             xp = m.pop_xp() if hasattr(m, "pop_xp") else 0
             if xp: s.gain_xp(xp)          # опыт за уничтоженные руки босса
+        w.pl = pl0   # после цикла мобов «мир» снова смотрит на героя
         for q in s.projs: q.update(sim, w)
         s.projs = [q for q in s.projs if not q.dead]
+        crafting.update(s, sim)   # крафт/установка/турели инженера (только одиночная игра: сеть — раньше по return)
         containers.sweep(r, fx)   # сломанные ящики: освобождают клетки и роняют содержимое
         mechs.update(r, sim, pl, fx)   # лифты/платформы несут героя и мобов; порталы телепортируют
         for m in r.mobs:
@@ -751,9 +788,9 @@ class Game:
             if s.room is r and not s.done:   # выхода нет — пропасть: урон и назад к месту появления
                 pl.hit(r.d.get("fall_damage", CFG["maps"].get("fall_damage", 15)), pl.cx, fx); s.place(*s.respawn)
     CONTROL_DEFAULTS = {"jump": "SPACE", "roll": "LSHIFT", "attack1": "J", "attack2": "L", "pickup": "E", "skill": "Q", "skill_next": "C", "skill_prev": "V",
-                        "ammo1_prev": "1", "ammo1_next": "2", "ammo2_prev": "3", "ammo2_next": "4", "inventory": "TAB"}
+                        "ammo1_prev": "1", "ammo1_next": "2", "ammo2_prev": "3", "ammo2_next": "4", "inventory": "TAB", "craft": "F", "goggles": "G"}
     CONTROL_LABELS = {"jump": "Прыжок", "roll": "Уклонение", "attack1": "Атака 1 (клавиша)", "attack2": "Атака 2 (клавиша)", "pickup": "Подобрать предмет", "skill": "Использовать скилл", "skill_next": "Следующий скилл", "skill_prev": "Предыдущий скилл",
-                      "ammo1_prev": "Арбалет ЛКМ / нота: пред.", "ammo1_next": "Арбалет ЛКМ / нота: след.", "ammo2_prev": "Арбалет ПКМ: пред. снаряд", "ammo2_next": "Арбалет ПКМ: след. снаряд", "inventory": "Инвентарь"}
+                      "ammo1_prev": "Арбалет ЛКМ / нота: пред.", "ammo1_next": "Арбалет ЛКМ / нота: след.", "ammo2_prev": "Арбалет ПКМ: пред. снаряд", "ammo2_next": "Арбалет ПКМ: след. снаряд", "inventory": "Инвентарь", "craft": "Крафт инженера", "goggles": "Очки инженера"}
     def controls(s):
         cfg = SETTINGS.setdefault("controls", {})
         for action, keyname in s.CONTROL_DEFAULTS.items(): cfg.setdefault(action, keyname)
@@ -783,6 +820,19 @@ class Game:
             inventory.key(s, k); return
         if s.menu_mode in ("select", "lobby"): char_menu.key(s, k); return
         if s.menu_mode in mp.MENU_MODES: mp.menu_key(s, k); return
+        if s.menu_mode in saves_menu.MODES: saves_menu.menu_key(s, k); return
+        if s.menu_mode == swap.MODE: swap.menu_key(s, k); return
+        if s.menu_mode == "pause":
+            if k == pg.K_F3:          # редактор кнопок работает и в паузе
+                s.menu_edit = not s.menu_edit
+                s.menu_drag = None
+                return
+            pause_menu.key(s, k)      # Esc — вернуться в забег; 1..5 — нажать кнопку (внутри всё это)
+            if s.menu_edit and k in (pg.K_EQUALS, pg.K_PLUS, pg.K_KP_PLUS, pg.K_MINUS, pg.K_KP_MINUS):
+                pause_menu._resize(pause_menu.layout(s), s.menu_selected,
+                                   8 if k in (pg.K_EQUALS, pg.K_PLUS, pg.K_KP_PLUS) else -8)
+                s.save_settings()
+            return
         if s.menu_mode is not None:
             if k == pg.K_F3:
                 s.menu_edit = not s.menu_edit
@@ -795,11 +845,6 @@ class Game:
                     s.resize_menu_button(8 if k in (pg.K_EQUALS, pg.K_PLUS, pg.K_KP_PLUS) else -8)
                     s.save_settings(); return
                 return
-            # Кнопки главного меню и паузы выбираются только мышью.
-            # Esc закрывает меню паузы и возвращает в забег; навигации стрелками/Enter нет.
-            if k == pg.K_ESCAPE and s.menu_mode == "pause":
-                s.menu_mode = None
-                pg.mouse.set_visible(not SETTINGS.get("mouse_aim", True))
             return
         if s.hud_edit:
             if k == pg.K_F2 or k == pg.K_ESCAPE: s.hud_edit = False; s.hud_drag = None; return
@@ -823,6 +868,9 @@ class Game:
         def pressed(action):
             try: return k == pg.key.key_code(controls[action])
             except (ValueError, TypeError): return False
+        if (s.placing or s.crafting) and k == pg.K_ESCAPE:   # Esc прерывает крафт/установку, не открывая паузу
+            crafting.cancel(s)
+            return
         # Все основные действия читаются из настроек управления.
         for action, buf in (("jump", "jump"), ("roll", "roll"), ("attack1", "a1"), ("attack2", "a2")):
             if pressed(action): s.act(buf); return
@@ -833,6 +881,10 @@ class Game:
         elif pressed("skill"): s.act("skill")
         elif pressed("skill_next"): s.act("next")
         elif pressed("skill_prev"): s.act("prev")
+        elif pressed("craft"):
+            if not s.net: crafting.try_start(s)   # инженер: собрать рецепт из ресурсов рядом
+        elif pressed("goggles"):
+            if not s.net: crafting.toggle_vision(s)   # очки инженера: вкл/выкл «зрение»
         elif k == pg.K_F5:
             if s.net: s.fx.text("F5 не работает в сетевой игре", s.pl.cx, s.pl.y - 40)
             else: s.reload()
@@ -857,6 +909,27 @@ class Game:
             else: char_menu.open_select(s)   # перед забегом — выбор персонажа
         elif action == "multiplayer":
             mp.open_menu(s)
+        elif action == "saves":
+            saves_menu.open_saves(s, back="start")   # список сейвов; в сети сама откажется
+        elif action == "swap":
+            swap.switch_open(s)                      # в сети сама откажется
+        elif action == "save":
+            if s.net:
+                s.fx.text("Недоступно в сетевой игре", s.cam[0] + W // 2, s.cam[1] + VIEW_H // 2 - 60); return
+            try: save_io.save(s)
+            except Exception as e:
+                print("[сохранения] не удалось сохранить:", e)
+                s.fx.text("Не удалось сохранить", s.cam[0] + W // 2, s.cam[1] + VIEW_H // 2 - 60)
+            else:
+                s.fx.text("Забег сохранён", s.cam[0] + W // 2, s.cam[1] + VIEW_H // 2 - 60)
+        elif action == "load":
+            if s.net:
+                s.fx.text("Недоступно в сетевой игре", s.cam[0] + W // 2, s.cam[1] + VIEW_H // 2 - 60); return
+            saves_menu.open_saves(s, back="pause")   # список сейвов, Esc вернёт в паузу
+        elif action == "menu":
+            if s.net: s.net_leave()                  # главное меню в сети = покинуть сессию
+            s.menu_mode = "start"
+            s.menu_edit = False; s.menu_drag = None
         elif action == "exit":
             if s.net: s.net.close()
             pg.quit(); sys.exit()
@@ -873,10 +946,11 @@ class Game:
                 "exit": [W // 2 - 150, VIEW_H // 2 + 46, 300, 44],
             }
         else:
-            # Запрошенные координаты главного меню: x, y, width, height.
+            # Запрошенные координаты главного меню: x, y, width, height. Кнопка СОХРАНЕНИЯ — между МУЛЬТИПЛЕЕРОМ и ВЫХОДОМ.
             defaults = {
                 "new": [684, 291, 268, 36],
                 "multiplayer": [684, 337, 268, 36],
+                "saves": [684, 383, 268, 36],
                 "exit": [787, 480, 172, 28],
             }
         for name, rect in defaults.items():
@@ -902,7 +976,10 @@ class Game:
         if s.menu_mode is None: return
         if s.menu_mode in ("select", "lobby"): char_menu.event(s, e); return
         if s.menu_mode in mp.MENU_MODES: mp.menu_event(s, e); return
-        options = ["continue", "new", "exit"] if s.menu_mode == "pause" else ["new", "multiplayer", "exit"]
+        if s.menu_mode == "pause": pause_menu.event(s, e); return   # клик/редактор кнопок паузы
+        if s.menu_mode in saves_menu.MODES: saves_menu.menu_event(s, e); return
+        if s.menu_mode == swap.MODE: swap.menu_event(s, e); return
+        options = ["new", "multiplayer", "saves", "exit"]   # главное меню
         cfg = s.menu_layout()
         if s.menu_edit:
             if e.type == pg.MOUSEBUTTONDOWN and e.button == 1:
@@ -945,6 +1022,9 @@ class Game:
     def draw_menu(s):
         if s.menu_mode in ("select", "lobby"): char_menu.draw(s); s.draw_cursor(); return
         if s.menu_mode in mp.MENU_MODES: mp.draw_menu(s); s.draw_cursor(); return
+        if s.menu_mode == "pause": pause_menu.draw(s); s.draw_cursor(); return   # пять кнопок Esc-меню
+        if s.menu_mode in saves_menu.MODES: saves_menu.draw_menu(s); s.draw_cursor(); return
+        if s.menu_mode == swap.MODE: swap.draw_menu(s); return   # курсор рисует сам
         if s.menu_mode == "start":
             if s.menu_background:
                 s.scr.blit(pg.transform.smoothscale(s.menu_background, (W, VIEW_H)), (0, 0))
@@ -953,10 +1033,9 @@ class Game:
             s.scr.blit(s.menu_veil, (0, 0))
         else:
             s.scr.blit(s.menu_veil, (0, 0))
-        # В стартовом меню и меню паузы не рисуем лишние текстовые заголовки.
+        # В стартовом меню не рисуем лишние текстовые заголовки.
         # Назначение экрана определяется фоном и набором кнопок.
-        options = ([("НОВАЯ ИГРА", "new"), ("МУЛЬТИПЛЕЕР", "multiplayer"), ("ВЫХОД", "exit")] if s.menu_mode == "start"
-                   else [("ПРОДОЛЖИТЬ", "continue"), ("ПОКИНУТЬ ИГРУ" if s.net else "НОВАЯ ИГРА", "new"), ("ВЫХОД", "exit")])
+        options = [("НОВАЯ ИГРА", "new"), ("МУЛЬТИПЛЕЕР", "multiplayer"), ("СОХРАНЕНИЯ", "saves"), ("ВЫХОД", "exit")]
         cfg = s.menu_layout()
         mouse = pg.mouse.get_pos()
         for i, (label, action) in enumerate(options):
@@ -1059,17 +1138,21 @@ class Game:
         mechs.draw(r, v)   # механизмы: рычаги, кнопки, двери, лифты, порталы, платформы
         mechs.draw_prompts(v, r, pl, s.font)
         for dr in r.drops:
+            if isinstance(dr, crafting.ResourceDrop): continue   # ресурсы рисует crafting.draw_world ниже
             dr.draw(v)
             if abs(dr.x - pl.cx) < 36: v.blit(s.font.render("[E] " + inventory.item_info(dr.wid)["name"], True, (255, 230, 120)), (dr.x - 60, dr.y - 34))
+        crafting.draw_world(s, v)   # ресурсы (свечение+подписи в очках), доступные рецепты, индикатор крафта
         for c in r.corpses: c.draw(v)
         for m in r.mobs: m.draw(v, s.debug)
         for q in s.projs: q.draw(v)
+        for c in clone.view_of(s): c.draw(v, s.debug)   # клоны героев (в сети клиент рисует их из снимка)
         if s.net and s.net.in_game: mp.draw_players(s, v)   # все игроки, имена, павшие союзники
         elif pl.inv <= 0 or int(pg.time.get_ticks() / 60) % 2:
             pl.draw(v)
         for m in r.mobs:
             if hasattr(m, "draw_front"): m.draw_front(v)      # рука, держащая игрока, поверх него
         r.draw_decor_over(v)   # мелкие детали карты со слоем "over" — поверх героя, мобов и пуль
+        crafting.draw_place(s, v)   # призрак устанавливаемой постройки поверх всего мира
         if s.debug:
             # Зелёный — физический хитбокс персонажа, белый — активная атакующая зона.
             pg.draw.rect(v, (0, 255, 120), pl.rect, 2)
@@ -1102,6 +1185,7 @@ class Game:
         lighting.apply(s.scr, r, s.cam, (max(1, crop_w), max(1, crop_h)), lit, r.mobs, s.projs, light_t)
         for m in r.mobs:
             if hasattr(m, "draw_overlay"): m.draw_overlay(s.scr, s.cam, CAMERA_ZOOM)   # таблички манекена поверх темноты
+        if crafting.vision_on(pl): crafting.draw_vision_filter(s.scr)   # жёлтый фильтр очков инженера поверх кадра
         order = s.camp.order   # прогресс: квадратик на каждую карту из order
         for i, mid in enumerate(order):
             rm = s.camp.maps.get(mid); rc = (W - 18 * len(order) - 8 + i * 18, 8, 14, 10)
@@ -1347,6 +1431,8 @@ class Game:
                 elif s.hud_edit: s.hud_event(e)
                 elif s.inv_open: inventory.event(s, e)
                 elif e.type == pg.MOUSEBUTTONDOWN and s.controls_open: s.controls_event(e)
+                elif e.type == pg.MOUSEBUTTONDOWN and e.button in (4, 5) and not s.net:
+                    crafting.cycle_recipe(s, 1 if e.button == 5 else -1)   # колесо мыши: выбор рецепта крафта
                 elif e.type == pg.MOUSEBUTTONDOWN and e.button in (1, 3): s.act("a1" if e.button == 1 else "a2")
             s.step(dt); s.draw()
 

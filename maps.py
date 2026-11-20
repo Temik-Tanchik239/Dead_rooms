@@ -34,9 +34,10 @@ import lighting
 import containers
 import mechs
 from mob import Mob, spawn_boss
+import crafting
 
 END = "__end__"
-PHYS = {"empty": ".", "wall": "#", "platform": "=", "ladder": "H", "spikes": "x"}
+PHYS = {"empty": ".", "wall": "#", "platform": "=", "ladder": "H", "spikes": "x", "resource": "."}
 VH = ROWS * T   # высота игрового поля в пикселях
 BACK = "__back__"
 DIRS = {"left": (-1, 0), "right": (1, 0), "up": (0, -1), "down": (0, 1)}
@@ -161,16 +162,23 @@ class GameMap:
         s.info = [[lg.get(ch, {"type": "empty"}) for ch in row] for row in s.chars]
         s.visited = s.cleared = s.spawned = s.locked = False
         s.mobs, s.corpses, s.drops = [], [], []
+        s.turrets = []   # постройки инженера (крафт, см. crafting.py) — живут в комнате до выхода
         s.boss_spawned = False
         for c, r, e in s.cells():
             if "item" in e:
                 wid = random_weapon() if e["item"] == "random" else e["item"]
                 if wid in CFG["weapons"]: s.drops.append(Drop(c * T + T / 2, (r + 1) * T - 14, wid))
+            if "resource" in e:   # ресурс инженера, поставленный в редакторе карт (вкладка «Ресурсы»)
+                rrid = e["resource"]
+                if rrid == "random" or rrid not in crafting.resources():
+                    rrid = random.choice(list(crafting.resources()) or ["wood"])
+                s.drops.append(crafting.ResourceDrop(c * T + T / 2, (r + 1) * T - 10, rrid))
         s.exits = s.find_exits()
         s.lights = lighting.find_lights(s)   # блоки света: факелы, фонари, кристаллы, сферы
         s.containers = containers.create(s)   # ящики и сундуки карты (их клетки в физической сетке — стена, см. build)
         s.mechs = mechs.create(s)   # механизмы карты (рычаги, кнопки, двери, лифты, порталы, платформы)
         s.build()
+        s.drops += crafting.scatter(s, override=md.get("resources"))   # ресурсы инженера (data/crafting.json, у карты может быть свой разброс)
 
     def cells(s):
         # Рисуем только реальные клетки этой карты, а не общую буферную сетку.
@@ -477,6 +485,7 @@ def check():
             if e.get("mob") not in (None, "random") and e["mob"] not in CFG["mobs"]: out.append(f"{mid}: '{ch}' — нет моба {e['mob']}")
             if e.get("boss") and "__boss__" not in CFG.get("mobs", {}): out.append(f"{mid}: '{ch}' — не настроен босс (__boss__ в data/mobs.json)")
             if e.get("item") not in (None, "random") and e["item"] not in CFG["weapons"]: out.append(f"{mid}: '{ch}' — нет оружия {e['item']}")
+            if e.get("resource") not in (None, "random") and e["resource"] not in crafting.resources(): out.append(f"{mid}: '{ch}' — нет ресурса {e['resource']} (см. data/crafting.json)")
             ex = e.get("exit")
             if ex is not None and not valid_exit(ex, defs): out.append(f"{mid}: '{ch}' ведёт на несуществующую карту {ex}")
             if e.get("light") is not None and not lighting.preset(e["light"]): out.append(f"{mid}: '{ch}' — нет света {e['light']} (см. lights в data/maps.json)")

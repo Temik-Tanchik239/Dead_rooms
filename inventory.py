@@ -45,6 +45,7 @@ DEFAULTS = {
     "outside_click": "cancel",      # щелчок мимо окна во время переноса: "cancel" — вернуть на место, "drop" — выбросить на пол
     "drop_key": "X",                # клавиша «выбросить» над ячейкой рюкзака
     "start_items": {"default": [], "knight": ["iron_pike", "short_bow"]},   # что лежит в рюкзаке на старте, по id героя
+    "default_equip": {},             # что надеть на старте сразу: {id слота: id предмета} (если предмет в рюкзаке и слот пуст)
     "background_image": "", "overlay_color": [5, 5, 14], "overlay_alpha": 170,
     "panel": {"x": 20, "y": 8, "w": 920, "h": 496, "image": "ui/inventory_panel.png", "color": [22, 24, 36], "alpha": 238,
               "border_color": [120, 110, 160], "border_width": 2, "radius": 10},
@@ -159,8 +160,9 @@ def bag(pl):
     return b
 
 def init(pl):
-    """Пустой рюкзак + стартовые предметы героя (start_items в assets/inventory.json). Вызывается из Player.__init__."""
-    c = cfg(); pl.bag = [None] * max(0, int(c.get("bag_size", 12))); pl.equip = {}
+    """Пустой рюкзак + стартовые предметы героя (start_items в assets/inventory.json) + стартовая экипировка
+    (default_equip: слот -> id предмета, если он есть в рюкзаке и слот свободен). Вызывается из Player.__init__."""
+    c = cfg(); pl.bag = [None] * max(0, int(c.get("bag_size", 12))); pl.equip = {}; pl.resources = {}   # склад ресурсов инженера
     if not c.get("enabled", True): return
     items = c.get("start_items") or {}
     wanted = items.get(pl.char_id, items.get("default", []))
@@ -169,10 +171,63 @@ def init(pl):
             if not is_item(wid) or None not in pl.bag: continue
             if wid in CFG["weapons"] and not (any(open_hands(pl)) and pl.can_use(wid)): continue   # оружие — только тем, кому оно разрешено и у кого есть открытая рука
             pl.bag[pl.bag.index(None)] = wid
+        eq = c.get("default_equip")
+        if isinstance(eq, dict):
+            for sid, wid in eq.items():
+                if not is_item(wid) or wid not in pl.bag or wid in CFG["weapons"]: continue
+                if equipment(pl).get(sid) or not allowed_in_slot(pl, wid, sid)[0]: continue
+                pl.bag[pl.bag.index(wid)] = None
+                equipment(pl)[sid] = wid
+    if equipment(pl):
+        on_equipment_changed(None, pl)   # навыки от надетых предметов (перчатка), бонусы маны/здоровья
 
 def is_item(wid):
     """Известен ли такой предмет: оружие из weapons.json или предмет из assets/inventory.json -> items."""
     return isinstance(wid, str) and (wid in CFG["weapons"] or wid in CFG.get("weapons_base", {}) or wid in (cfg().get("items") or {}))
+
+# ---------------- ресурсы (склад инженера: древесина, металл, кристалл, огонь) ----------------
+# Ресурсы не лежат в рюкзаке поштучно — они копятся на отдельном «складе» pl.resources = {id: количество}
+# и показываются отдельной полосой внизу окна инвентаря (assets/inventory.json -> resources_ui).
+
+def is_resource_item(wid):
+    """Ресурс инженера (wood/metal/crystal/fire): предмет с type == "resource" в items."""
+    return isinstance(wid, str) and item_type(wid) == "resource"
+
+def resource_order():
+    """Порядок показа ресурсов в инвентаре — по порядку в data/crafting.json -> resources (иначе фиксированный)."""
+    try:
+        import crafting
+        order = list(crafting.resources())
+        if order: return order
+    except Exception:
+        pass
+    return ["wood", "metal", "crystal", "fire"]
+
+def resources_of(pl):
+    """Склад ресурсов героя: {id: количество}."""
+    r = getattr(pl, "resources", None)
+    if not isinstance(r, dict): r = pl.resources = {}
+    return r
+
+def resource_count(pl, rid):
+    return int(resources_of(pl).get(rid, 0) or 0)
+
+def add_resource(pl, rid, n=1):
+    """Положить n ресурсов на склад (возвращает реально положенное число)."""
+    n = max(0, int(n or 0))
+    if n <= 0 or not is_resource_item(rid): return 0
+    r = resources_of(pl); r[rid] = int(r.get(rid, 0) or 0) + n
+    return n
+
+def remove_resource(pl, rid, n=1):
+    """Снять n ресурсов со склада (не ниже 0, возвращает реально снятое число)."""
+    n = max(0, int(n or 0))
+    if n <= 0: return 0
+    r = resources_of(pl); have = int(r.get(rid, 0) or 0)
+    n = min(n, have)
+    r[rid] = have - n
+    if r[rid] <= 0: r.pop(rid, None)
+    return n
 
 _ID = re.compile(r"^[A-Za-z0-9_]+$")
 
@@ -426,6 +481,11 @@ def pickup(g, pl, dr):
     False — оружие нужно подобрать по-старому (обмен с рукой)."""
     c = cfg()
     if not c.get("enabled", True) or not is_item(dr.wid): return False
+    if is_resource_item(dr.wid):   # ресурс — на «склад» (не в рюкзак), складывается в количество
+        add_resource(pl, dr.wid)
+        if dr in g.room.drops: g.room.drops.remove(dr)
+        _say(g, pl, "picked_resource", name=item_info(dr.wid)["name"])
+        return True
     is_weapon = dr.wid in CFG["weapons"]; opened = [n for n, ok in enumerate(open_hands(pl)) if ok]
     if is_weapon and c.get("pickup_mode", "bag") != "bag" and opened: return False   # старый режим: обмен с рукой
     b = bag(pl); name = item_info(dr.wid)["name"]
@@ -698,6 +758,22 @@ def draw(g):
             for line in _wrap(inf["desc"], small, ir.w - 20):
                 if y > ir.bottom - small.get_height() - 4: break
                 scr.blit(small.render(line, True, tc), (x, y)); y += small.get_height() + 1
+        # склад ресурсов инженера (полоса под рюкзаком): иконка + количество (не в рюкзаке)
+        R = c.get("resources_ui") or {}
+        if R:
+            owned = [rid for rid in resource_order() if resources_of(pl).get(rid)]
+            if owned:
+                lx = panel.x + int(R.get("label_x", 280)); ly = panel.y + int(R.get("label_y", 392))
+                scr.blit(font.render(str(R.get("label", "РЕСУРСЫ")), True, lc), (lx, ly))
+                x0 = panel.x + int(R.get("x", 280)); y0 = panel.y + int(R.get("y", 422))
+                cell = int(R.get("cell", 34)); gap = int(R.get("gap", 10)); cc = _col(R.get("count_color"), (250, 220, 130))
+                for i, rid in enumerate(owned):
+                    rx = x0 + i * (cell + gap); cxx = rx + cell / 2; cyy = y0 + cell / 2
+                    img = _icon(rid, cell - 6)
+                    if img: scr.blit(img, img.get_rect(center=(cxx, cyy)))
+                    else: pg.draw.polygon(scr, item_info(rid)["color"], [(cxx, cyy - 6), (cxx + 8, cyy), (cxx, cyy + 6), (cxx - 8, cyy)])
+                    cnt = small.render("×" + str(resources_of(pl).get(rid, 0)), True, cc)
+                    scr.blit(cnt, (rx + 2, y0 + cell - 2))
         # подсказка / сообщение об отказе
         msg = getattr(g, "inv_msg", None)
         if msg and pg.time.get_ticks() < msg[1]: scr.blit(small.render(msg[0], True, _col(c.get("msg_color"), (255, 150, 130))), (panel.x + int(c.get("hint_x", 290)), panel.y + int(c.get("hint_y", 466)) - 18))

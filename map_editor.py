@@ -16,6 +16,10 @@ try:
     from mech_panel import MechPanel   # панель «Механизмы» (рычаги/кнопки/двери/лифты/порталы/платформы); без неё редактор работает как раньше
 except Exception:
     import traceback; traceback.print_exc(); MechPanel = None
+try:
+    from resource_panel import ResourcePanel   # панель «Ресурсы» (кисти ресурсов + разброс карты); без неё редактор работает как раньше
+except Exception:
+    import traceback; traceback.print_exc(); ResourcePanel = None
 
 ROOT = Path(__file__).resolve().parent
 MAP_DIR = ROOT / "data" / "maps"
@@ -92,6 +96,11 @@ PALETTE = [
     ("o", "Свет: фонарь", {"type": "empty", "light": "lantern"}),
     ("+", "Свет: кристалл", {"type": "empty", "light": "crystal"}),
     ("%", "Свет: магическая сфера", {"type": "empty", "light": "orb"}),
+    ("W", "Ресурс: древесина", {"type": "resource", "resource": "wood"}),
+    ("N", "Ресурс: металл", {"type": "resource", "resource": "metal"}),
+    ("K", "Ресурс: кристалл", {"type": "resource", "resource": "crystal"}),
+    ("F", "Ресурс: огонь", {"type": "resource", "resource": "fire"}),
+    ("Z", "Ресурс: случайный", {"type": "resource", "resource": "random"}),
 ]
 # Эти символы уже есть в общей легенде data/maps.json — в легенду карты их не копируем.
 GLOBAL_SYMBOLS = (".", "#", "=", "H", "x", "<", ">", "L", "R", "U", "D", "P", "S", "B", "C", "?", "*", "o", "+", "%")
@@ -105,7 +114,8 @@ LEGEND.update({".": "empty", "#": "wall", "=": "platform", "H": "ladder", "x": {
 COLORS = {".": "#20202a", "#": "#85858c", "=": "#b08a5a", "H": "#c6a66b", "x": "#d94a4a",
           "P": "#62d6ff", "S": "#d58bff", "B": "#ff5368", "C": "#bd58ff", "?": "#f5d75e", "<": "#8bd49b", ">": "#8bd49b",
           "L": "#8bd49b", "R": "#8bd49b", "U": "#8bd49b", "D": "#8bd49b",
-          "*": "#ff9a3c", "o": "#ffd99a", "+": "#6fd2ff", "%": "#be6eff"}
+          "*": "#ff9a3c", "o": "#ffd99a", "+": "#6fd2ff", "%": "#be6eff",
+          "W": "#a26e3e", "N": "#96a2b9", "K": "#78dcff", "F": "#ff9628", "Z": "#e8d8a0"}
 for ch, _, data in PALETTE:
     if "sprite" in data:
         typ = data["type"]
@@ -178,6 +188,7 @@ class Editor:
         self.dpanel = None                         # мелкие детали с пиксельной точностью (decor_panel.py)
         self.containers = []; self.cpanel = None   # ящики и сундуки карты (список записей, см. container_panel.py)
         self.mechs = []; self.mpanel = None   # механизмы карты (список записей, см. mech_panel.py)
+        self.rpanel = None   # ресурсы карты (кисти + разброс, см. resource_panel.py)
         self.zoom = 1.0                       # масштаб холста: 1 клетка = CELL*zoom экранных px
         self.zoom_var = tk.StringVar(value="100%")
         self.cell_brush = "#"                # последняя обычная кисть (чтобы вернуть её из вкладок света)
@@ -261,6 +272,7 @@ class Editor:
         self._tab_cont = ttk.Frame(self.aspects); self.aspects.add(self._tab_cont, text="  Ящики  ")
         self._tab_mech = ttk.Frame(self.aspects); self.aspects.add(self._tab_mech, text="  Механизмы  ")
         self._tab_decor = ttk.Frame(self.aspects); self.aspects.add(self._tab_decor, text="  Детали  ")
+        self._tab_res = ttk.Frame(self.aspects); self.aspects.add(self._tab_res, text="  Ресурсы  ")
         self.aspects.bind("<<NotebookTabChanged>>", self._aspect_changed)
         self._palette_tab(self._tab_tiles)
         self._light_panel(self._tab_light)
@@ -279,10 +291,14 @@ class Editor:
                 self.canvas.bind("<ButtonRelease-1>", lambda e: self.dpanel.release(e) if self.dpanel.active() else None)
             except Exception:
                 import traceback; traceback.print_exc(); self.dpanel = None
+        if ResourcePanel is not None:
+            try: self.rpanel = ResourcePanel(self, self._tab_res, ROOT, CELL, PALETTE)
+            except Exception:
+                import traceback; traceback.print_exc(); self.rpanel = None
 
         # ---------- строка статуса ----------
         ttk.Label(outer, textvariable=self.status, wraplength=1260).pack(fill="x", pady=(6, 0))
-        ttk.Label(outer, text="ЛКМ — рисовать, ПКМ — стереть; колесо — листать, Ctrl+колесо — масштаб; вкладки внизу: сетка, свет, боссы, ящики, механизмы, детали.",
+        ttk.Label(outer, text="ЛКМ — рисовать, ПКМ — стереть; колесо — листать, Ctrl+колесо — масштаб; вкладки внизу: сетка, свет, боссы, ящики, механизмы, детали, ресурсы.",
                   foreground="#8a8a98").pack(anchor="w", pady=(2, 0))
 
     # ---------- палитра «Сетка» ----------
@@ -323,6 +339,10 @@ class Editor:
             self._force_mode(self.mpanel, True)
         elif tab is self._tab_decor and self.dpanel is not None:
             self._force_mode(self.dpanel, True)
+        elif tab is self._tab_res and self.rpanel is not None:
+            self.brush.set(self.cell_brush)
+            self.status.set("Ресурсы: выбери кисть ресурса и рисуй по сетке — в игре на этой клетке появится спавн ресурса. "
+                            "Свой разброс для карты — настройками ниже.")
         else:
             self.brush.set(self.cell_brush)
             self.status.set("Режим сетки: выбери элемент в палитре и рисуй. ЛКМ — рисовать, ПКМ — стереть, Ctrl+колесо — масштаб.")
@@ -818,6 +838,7 @@ class Editor:
         if self.cpanel: self.cpanel.crop(new_w, new_h)
         if self.dpanel: self.dpanel.crop(new_w, new_h)
         if self.mpanel: self.mpanel.crop(new_w, new_h)
+        if self.rpanel: self.rpanel.crop(new_w, new_h)
         self.canvas.configure(scrollregion=(0, 0, self.map_w * self.cell_size(), self.map_h * self.cell_size()))
         self._draw_all()
         self.status.set(f"Размер карты: {self.map_w}×{self.map_h} клеток")
@@ -828,6 +849,7 @@ class Editor:
             if self.cpanel: self.cpanel.reset()
             if self.dpanel: self.dpanel.reset()
             if self.mpanel: self.mpanel.reset()
+            if self.rpanel: self.rpanel.reset()
             self._draw_all()
 
     def open_map(self):
@@ -853,6 +875,7 @@ class Editor:
             if self.cpanel: self.cpanel.load(data.get("containers"))
             if self.dpanel: self.dpanel.load(data.get("decor"))
             if self.mpanel: self.mpanel.load(data.get("mechanisms"))
+            if self.rpanel: self.rpanel.load(data.get("resources"))
             self.canvas.configure(scrollregion=(0, 0, self.map_w * self.cell_size(), self.map_h * self.cell_size()))
             self._draw_all(); self.zoom_fit()
             self.status.set(f"Загружена карта: {path}")
@@ -904,6 +927,10 @@ class Editor:
             mechs = self.mpanel.dump()
             if mechs: data["mechanisms"] = mechs
             else: data.pop("mechanisms", None)
+        if self.rpanel:   # ресурсы карты: кисти-клетки уже в legend; поле "resources" — свой разброс
+            resc = self.rpanel.dump()
+            if resc: data["resources"] = resc
+            else: data.pop("resources", None)
         try:
             path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             if MAP_CONFIG.exists():
@@ -1754,6 +1781,20 @@ def _build_accessories_tab(nb):
         return None
 
 
+def _build_textures_tab(nb):
+    """Вкладка «Текстуры» (texture_editor.py): пиксель-арт для ресурсов, турели и огненного меча."""
+    tab = ttk.Frame(nb); nb.add(tab, text="  Текстуры  ")
+    try:
+        import texture_editor
+        te = texture_editor.TextureTab(tab, root=ROOT); te.pack(fill="both", expand=True)
+        return te
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        ttk.Label(tab, text="Вкладка «Текстуры» не запустилась:\n\n%s: %s" % (type(e).__name__, e),
+                  justify="left", foreground="#b00020").pack(anchor="nw", padx=16, pady=16)
+        return None
+
+
 def _build_style(root):
     """Тёмная «флагманская» тема для всего редактора (ttk clam + база опций для tk-виджетов)."""
     try:
@@ -1838,6 +1879,7 @@ if __name__ == "__main__":
     SkillEditor(skills_tab)
     mobs_tab = _build_mobs_tab(nb, root)
     acc_tab = _build_accessories_tab(nb)
+    tex_tab = _build_textures_tab(nb)
 
     def _on_close():
         # несохранённые правки мобов: спросить, как это делает сама вкладка

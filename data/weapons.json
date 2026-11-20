@@ -1,277 +1,325 @@
 {
-  "rusty_sword": {
-    "name": "Меч",
-    "slot": 1,
-    "combo": [
-      {
-        "windup": 0.08,
-        "active": 0.1,
-        "recovery": 0.13,
-        "damage": 24,
-        "reach": [
-          120,
-          120
-        ],
-        "knockback": 180,
-        "lunge": 90,
-        "style": "slash",
-        "swing": [
-          100,
-          -85
-        ]
-      },
-      {
-        "windup": 0.07,
-        "active": 0.1,
-        "recovery": 0.14,
-        "damage": 22,
-        "reach": [
-          120,
-          120
-        ],
-        "knockback": 210,
-        "lunge": 105,
-        "style": "slash",
-        "swing": [
-          -95,
-          80
-        ]
-      },
-      {
-        "windup": 0.11,
-        "active": 0.12,
-        "recovery": 0.24,
-        "damage": 30,
-        "reach": [
-          145,
-          42
-        ],
-        "knockback": 330,
-        "lunge": 250,
-        "style": "thrust",
-        "thrust_angle": 0
-      }
+ "rusty_sword": {
+  "name": "Меч",
+  "slot": 1,
+  "combo": [
+   {
+    "windup": 0.08,
+    "active": 0.1,
+    "recovery": 0.13,
+    "damage": 24,
+    "reach": [
+     120,
+     120
     ],
-    "skin": "weapons/sword.png",
-    "icon": "icons/rusty_sword.png",
-    "draw": [
-      100,
-      80
+    "knockback": 180,
+    "lunge": 90,
+    "style": "slash",
+    "swing": [
+     100,
+     -85
+    ]
+   },
+   {
+    "windup": 0.07,
+    "active": 0.1,
+    "recovery": 0.14,
+    "damage": 22,
+    "reach": [
+     120,
+     120
     ],
-    "grip": [
-      6,
-      11
+    "knockback": 210,
+    "lunge": 105,
+    "style": "slash",
+    "swing": [
+     -95,
+     80
+    ]
+   },
+   {
+    "windup": 0.11,
+    "active": 0.12,
+    "recovery": 0.24,
+    "damage": 30,
+    "reach": [
+     145,
+     42
     ],
-    "rest_angle": 30,
-    "mana": 4,
-    "mana_hit": 3
-  },
-  "iron_pike": {
-    "name": "Железная пика",
-    "slot": 1,
-    "combo": [
-      {
-        "windup": 0.16,
-        "active": 0.09,
-        "recovery": 0.26,
-        "damage": 24,
-        "reach": [
-          84,
-          18
-        ],
-        "knockback": 260,
-        "lunge": 60
-      }
-    ],
-    "skin": "weapons/iron_pike.png",
-    "icon": "icons/iron_pike.png",
-    "draw": [
-      88,
-      14
-    ],
-    "grip": [
-      20,
-      10
-    ],
-    "rest_angle": 40,
+    "knockback": 330,
+    "lunge": 250,
     "style": "thrust",
-    "mana": 6,
-    "mana_hit": 4
-  },
-  "twin_daggers": {
-    "name": "Парные кинжалы",
-    "slot": 1,
-    "combo": [
-      {
-        "windup": 0.04,
-        "active": 0.05,
-        "recovery": 0.07,
-        "damage": 7,
-        "reach": [
-          34,
-          30
-        ],
-        "knockback": 90,
-        "lunge": 90
-      },
-      {
-        "windup": 0.04,
-        "active": 0.05,
-        "recovery": 0.07,
-        "damage": 7,
-        "reach": [
-          34,
-          30
-        ],
-        "knockback": 90,
-        "lunge": 90
-      },
-      {
-        "windup": 0.04,
-        "active": 0.05,
-        "recovery": 0.07,
-        "damage": 7,
-        "reach": [
-          34,
-          30
-        ],
-        "knockback": 90,
-        "lunge": 90
-      },
-      {
-        "windup": 0.06,
-        "active": 0.07,
-        "recovery": 0.16,
-        "damage": 14,
-        "reach": [
-          40,
-          34
-        ],
-        "knockback": 200,
-        "lunge": 160,
-        "style": "slash",
-        "swing": [
-          95,
-          -60
-        ],
-        "mana": 5
-      }
+    "thrust_angle": 0
+   }
+  ],
+  "skin": "weapons/sword.png",
+  "icon": "icons/rusty_sword.png",
+  "draw": [
+   100,
+   80
+  ],
+  "grip": [
+   6,
+   11
+  ],
+  "rest_angle": 30,
+  "mana": 4,
+  "mana_hit": 3
+ },
+ "iron_pike": {
+  "name": "Железная пика",
+  "slot": 1,
+  "combo": [
+   {
+    "windup": 0.16,
+    "active": 0.09,
+    "recovery": 0.26,
+    "damage": 24,
+    "reach": [
+     84,
+     18
     ],
-    "skin": "weapons/twin_daggers.png",
-    "icon": "icons/twin_daggers.png",
-    "draw": [
-      34,
-      20
+    "knockback": 260,
+    "lunge": 60
+   }
+  ],
+  "skin": "weapons/iron_pike.png",
+  "icon": "icons/iron_pike.png",
+  "draw": [
+   88,
+   14
+  ],
+  "grip": [
+   20,
+   10
+  ],
+  "rest_angle": 40,
+  "style": "thrust",
+  "mana": 6,
+  "mana_hit": 4
+ },
+ "twin_daggers": {
+  "name": "Парные кинжалы",
+  "slot": 1,
+  "combo": [
+   {
+    "windup": 0.04,
+    "active": 0.05,
+    "recovery": 0.07,
+    "damage": 7,
+    "reach": [
+     34,
+     30
     ],
-    "grip": [
-      6,
-      10
+    "knockback": 90,
+    "lunge": 90
+   },
+   {
+    "windup": 0.04,
+    "active": 0.05,
+    "recovery": 0.07,
+    "damage": 7,
+    "reach": [
+     34,
+     30
     ],
-    "rest_angle": -40,
-    "style": "thrust",
-    "mana": 3,
-    "mana_hit": 2
-  },
-  "short_bow": {
-    "name": "Короткий лук",
-    "slot": 2,
-    "combo": [
-      {
-        "windup": 0.18,
-        "active": 0.02,
-        "recovery": 0.3,
-        "damage": 16,
-        "reach": [
-          0,
-          0
-        ],
-        "knockback": 0,
-        "lunge": 0,
-        "projectile": "arrow"
-      }
+    "knockback": 90,
+    "lunge": 90
+   },
+   {
+    "windup": 0.04,
+    "active": 0.05,
+    "recovery": 0.07,
+    "damage": 7,
+    "reach": [
+     34,
+     30
     ],
-    "skin": "weapons/short_bow.png",
-    "icon": "icons/short_bow.png",
-    "draw": [
-      100,
-      80
+    "knockback": 90,
+    "lunge": 90
+   },
+   {
+    "windup": 0.06,
+    "active": 0.07,
+    "recovery": 0.16,
+    "damage": 14,
+    "reach": [
+     40,
+     34
     ],
-    "grip": [
-      11,
-      11
+    "knockback": 200,
+    "lunge": 160,
+    "style": "slash",
+    "swing": [
+     95,
+     -60
     ],
-    "rest_angle": 0,
-    "mana": 12
-  },
-  "fire_flask": {
-    "name": "Склянка огня",
-    "slot": 2,
-    "combo": [
-      {
-        "windup": 0.15,
-        "active": 0.02,
-        "recovery": 0.5,
-        "damage": 30,
-        "reach": [
-          0,
-          0
-        ],
-        "knockback": 0,
-        "lunge": 0,
-        "projectile": "flask_fire"
-      }
+    "mana": 5
+   }
+  ],
+  "skin": "weapons/twin_daggers.png",
+  "icon": "icons/twin_daggers.png",
+  "draw": [
+   34,
+   20
+  ],
+  "grip": [
+   6,
+   10
+  ],
+  "rest_angle": -40,
+  "style": "thrust",
+  "mana": 3,
+  "mana_hit": 2
+ },
+ "short_bow": {
+  "name": "Короткий лук",
+  "slot": 2,
+  "combo": [
+   {
+    "windup": 0.18,
+    "active": 0.02,
+    "recovery": 0.3,
+    "damage": 16,
+    "reach": [
+     0,
+     0
     ],
-    "skin": "weapons/fire_flask.png",
-    "icon": "icons/fire_flask.png",
-    "draw": [
-      20,
-      28
+    "knockback": 0,
+    "lunge": 0,
+    "projectile": "arrow"
+   }
+  ],
+  "skin": "weapons/short_bow.png",
+  "icon": "icons/short_bow.png",
+  "draw": [
+   100,
+   80
+  ],
+  "grip": [
+   11,
+   11
+  ],
+  "rest_angle": 0,
+  "mana": 12
+ },
+ "fire_flask": {
+  "name": "Склянка огня",
+  "slot": 2,
+  "combo": [
+   {
+    "windup": 0.15,
+    "active": 0.02,
+    "recovery": 0.5,
+    "damage": 30,
+    "reach": [
+     0,
+     0
     ],
-    "grip": [
-      10,
-      22
+    "knockback": 0,
+    "lunge": 0,
+    "projectile": "flask_fire"
+   }
+  ],
+  "skin": "weapons/fire_flask.png",
+  "icon": "icons/fire_flask.png",
+  "draw": [
+   20,
+   28
+  ],
+  "grip": [
+   10,
+   22
+  ],
+  "rotate": false,
+  "fixed_angle": 12,
+  "mana": 30
+ },
+ "seeker_staff": {
+  "name": "Посох-искатель",
+  "slot": 2,
+  "combo": [
+   {
+    "windup": 0.2,
+    "active": 0.02,
+    "recovery": 0.45,
+    "damage": 12,
+    "reach": [
+     0,
+     0
     ],
-    "rotate": false,
-    "fixed_angle": 12,
-    "mana": 30
-  },
-  "seeker_staff": {
-    "name": "Посох-искатель",
-    "slot": 2,
-    "combo": [
-      {
-        "windup": 0.2,
-        "active": 0.02,
-        "recovery": 0.45,
-        "damage": 12,
-        "reach": [
-          0,
-          0
-        ],
-        "knockback": 0,
-        "lunge": 0,
-        "projectile": {
-          "type": "homing_orb",
-          "speed": 260,
-          "color": [
-            150,
-            255,
-            220
-          ]
-        }
-      }
+    "knockback": 0,
+    "lunge": 0,
+    "projectile": {
+     "type": "homing_orb",
+     "speed": 260,
+     "color": [
+      150,
+      255,
+      220
+     ]
+    }
+   }
+  ],
+  "skin": "weapons/seeker_staff.png",
+  "icon": "icons/seeker_staff.png",
+  "draw": [
+   80,
+   80
+  ],
+  "grip": [
+   30,
+   38
+  ],
+  "rest_angle": 35,
+  "mana": 20
+ },
+ "fire_sword": {
+  "name": "Огненный меч",
+  "slot": 1,
+  "combo": [
+   {
+    "windup": 0.12,
+    "active": 0.06,
+    "recovery": 0.34,
+    "damage": 20,
+    "reach": [
+     30,
+     28
     ],
-    "skin": "weapons/seeker_staff.png",
-    "icon": "icons/seeker_staff.png",
-    "draw": [
-      80,
-      80
+    "knockback": 180,
+    "lunge": 60
+   },
+   {
+    "windup": 0.16,
+    "active": 0.06,
+    "recovery": 0.4,
+    "damage": 26,
+    "reach": [
+     32,
+     30
     ],
-    "grip": [
-      30,
-      38
-    ],
-    "rest_angle": 35,
-    "mana": 20
-  }
+    "knockback": 220,
+    "lunge": 70,
+    "projectile": "fire_bolt"
+   }
+  ],
+  "skin": "weapons/fire_sword.png",
+  "icon": "icons/weapon_fire_sword.png",
+  "draw": [
+   36,
+   46
+  ],
+  "grip": [
+   8,
+   38
+  ],
+  "rest_angle": 12,
+  "mana": 10,
+  "color": [
+   255,
+   140,
+   40
+  ]
+ }
 }

@@ -64,11 +64,18 @@ class Proj:
             dd = math.hypot(m.cx - s.x, m.cy - s.y)
             if dd < bd: bd, best = dd, m
         return best
-    def targets(s, w): return w.mobs if s.friendly else (getattr(w, "players", None) or [w.pl])   # мультиплеер: все живые игроки (за ними же гонятся самонаводящиеся и цепные пули)
+    def targets(s, w):
+        # мультиплеер: все живые игроки + клоны героев (clone.py), за ними же гонятся самонаводящиеся и цепные пули
+        base = (getattr(w, "players", None) or [w.pl])
+        if s.friendly: return w.mobs
+        return base + [c for c in getattr(w, "clones", ()) if getattr(c, "hp", 0) > 0]
     def hit_targets(s, w):
-        """Кого пуля может задеть: цели + ящики комнаты (ящики стоят в стороне от targets, чтобы на них не наводились и не перескакивали)."""
+        """Кого пуля может задеть: цели + ящики комнаты (ящики стоят в стороне от targets, чтобы на них не наводились и не перескакивали).
+        Вражеские пули могут ранить и турели инженера (crafting.Turret)."""
         t = s.targets(w)
-        return t + list(getattr(w, "containers", ())) if s.friendly else t
+        if s.friendly:
+            return t + list(getattr(w, "containers", ()))
+        return t + list(getattr(w, "turrets", ()))
     def wall_hit(s, w):
         """Пуля упёрлась в стену: если в этой клетке ящик — бьём ящик (его клетки в сетке считаются стеной)."""
         if not s.friendly: return

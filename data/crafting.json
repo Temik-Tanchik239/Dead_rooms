@@ -1,0 +1,142 @@
+{
+  "_help": "Крафт инженера (см. crafting.py). resources — ресурсы, лежащие на полу (древесина, металл, кристалл, огонь) и видимые в очках. recipes — рецепты: kind: item — готовый предмет падает на пол (result — id оружия/предмета), building — строение, которое герой ставит на место (result: 'turret'); cost — сколько каких ресурсов нужно; craft_time — секунды крафта; mana_cost — мана за весь крафт. scatter: сколько ресурсов разбросано по комнате при входе и веса типов.",
+  "resources": {
+    "wood": {
+      "name": "Древесина",
+      "color": [
+        162,
+        110,
+        62
+      ],
+      "glow": [
+        220,
+        170,
+        90
+      ],
+      "image": "resources/wood.png"
+    },
+    "metal": {
+      "name": "Металлическая деталь",
+      "color": [
+        150,
+        162,
+        185
+      ],
+      "glow": [
+        200,
+        210,
+        240
+      ],
+      "image": "resources/metal.png"
+    },
+    "crystal": {
+      "name": "Кристалл",
+      "color": [
+        120,
+        220,
+        255
+      ],
+      "glow": [
+        150,
+        240,
+        255
+      ],
+      "image": "resources/crystal.png"
+    },
+    "fire": {
+      "name": "Огонь",
+      "color": [
+        255,
+        150,
+        40
+      ],
+      "glow": [
+        255,
+        200,
+        90
+      ],
+      "image": "resources/fire.png"
+    }
+  },
+  "gadgets": {
+    "goggles": "engineer_goggles",
+    "gauntlet": "engineer_gauntlet"
+  },
+  "recipes": {
+    "fire_sword": {
+      "name": "Огненный меч",
+      "kind": "item",
+      "result": "fire_sword",
+      "cost": {
+        "wood": 1,
+        "metal": 1,
+        "fire": 1
+      },
+      "craft_time": 3.0,
+      "mana_cost": 20,
+      "color": [
+        255,
+        150,
+        40
+      ],
+      "icon": "icons/weapon_fire_sword.png"
+    },
+    "turret": {
+      "name": "Турель",
+      "kind": "building",
+      "result": "turret",
+      "cost": {
+        "metal": 2,
+        "fire": 1,
+        "crystal": 1
+      },
+      "craft_time": 3.0,
+      "mana_cost": 30,
+      "color": [
+        150,
+        200,
+        255
+      ],
+      "icon": "icons/build_turret.png",
+      "build": {
+        "name": "Турель",
+        "hp": 90,
+        "range": 270,
+        "fire_rate": 0.85,
+        "damage": 12,
+        "projectile": "turret_bolt",
+        "w": 30,
+        "h": 34,
+        "image": "buildings/turret.png",
+        "body_color": [
+          95,
+          130,
+          170
+        ],
+        "barrel_color": [
+          40,
+          50,
+          65
+        ],
+        "muzzle": [
+          120,
+          210,
+          255
+        ]
+      }
+    }
+  },
+  "scatter": {
+    "per_room": 4,
+    "radius": 110,
+    "weights": {
+      "wood": 0.4,
+      "metal": 0.3,
+      "crystal": 0.2,
+      "fire": 0.1
+    }
+  },
+  "craft_radius": 170,
+  "drag_speed": 560,
+  "craft_hurt_share": 0.2
+}

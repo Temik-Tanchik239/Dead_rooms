@@ -1,343 +1,358 @@
 {
-  "bolt": {
-    "speed": 260,
-    "size": 5,
-    "skin": "projectiles/bolt_1.png",
-    "color": [
-      200,
-      120,
-      255
-    ],
-    "life": 2.5,
-    "knockback": 120,
-    "draw": [
-      48,
-      48
-    ]
+ "bolt": {
+  "speed": 260,
+  "size": 5,
+  "skin": "projectiles/bolt_1.png",
+  "color": [
+   200,
+   120,
+   255
+  ],
+  "life": 2.5,
+  "knockback": 120,
+  "draw": [
+   48,
+   48
+  ]
+ },
+ "arrow": {
+  "speed": 620,
+  "size": 4,
+  "color": [
+   240,
+   220,
+   150
+  ],
+  "life": 1.2,
+  "knockback": 140,
+  "skin": "projectiles/arrow.png",
+  "draw": [
+   32,
+   8
+  ]
+ },
+ "flask_fire": {
+  "speed": 320,
+  "vy": -260,
+  "gravity": 1100,
+  "aoe": 90,
+  "size": 7,
+  "color": [
+   255,
+   140,
+   40
+  ],
+  "life": 2,
+  "knockback": 260,
+  "skin": "projectiles/flask_fire.png",
+  "draw": [
+   26,
+   21
+  ]
+ },
+ "homing_orb": {
+  "speed": 170,
+  "size": 6,
+  "color": [
+   120,
+   255,
+   200
+  ],
+  "life": 4,
+  "homing": {
+   "rate": 2.2,
+   "delay": 0.25
   },
-  "arrow": {
-    "speed": 620,
-    "size": 4,
-    "color": [
-      240,
-      220,
-      150
-    ],
-    "life": 1.2,
-    "knockback": 140,
-    "skin": "projectiles/arrow.png",
-    "draw": [
-      32,
-      8
-    ]
+  "skin": "projectiles/homing_orb.png",
+  "draw": [
+   30,
+   25
+  ]
+ },
+ "wave_bolt": {
+  "speed": 210,
+  "size": 5,
+  "color": [
+   255,
+   200,
+   120
+  ],
+  "life": 3,
+  "wave": {
+   "amp": 18,
+   "freq": 2.5
   },
-  "flask_fire": {
-    "speed": 320,
-    "vy": -260,
-    "gravity": 1100,
-    "aoe": 90,
-    "size": 7,
-    "color": [
-      255,
-      140,
-      40
-    ],
-    "life": 2,
-    "knockback": 260,
-    "skin": "projectiles/flask_fire.png",
-    "draw": [
-      26,
-      21
-    ]
+  "skin": "projectiles/wave_bolt.png",
+  "draw": [
+   34,
+   20
+  ]
+ },
+ "ember": {
+  "speed": 80,
+  "accel": 520,
+  "max_speed": 430,
+  "size": 6,
+  "color": [
+   255,
+   110,
+   60
+  ],
+  "life": 2.5,
+  "skin": "projectiles/ember.png",
+  "draw": [
+   38,
+   18
+  ]
+ },
+ "bouncy_bomb": {
+  "speed": 280,
+  "vy": -220,
+  "gravity": 900,
+  "bounces": 3,
+  "bounce_damp": 0.7,
+  "aoe": 70,
+  "size": 7,
+  "color": [
+   200,
+   200,
+   90
+  ],
+  "life": 3,
+  "skin": "projectiles/bouncy_bomb.png",
+  "draw": [
+   22,
+   24
+  ],
+  "rotate": false
+ },
+ "splitter": {
+  "speed": 200,
+  "size": 7,
+  "color": [
+   255,
+   90,
+   160
+  ],
+  "life": 0.9,
+  "split": {
+   "into": "shard",
+   "count": 6,
+   "ring": true
   },
-  "homing_orb": {
-    "speed": 170,
-    "size": 6,
-    "color": [
-      120,
-      255,
-      200
-    ],
-    "life": 4,
-    "homing": {
-      "rate": 2.2,
-      "delay": 0.25
-    },
-    "skin": "projectiles/homing_orb.png",
-    "draw": [
-      30,
-      25
-    ]
+  "skin": "projectiles/splitter.png",
+  "draw": [
+   26,
+   26
+  ]
+ },
+ "shard": {
+  "speed": 240,
+  "size": 3,
+  "color": [
+   255,
+   160,
+   200
+  ],
+  "life": 1.2,
+  "knockback": 60,
+  "skin": "projectiles/shard.png",
+  "draw": [
+   20,
+   10
+  ]
+ },
+ "spear": {
+  "speed": 520,
+  "size": 4,
+  "color": [
+   220,
+   220,
+   255
+  ],
+  "life": 1.0,
+  "pierce": 3,
+  "knockback": 200,
+  "skin": "projectiles/spear.png",
+  "draw": [
+   58,
+   8
+  ]
+ },
+ "fire_bolt": {
+  "speed": 440,
+  "size": 6,
+  "color": [
+   255,
+   140,
+   50
+  ],
+  "life": 1.6,
+  "aoe": 48,
+  "knockback": 180,
+  "draw": [
+   30,
+   20
+  ]
+ },
+ "ice_bolt": {
+  "speed": 420,
+  "size": 6,
+  "color": [
+   150,
+   225,
+   255
+  ],
+  "life": 1.6,
+  "knockback": 120,
+  "effect": {
+   "freeze": 2.0
   },
-  "wave_bolt": {
-    "speed": 210,
-    "size": 5,
-    "color": [
-      255,
-      200,
-      120
-    ],
-    "life": 3,
-    "wave": {
-      "amp": 18,
-      "freq": 2.5
-    },
-    "skin": "projectiles/wave_bolt.png",
-    "draw": [
-      34,
-      20
-    ]
+  "draw": [
+   28,
+   16
+  ]
+ },
+ "arcane_bolt": {
+  "speed": 360,
+  "size": 6,
+  "color": [
+   190,
+   130,
+   255
+  ],
+  "life": 2.5,
+  "pierce": 2,
+  "knockback": 100,
+  "homing": {
+   "rate": 2.0,
+   "delay": 0.2
   },
-  "ember": {
-    "speed": 80,
-    "accel": 520,
-    "max_speed": 430,
-    "size": 6,
-    "color": [
-      255,
-      110,
-      60
-    ],
-    "life": 2.5,
-    "skin": "projectiles/ember.png",
-    "draw": [
-      38,
-      18
-    ]
+  "draw": [
+   28,
+   24
+  ]
+ },
+ "lightning_bolt": {
+  "speed": 780,
+  "size": 7,
+  "color": [
+   150,
+   205,
+   255
+  ],
+  "life": 2.5,
+  "knockback": 120,
+  "homing": {
+   "rate": 16,
+   "range": 640
   },
-  "bouncy_bomb": {
-    "speed": 280,
-    "vy": -220,
-    "gravity": 900,
-    "bounces": 3,
-    "bounce_damp": 0.7,
-    "aoe": 70,
-    "size": 7,
-    "color": [
-      200,
-      200,
-      90
-    ],
-    "life": 3,
-    "skin": "projectiles/bouncy_bomb.png",
-    "draw": [
-      22,
-      24
-    ],
-    "rotate": false
+  "chain": 5,
+  "chain_range": 280,
+  "draw": [
+   40,
+   16
+  ]
+ },
+ "xbow_arrow": {
+  "speed": 720,
+  "size": 4,
+  "color": [
+   240,
+   225,
+   160
+  ],
+  "life": 1.1,
+  "knockback": 140,
+  "skin": "projectiles/xbow_arrow.png",
+  "draw": [
+   40,
+   9
+  ],
+  "hit_stop": 0
+ },
+ "xbow_fire": {
+  "speed": 600,
+  "size": 5,
+  "color": [
+   255,
+   140,
+   50
+  ],
+  "life": 1.2,
+  "aoe": 30,
+  "knockback": 120,
+  "effect": {
+   "burn": {
+    "time": 3,
+    "dps": 7
+   }
   },
-  "splitter": {
-    "speed": 200,
-    "size": 7,
-    "color": [
-      255,
-      90,
-      160
-    ],
-    "life": 0.9,
-    "split": {
-      "into": "shard",
-      "count": 6,
-      "ring": true
-    },
-    "skin": "projectiles/splitter.png",
-    "draw": [
-      26,
-      26
-    ]
+  "frames": "projectiles/xbow_fire",
+  "fps": 14,
+  "draw": [
+   40,
+   11
+  ],
+  "hit_stop": 0,
+  "shake": 0
+ },
+ "xbow_heavy": {
+  "speed": 860,
+  "size": 5,
+  "color": [
+   170,
+   195,
+   235
+  ],
+  "life": 1.0,
+  "pierce": 2,
+  "knockback": 340,
+  "skin": "projectiles/xbow_heavy.png",
+  "draw": [
+   52,
+   11
+  ],
+  "hit_stop": 0
+ },
+ "pick": {
+  "speed": 720,
+  "vy": -60,
+  "gravity": 420,
+  "size": 5,
+  "color": [
+   255,
+   210,
+   120
+  ],
+  "life": 1.2,
+  "aoe": 105,
+  "knockback": 0,
+  "shake": 0,
+  "hit_stop": 0,
+  "effect": {
+   "stun": 2.5
   },
-  "shard": {
-    "speed": 240,
-    "size": 3,
-    "color": [
-      255,
-      160,
-      200
-    ],
-    "life": 1.2,
-    "knockback": 60,
-    "skin": "projectiles/shard.png",
-    "draw": [
-      20,
-      10
-    ]
-  },
-  "spear": {
-    "speed": 520,
-    "size": 4,
-    "color": [
-      220,
-      220,
-      255
-    ],
-    "life": 1.0,
-    "pierce": 3,
-    "knockback": 200,
-    "skin": "projectiles/spear.png",
-    "draw": [
-      58,
-      8
-    ]
-  },
-  "fire_bolt": {
-    "speed": 440,
-    "size": 6,
-    "color": [
-      255,
-      140,
-      50
-    ],
-    "life": 1.6,
-    "aoe": 48,
-    "knockback": 180,
-    "draw": [
-      30,
-      20
-    ]
-  },
-  "ice_bolt": {
-    "speed": 420,
-    "size": 6,
-    "color": [
-      150,
-      225,
-      255
-    ],
-    "life": 1.6,
-    "knockback": 120,
-    "effect": {
-      "freeze": 2.0
-    },
-    "draw": [
-      28,
-      16
-    ]
-  },
-  "arcane_bolt": {
-    "speed": 360,
-    "size": 6,
-    "color": [
-      190,
-      130,
-      255
-    ],
-    "life": 2.5,
-    "pierce": 2,
-    "knockback": 100,
-    "homing": {
-      "rate": 2.0,
-      "delay": 0.2
-    },
-    "draw": [
-      28,
-      24
-    ]
-  },
-  "lightning_bolt": {
-    "speed": 780,
-    "size": 7,
-    "color": [
-      150,
-      205,
-      255
-    ],
-    "life": 2.5,
-    "knockback": 120,
-    "homing": {
-      "rate": 16,
-      "range": 640
-    },
-    "chain": 5,
-    "chain_range": 280,
-    "draw": [
-      40,
-      16
-    ]
-  },
-  "xbow_arrow": {
-    "speed": 720,
-    "size": 4,
-    "color": [
-      240,
-      225,
-      160
-    ],
-    "life": 1.1,
-    "knockback": 140,
-    "skin": "projectiles/xbow_arrow.png",
-    "draw": [
-      40,
-      9
-    ],
-    "hit_stop": 0
-  },
-  "xbow_fire": {
-    "speed": 600,
-    "size": 5,
-    "color": [
-      255,
-      140,
-      50
-    ],
-    "life": 1.2,
-    "aoe": 30,
-    "knockback": 120,
-    "effect": {
-      "burn": {
-        "time": 3,
-        "dps": 7
-      }
-    },
-    "frames": "projectiles/xbow_fire",
-    "fps": 14,
-    "draw": [
-      40,
-      11
-    ],
-    "hit_stop": 0,
-    "shake": 0
-  },
-  "xbow_heavy": {
-    "speed": 860,
-    "size": 5,
-    "color": [
-      170,
-      195,
-      235
-    ],
-    "life": 1.0,
-    "pierce": 2,
-    "knockback": 340,
-    "skin": "projectiles/xbow_heavy.png",
-    "draw": [
-      52,
-      11
-    ],
-    "hit_stop": 0
-  },
-  "pick": {
-    "speed": 720,
-    "vy": -60,
-    "gravity": 420,
-    "size": 5,
-    "color": [
-      255,
-      210,
-      120
-    ],
-    "life": 1.2,
-    "aoe": 105,
-    "knockback": 0,
-    "shake": 0,
-    "hit_stop": 0,
-    "effect": {
-      "stun": 2.5
-    },
-    "skin": "projectiles/pick.png",
-    "draw": [
-      22,
-      24
-    ],
-    "rotate": false
-  }
+  "skin": "projectiles/pick.png",
+  "draw": [
+   22,
+   24
+  ],
+  "rotate": false
+ },
+ "turret_bolt": {
+  "speed": 380,
+  "size": 4,
+  "color": [
+   150,
+   210,
+   255
+  ],
+  "life": 1.6,
+  "knockback": 60,
+  "draw": [
+   24,
+   24
+  ]
+ }
 }

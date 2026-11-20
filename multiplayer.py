@@ -27,6 +27,7 @@ import characters as char_menu
 import spells
 import crossbow
 import bard
+import clone       # клоны героев (навык "Клон" в spells.py; в сети считает хост)
 import invisibility
 import inventory
 import containers
@@ -605,6 +606,7 @@ class HostSession(Session):
             if inp.mb[0]: p.press("a1")
             if inp.mb[1]: p.press("a2")
             p.drops = r.drops   # телекинез дотягивается до предметов на полу
+            p.grid = r.g        # сетка комнаты: клон ищет по ней свободное место призыва (clone.spawn)
             p.update(dt, inp.keys, r.g, r.mobs + r.containers, g.projs, fx); p.update_anim(dt)   # ящики — тоже цели
             if inp.pose and p.pid != s.my_id:
                 # Движение своего героя клиент считает сам (без задержки сети); хост между пакетами
@@ -614,11 +616,14 @@ class HostSession(Session):
                     p.x, p.y, p.vx, p.vy = x, y, vx, vy
                     p.h = int(max(4, min(p.H0, h))); p.face = 1 if face >= 0 else -1
         bard.PLAYERS = None   # обратно: вне обновления игроков ноты достают только до самого барда (и предсказание клиента не трогает чужих)
+        for p in players:
+            clone.update_all(p, dt, r.g, r.mobs + r.containers, g.projs, fx)   # клоны героев: свой ИИ (считает хост), растворение
+        w_clones = [c for p in players for c in getattr(p, "clones", ()) if c.hp > 0]
         alive = [p for p in players if p.hp > 0]
         if alive:
-            w = SimpleNamespace(g=r.g, pl=alive[0], players=alive, mobs=r.mobs, containers=r.containers, projs=g.projs, fx=fx)
+            w = SimpleNamespace(g=r.g, pl=alive[0], players=alive, mobs=r.mobs, containers=r.containers, projs=g.projs, fx=fx, clones=w_clones)
             for m in r.mobs:
-                w.pl = invisibility.pick_target(alive, m)   # моб видит ближайшего видимого игрока (невидимых — см. invisibility.py)
+                w.pl = clone.decoy(w, m, invisibility.pick_target(alive, m))   # моб видит ближайшего видимого игрока; живой клон-приманка заметно ближе — переключается на него
                 m.update(dt, w)
                 if m.d.get("contact"):
                     for p in alive:
@@ -693,7 +698,7 @@ class HostSession(Session):
             projs.append([q.nid, R(q.x), R(q.y), R(q.vx), R(q.vy), round(q.t, 3), style_idx[key]])
         mobs = []
         for m in r.mobs:
-            if not hasattr(m, "nid"): m.nid = s.next_nid();
+            if not hasattr(m, "nid"): m.nid = s.next_nid()
             act = None
             if m.act:
                 a = m.act; act = [a.get("i", 0), a["phase"], round(a["t"], 3)]
@@ -702,6 +707,14 @@ class HostSession(Session):
             mobs.append([m.nid, m.kind, R(m.x), R(m.y), m.dir, R(m.hp), R(m.maxhp), round(max(0, m.flash), 2),
                          m.anim, round(m.anim_t, 3), None if m.anim_p is None else round(m.anim_p, 3), act,
                          m.hands.net_pack() if getattr(m, "hands", None) else None, invisibility.net_pack(m)])
+        clones = []
+        for p in s.players.values():
+            for c in getattr(p, "clones", ()):
+                if c.hp <= 0: continue
+                if not hasattr(c, "nid"): c.nid = s.next_nid()
+                # [id, персонаж, x, y, поворот, hp, maxhp, состояние, анимация, время анимации, оружие]
+                clones.append([c.nid, c.char_id, R(c.x), R(c.y), c.face, R(c.hp), R(c.maxhp), c.state,
+                               c.anim, round(c.anim_t, 3), c.wid])
         pls = []
         for p in s.players.values():
             atk = [p.atk["w"], p.atk["n"], round(p.atk["t"], 3)] if p.state == "attack" and p.atk else None
@@ -723,7 +736,9 @@ class HostSession(Session):
                 "prog": {mid: [m.visited, m.cleared] for mid, m in g.camp.maps.items()},
                 "done": g.done, "over": s.game_over, "pl": pls, "mobs": mobs,
                 "corpses": [[c.kind, c.dir, c.rect.x, c.rect.y, c.rect.w, c.rect.h, round(c.t, 3)] for c in r.corpses],
-                "projs": projs, "styles": styles, "drops": [[R(d.x), R(d.y), d.wid] for d in r.drops], "ct": containers.state(r),
+                "projs": projs, "styles": styles, "drops": [[R(d.x), R(d.y), d.wid] for d in r.drops if isinstance(d, Drop)],   # ресурсы (ResourceDrop) на клиенте не восстанавливаются — их не шлём
+                "cls": clones,   # клоны героев (clone.py): клиент видит их из снимка
+                "ct": containers.state(r),
                 "mc": mechs.state(r),
                 "fx": [[k, R(x), R(y), R(d) if isinstance(d, (int, float)) else d, round(t, 3)] for k, x, y, d, t in g.fx.items]}
 
@@ -789,6 +804,7 @@ class ClientSession(Session):
         s.addr = (host, port); s.name = clean_name(name); s.state = "connecting"; s.error = None
         s.conn = None; s.ready = False; s.events = []; s.mobs = {}; s.camp = None
         s.buf = deque(maxlen=90); s.latest = None; s.lat = deque(); s.delay = .06
+        s.view_clones = []   # клоны героев из снимка хоста (clone.NetClone, только картинка)
         s.predicting = False; s.local_tp = None; s.local_hc = None
         s.scratch_projs = []; s.scratch_fx = FX()
         threading.Thread(target=s._connect, daemon=True).start()
@@ -913,6 +929,14 @@ class ClientSession(Session):
             if kind in CFG["mobs"]: corpses.append(NetCorpse(kind, normalize(CFG["mobs"][kind]), d, pg.Rect(x, y, w, h), t + ahead))
         g.room.corpses = corpses
         styles = a.get("styles", [])
+        bc = {row[0]: row for row in b.get("cls", [])} if b else {}
+        vclones = []   # клоны героев: интерполяция между снимками, как у мобов/пуль
+        for row in a.get("cls", []):
+            row = list(row); nb = bc.get(row[0])
+            if nb and abs(nb[2] - row[2]) < 150 and abs(nb[3] - row[3]) < 150:
+                row[2] += (nb[2] - row[2]) * k; row[3] += (nb[3] - row[3]) * k
+            vclones.append(clone.NetClone(*row[1:]))
+        s.view_clones = vclones
         bq = {row[0]: row for row in b.get("projs", [])} if b else {}
         projs = []
         for nid, x, y, vx, vy, t, si in a.get("projs", []):

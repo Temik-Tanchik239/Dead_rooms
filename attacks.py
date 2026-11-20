@@ -21,8 +21,10 @@ def attack(name):
     return reg
 
 def players_of(w):
-    """Все живые игроки (мультиплеер: w.players) или единственный w.pl."""
-    return getattr(w, "players", None) or [w.pl]
+    """Все живые игроки (мультиплеер: w.players) или единственный w.pl. Плюс живые клоны героев (clone.py):
+    их задевают вражеские melee-зоны (hit_zone / boss_hands), за ними гонятся вражеские снаряды."""
+    base = list(getattr(w, "players", None) or [w.pl])
+    return base + [c for c in getattr(w, "clones", ()) if getattr(c, "hp", 0) > 0]
 
 def seen_players(w):
     """Игроки, которых мобы могут заметить (без невидимых) — для агра; урон по зоне бьёт всех (players_of)."""

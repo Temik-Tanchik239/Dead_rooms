@@ -28,6 +28,8 @@ from core import CFG, sign
 from projectiles import volley
 import status
 import invisibility
+import clone       # клон героя (@spell("clone") ниже)
+import crafting   # телекинез-перчатка инженера (drag_spell_*), тянет предметы с пола
 from anim import frames, ASSETS_EXISTS
 
 SPELLS = {}
@@ -973,3 +975,19 @@ def _hold_end(pl, ch, a, fx):
 
 
 channel("telekinesis_hold", tick=_hold_tick, end=_hold_end)
+
+
+@spell("telekinesis_drag")
+def _telekinesis_drag(pl, a, mobs, projs, fx):
+    """Телекинез-перчатка инженера: схватить ближайший к курсору предмет с пола (ресурс/оружие/артефакт)
+    и тащить его за курсором, пока держишь клавишу навыка (хуки в crafting.py). Мана — в секунду (mana_per_sec)."""
+    return crafting.drag_spell_start(pl, a, mobs, projs, fx)
+channel("telekinesis_drag", tick=crafting.drag_spell_tick, end=crafting.drag_spell_end)
+
+
+@spell("clone")
+def _clone(pl, a, mobs, projs, fx):
+    """Призыв клона героя (вся логика в clone.py): рядом появляется копия героя с собственным ИИ,
+    HP "hp" (100 по умолчанию) и оружием, которое было в руке в момент призыва
+    (руки пусты — базовая атака). Живёт duration секунд, максимум max одновременно."""
+    return clone.spawn(pl, a, mobs, fx)

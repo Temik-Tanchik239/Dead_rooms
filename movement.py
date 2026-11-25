@@ -5,8 +5,9 @@
     m — моб (m.x, m.y, m.vx, m.vy, m.dir, m.home, m.aggro, m.flies ...), p — словарь "move" из json,
     w — мир (w.pl игрок, w.g сетка комнаты, w.mobs, w.projs, w.fx).
 Функция меняет только m.vx / m.vy / m.dir: гравитацию и столкновения моб считает сам."""
-import math
-from core import T, MW, ROWS, tile, free, sign, approach
+import math, random
+import pygame as pg
+from core import T, MW, ROWS, tile, free, sign, approach, floor_below
 from invisibility import is_invisible
 
 MOVES = {}
@@ -152,6 +153,103 @@ def loop(m, p, dt, w):
             if not try_ground_jump(m, p, w, d): d = 0
         m.vx = approach(m.vx, d * min(sp, abs(dx) * 4), acc * dt)
     if abs(m.vx) > 5: m.dir = sign(m.vx)
+
+@movement("sentry")
+def sentry(m, p, dt, w):
+    """Охраняет пост: стоит у точки появления, увидел игрока — преследует в пределах поводка
+    (leash, px от поста). Вывелся за поводок или потерял цель — возвращается на пост, агр сбрасывается."""
+    p = dict(p); p.setdefault("patrol", False)   # без агра стоит на посту, а не бродит
+    hx, hy = m.home
+    if m.aggro and math.hypot(m.cx - hx, m.cy - hy) > p.get("leash", 260):
+        m.aggro = False; m._sent_return = True
+    if getattr(m, "_sent_return", False):
+        m.aggro = False
+        if math.hypot(m.cx - hx, m.cy - hy) < 20:
+            m._sent_return = False
+        elif m.flies:
+            steer(m, hx, hy + p.get("height", -20), speed_of(m, p), p.get("accel", 900), dt); return
+        else:
+            dx = hx - m.cx; d = sign(dx) if abs(dx) > 4 else 0
+            if d and (wall_ahead(m, w, d) or edge_ahead(m, w, d)):
+                if not try_ground_jump(m, p, w, d): d = 0
+            m.vx = approach(m.vx, d * speed_of(m, p), p.get("accel", 1500) * dt)
+            if abs(m.vx) > 5: m.dir = sign(m.vx)
+        return
+    chase(m, p, dt, w)
+
+@movement("flee")
+def flee(m, p, dt, w):
+    """Трус: как только игрок ближе far (px) — убегает от него, всегда глядя на игрока.
+    Летун держится от игрока на far и по горизонтали, и по вертикали (height, минус — выше)."""
+    sp, acc = speed_of(m, p), p.get("accel", 1200)
+    far = p.get("far", 260)
+    if not look(m, w, p):
+        return (hover if m.flies else patrol if p.get("patrol", True) else lambda *a: None)(m, p, dt, w)
+    dx = w.pl.cx - m.cx; side = sign(dx) or m.dir
+    m.dir = side   # смотрит на игрока, но пятится
+    sp = sp * (1.25 if abs(dx) < p.get("panic", 130) else 1.0)   # игрок вплотную — паника: бежит быстрее
+    if m.flies:
+        tx = max(T + m.w, min(MW - T - m.w, w.pl.cx - side * far))
+        return steer(m, tx, w.pl.cy + p.get("height", -40), sp, acc, dt)
+    go = -side if abs(dx) < far else 0
+    if go and (wall_ahead(m, w, go) or edge_ahead(m, w, go)):
+        if not try_ground_jump(m, p, w, go): go = 0
+    m.vx = approach(m.vx, go * sp, acc * dt)
+
+@movement("blink")
+def blink(m, p, dt, w):
+    """Телепорт: стоит (летун — парит) у игрока, а раз в every секунд мигает к нему на расстояние gap (px).
+    Телепорт только в свободную точку: на пол рядом (земной) или в воздух (летун)."""
+    acc = p.get("accel", 900)
+    if not look(m, w, p):
+        m._bl = min(getattr(m, "_bl", 0.0), 0.4)   # пока цели нет — телепорт вот-вот наготове
+        return (hover if m.flies else lambda *a: None)(m, p, dt, w)
+    m._bl = getattr(m, "_bl", 0.0) - dt
+    if m._bl > 0:
+        m.vx = approach(m.vx, 0, acc * dt); m.dir = sign(w.pl.cx - m.cx) or m.dir
+        return hover(m, p, dt, w) if m.flies else None
+    side = random.choice((-1, 1))
+    tx = max(T + m.w, min(MW - T - m.w, w.pl.cx + side * p.get("gap", 110)))
+    if m.flies:
+        ty = w.pl.cy + p.get("offset_y", -30)
+        ok = free(w.g, pg.Rect(int(tx - m.w / 2), int(ty - m.h / 2), m.w, m.h))
+    else:
+        ty = floor_below(w.g, tx, int(w.pl.y + w.pl.h - 6))
+        ok = bool(ty) and free(w.g, pg.Rect(int(tx - m.w / 2), int(ty - m.h), m.w, m.h))
+        ty = (ty - m.h) if ty else m.y
+    if ok:
+        w.fx.ring(m.cx, m.cy, 26)
+        m.x, m.y = (tx - m.w / 2, ty - m.h / 2) if m.flies else (tx - m.w / 2, ty)
+        m.vx = m.vy = 0.0
+        w.fx.ring(m.cx, m.cy, 26)
+        m._bl = float(p.get("every", 3.0))
+
+@movement("burrow")
+def burrow(m, p, dt, w):
+    """Нырок: цикл [above секунд на поверхности] — [under секунд под землёй]. Под землёй моб неуязвим и
+    не бьёт контактом, выныривает прыжком (pop) в сторону игрока (или ближе emerge px — сразу)."""
+    sp = speed_of(m, p)
+    if not look(m, w, p):
+        m.buried = False
+        return (hover if m.flies else patrol if p.get("patrol", True) else lambda *a: None)(m, p, dt, w)
+    m._b_t = getattr(m, "_b_t", 0.0) + dt   # таймер цикла: сколько уже в этой фазе
+    d = sign(w.pl.cx - m.cx) or m.dir
+    if m.buried:
+        if m._b_t >= p.get("under", 1.6) or abs(w.pl.cx - m.cx) < p.get("emerge", 60):
+            m.buried = False; m._b_t = 0.0
+            m.vx = d * sp * 1.6; m.vy = float(p.get("pop", -420))
+            w.fx.ring(m.cx, m.y + m.h, 34); w.fx.shake = max(w.fx.shake, .15)
+        else:
+            m.vx = approach(m.vx, 0, 1200 * dt); m.vy = 0.0
+            m.dir = d
+        return
+    if m._b_t >= p.get("above", 2.4):
+        m.buried = True; m._b_t = 0.0
+        m.vy = 0.0; m.vx = approach(m.vx, 0, 2000 * dt)
+        w.fx.ring(m.cx, m.y + m.h, 30)
+        return
+    m.vx = approach(m.vx, d * sp if abs(w.pl.cx - m.cx) > 20 else 0, p.get("accel", 1500) * dt)
+    m.dir = d
 
 @movement("stand")
 def stand(m, p, dt, w):

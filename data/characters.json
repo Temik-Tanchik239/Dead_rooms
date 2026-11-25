@@ -1,445 +1,584 @@
 {
- "_help": "Персонажи. stats — правки data/player.json (любое поле: hp, speed, jump, dmg_mult, roll_speed, mana.max ...). weapons — [оружие ЛКМ, оружие ПКМ]. allowed_weapons — какое оружие может подбирать и выпадать (null — любое, [] — оружие герою не выпадает). weapon_hands — [ЛКМ, ПКМ], true/false: можно ли держать оружие в этой руке (нет поля — по классу: маг/инженер и бард — только ПКМ, Тень — ни одной, остальные — обе); см. inventory.py. base_skills — навыки с самого начала. skill_tree — ячейки экрана навыков по порядку: skill + unlock_level (можно lock_icon). skill_overrides / weapon_overrides — правки data/skills.json и data/weapons.json только для этого героя. assets — папка внешнего вида в assets (по умолчанию characters/<id>). model_scale — множитель размера спрайта героя (например 1.2); hitbox — [ширина, высота] физического хитбокса в пикселях. Эти параметры независимы и задаются отдельно для каждого персонажа. crossbows — арбалетчик (Тень): два мини-арбалета вместо оружия, виды снарядов — навыки category ammo, см. crossbow.py. bard — бард: гитара вместо оружия, ноты (навыки category note: effect heal/mana/stun/damage, radius, tick, amount, mana_cost в секунду), см. bard.py.",
- "default": "bard",
- "order": [
-  "bard",
-  "knight",
-  "ranger",
-  "mage",
-  "shadow"
- ],
- "characters": {
-  "bard": {
-   "name": "Бард",
-   "role": "Музыкант",
-   "description": "Странник с гитарой. Зажми ЛКМ — бард играет выбранную ноту (выбор — 1/2), и её эффект расходится вокруг: лечение, мана, оглушение врагов или урон. Навыки: медиатор оглушает врагов в радиусе, усилитель повторяет ноты барда вокруг себя.",
-   "assets": "characters/bard",
-   "bard": {
-    "guitar": {
-     "skin": "weapons/guitar.png",
-     "draw": [
-      46,
-      23
-     ],
-     "grip": [
-      12,
-      12
-     ],
-     "hand": [
-      6,
-      -19
-     ],
-     "angle": 24,
-     "bob": 2.0,
-     "swing": 7,
-     "rate": 3.2
+  "_help": "Персонажи. stats — правки data/player.json (любое поле: hp, speed, jump, dmg_mult, roll_speed, mana.max ...). weapons — [оружие ЛКМ, оружие ПКМ]. allowed_weapons — какое оружие может подбирать и выпадать (null — любое, [] — оружие герою не выпадает). weapon_hands — [ЛКМ, ПКМ], true/false: можно ли держать оружие в этой руке (нет поля — по классу: маг/инженер и бард — только ПКМ, Тень — ни одной, остальные — обе); см. inventory.py. base_skills — навыки с самого начала. skill_tree — ячейки экрана навыков по порядку: skill + unlock_level (можно lock_icon). skill_overrides / weapon_overrides — правки data/skills.json и data/weapons.json только для этого героя. assets — папка внешнего вида в assets (по умолчанию characters/<id>). model_scale — множитель размера спрайта героя (например 1.2); hitbox — [ширина, высота] физического хитбокса в пикселях. Эти параметры независимы и задаются отдельно для каждого персонажа. crossbows — арбалетчик (Тень): два мини-арбалета вместо оружия, виды снарядов — навыки category ammo, см. crossbow.py. bard — бард: гитара вместо оружия, ноты (навыки category note: effect heal/mana/stun/damage, radius, tick, amount, mana_cost в секунду), см. bard.py.",
+  "default": "bard",
+  "order": [
+    "bard",
+    "knight",
+    "ranger",
+    "mage",
+    "shadow"
+  ],
+  "characters": {
+    "bard": {
+      "name": "Бард",
+      "assets": "characters/bard",
+      "bard": {
+        "guitar": {
+          "skin": "weapons/guitar.png",
+          "draw": [
+            46,
+            23
+          ],
+          "grip": [
+            12,
+            12
+          ],
+          "hand": [
+            6,
+            -19
+          ],
+          "angle": 24,
+          "bob": 2.0,
+          "swing": 7,
+          "rate": 3.2
+        },
+        "notes": [
+          "note_heal",
+          "note_mana",
+          "note_stun",
+          "note_damage"
+        ]
+      },
+      "stats": {
+        "hp": 90,
+        "speed": 225,
+        "jump": 1040,
+        "dmg_mult": 1.0,
+        "mana": {
+          "max": 140,
+          "start": 140,
+          "regen": 14,
+          "regen_delay": 0.8
+        }
+      },
+      "weapons": [],
+      "allowed_weapons": null,
+      "base_skills": [
+        "guitar_pick",
+        "amp",
+        "sound_wave",
+        "sonic_boomerang",
+        "power_chord",
+        "healing_verse"
+      ],
+      "skill_tree": [
+        {
+          "skill": "dash",
+          "unlock_level": 1
+        },
+        {
+          "skill": "resonance",
+          "unlock_level": 2
+        },
+        {
+          "skill": "vitality",
+          "unlock_level": 3
+        },
+        {
+          "skill": "swift",
+          "unlock_level": 4
+        },
+        {
+          "skill": "echo",
+          "unlock_level": 5
+        },
+        {
+          "skill": "mana_reserve",
+          "unlock_level": 6
+        },
+        {
+          "skill": "double_jump",
+          "unlock_level": 7
+        },
+        {
+          "skill": "fury",
+          "unlock_level": 8
+        },
+        {
+          "skill": "bass_cannon",
+          "unlock_level": 9
+        },
+        {
+          "skill": "metronome",
+          "unlock_level": 10
+        },
+        {
+          "skill": "dance_of_strings",
+          "unlock_level": 11
+        },
+        {
+          "skill": "final_chord",
+          "unlock_level": 12
+        },
+        {
+          "skill": "perfect_pitch",
+          "unlock_level": 13
+        },
+        {
+          "skill": "stage_experience",
+          "unlock_level": 14
+        }
+      ],
+      "skill_overrides": {},
+      "weapon_overrides": {},
+      "model_scale": 1.0,
+      "hitbox": [
+        20,
+        34
+      ],
+      "role": "Поддержка",
+      "spellcaster": true
     },
-    "notes": [
-     "note_heal",
-     "note_mana",
-     "note_stun",
-     "note_damage"
-    ]
-   },
-   "stats": {
-    "hp": 90,
-    "speed": 225,
-    "jump": 1040,
-    "dmg_mult": 1.0,
-    "mana": {
-     "max": 140,
-     "start": 140,
-     "regen": 14,
-     "regen_delay": 0.8
+    "knight": {
+      "name": "Рыцарь",
+      "role": "Танк",
+      "description": "пенис",
+      "assets": "characters/knight",
+      "stats": {
+        "hp": 150,
+        "speed": 180,
+        "jump": 930,
+        "dmg_mult": 1.2,
+        "roll_speed": 520,
+        "hurt_inv": 1.1,
+        "mana": {
+          "max": 80,
+          "start": 80,
+          "regen": 8
+        }
+      },
+      "weapons": [
+        "rusty_sword",
+        "fire_flask"
+      ],
+      "allowed_weapons": [
+        "rusty_sword",
+        "iron_pike",
+        "fire_flask",
+        "short_bow"
+      ],
+      "base_skills": [
+        "shield",
+        "clone",
+        "hammer_fall",
+        "sword_boomerang",
+        "shield_bash",
+        "holy_ward"
+      ],
+      "skill_tree": [
+        {
+          "skill": "shield",
+          "unlock_level": 1
+        },
+        {
+          "skill": "vitality",
+          "unlock_level": 2
+        },
+        {
+          "skill": "heal",
+          "unlock_level": 3
+        },
+        {
+          "skill": "fury",
+          "unlock_level": 4
+        },
+        {
+          "skill": "nova",
+          "unlock_level": 5
+        },
+        {
+          "skill": "mana_blades",
+          "unlock_level": 6
+        },
+        {
+          "skill": "mana_reserve",
+          "unlock_level": 7
+        },
+        {
+          "skill": "mana_regen",
+          "unlock_level": 8
+        },
+        {
+          "skill": "warcry",
+          "unlock_level": 9
+        },
+        {
+          "skill": "light_lance",
+          "unlock_level": 10
+        },
+        {
+          "skill": "iron_mine",
+          "unlock_level": 11
+        },
+        {
+          "skill": "consecrated_ground",
+          "unlock_level": 12
+        },
+        {
+          "skill": "banner_of_war",
+          "unlock_level": 13
+        },
+        {
+          "skill": "tempered_armor",
+          "unlock_level": 14
+        }
+      ],
+      "skill_overrides": {
+        "shield": {
+          "capacity": 90,
+          "cooldown": 8.0
+        }
+      },
+      "weapon_overrides": {},
+      "model_scale": 1.0,
+      "hitbox": [
+        20,
+        34
+      ]
+    },
+    "ranger": {
+      "name": "Инженер",
+      "role": "Телекинетик",
+      "description": "Управляет полем телекинеза: притягивает и отталкивает врагов и предметы, сносит толпу конусом перед собой и держит одного врага в захвате. Быстрый и прыгучий — с самого начала умеет двойной прыжок и рывок. Оружия нет: ЛКМ или Q — применить выбранное умение в курсор, C/V — листать книгу умений (показаны предыдущее, текущее и следующее).",
+      "assets": "characters/ranger",
+      "spellcaster": true,
+      "stats": {
+        "hp": 95,
+        "speed": 235,
+        "jump": 1050,
+        "dmg_mult": 1.0,
+        "mana": {
+          "max": 110,
+          "start": 110,
+          "regen": 12
+        }
+      },
+      "weapons": [],
+      "allowed_weapons": null,
+      "base_skills": [
+        "telekinesis",
+        "telekinesis_cone",
+        "telekinesis_hold",
+        "dash",
+        "double_jump",
+        "clone",
+        "rocket",
+        "gatling",
+        "shock_grenade",
+        "drone_swarm",
+        "laser_cutter",
+        "repair_kit"
+      ],
+      "skill_tree": [
+        {
+          "skill": "telekinesis",
+          "unlock_level": 1
+        },
+        {
+          "skill": "telekinesis_cone",
+          "unlock_level": 1
+        },
+        {
+          "skill": "telekinesis_hold",
+          "unlock_level": 1
+        },
+        {
+          "skill": "dash",
+          "unlock_level": 1
+        },
+        {
+          "skill": "double_jump",
+          "unlock_level": 1
+        },
+        {
+          "skill": "mana_ranged",
+          "unlock_level": 2
+        },
+        {
+          "skill": "swift",
+          "unlock_level": 3
+        },
+        {
+          "skill": "heal",
+          "unlock_level": 4
+        },
+        {
+          "skill": "fury",
+          "unlock_level": 5
+        },
+        {
+          "skill": "mana_regen",
+          "unlock_level": 6
+        },
+        {
+          "skill": "nova",
+          "unlock_level": 7
+        },
+        {
+          "skill": "magnet_field",
+          "unlock_level": 9
+        },
+        {
+          "skill": "oil_slick",
+          "unlock_level": 10
+        },
+        {
+          "skill": "overdrive",
+          "unlock_level": 11
+        },
+        {
+          "skill": "workshop_oil",
+          "unlock_level": 12
+        }
+      ],
+      "skill_overrides": {
+        "dash": {
+          "cooldown": 2.5
+        }
+      },
+      "weapon_overrides": {},
+      "model_scale": 1.0,
+      "hitbox": [
+        20,
+        34
+      ]
+    },
+    "mage": {
+      "assets": "characters/mage",
+      "spellcaster": true,
+      "cast_power": true,
+      "stats": {
+        "hp": 75,
+        "speed": 200,
+        "jump": 1000,
+        "dmg_mult": 0.9,
+        "mana": {
+          "max": 160,
+          "start": 160,
+          "regen": 18,
+          "regen_delay": 0.6
+        }
+      },
+      "weapons": [],
+      "allowed_weapons": null,
+      "base_skills": [
+        "black_hole",
+        "chain_lightning",
+        "fireball",
+        "fire_stream",
+        "ice_shard",
+        "thunderstrike",
+        "arcane_orb",
+        "frost_nova",
+        "meteor",
+        "clone",
+        "arcane_boomerang",
+        "arcane_swarm",
+        "arcane_mine",
+        "frost_field",
+        "fire_storm",
+        "dagger_rain",
+        "arcane_beam",
+        "orbit_blades",
+        "prism_orb",
+        "arcane_lance",
+        "void_pulse",
+        "crystal_boomerang",
+        "frost_ring",
+        "arcane_ward"
+      ],
+      "skill_tree": [
+        {
+          "skill": "mana_regen",
+          "unlock_level": 2
+        },
+        {
+          "skill": "mana_reserve",
+          "unlock_level": 3
+        },
+        {
+          "skill": "fury",
+          "unlock_level": 4
+        },
+        {
+          "skill": "vitality",
+          "unlock_level": 5
+        },
+        {
+          "skill": "double_jump",
+          "unlock_level": 6
+        },
+        {
+          "skill": "star_fall",
+          "unlock_level": 7
+        },
+        {
+          "skill": "tempest",
+          "unlock_level": 8
+        },
+        {
+          "skill": "gravity_well",
+          "unlock_level": 9
+        },
+        {
+          "skill": "mana_crystal",
+          "unlock_level": 10
+        },
+        {
+          "skill": "arcane_mind",
+          "unlock_level": 11
+        }
+      ],
+      "skill_overrides": {},
+      "weapon_overrides": {},
+      "model_scale": 1.0,
+      "hitbox": [
+        20,
+        34
+      ],
+      "name": "Маг",
+      "role": "Кастер"
+    },
+    "shadow": {
+      "name": "Тень",
+      "role": "Убийца",
+      "description": "Самый быстрый герой с длинным перекатом и почти мгновенным рывком, вместо оружия — два мини-арбалета. ЛКМ стреляет левым, ПКМ — правым, каждый заряжается отдельно. У каждого арбалета своё окно снарядов (предыдущий, текущий, следующий): 1/2 — снаряд левого, 3/4 — правого. Стрелы: обычные, огненные, усиленные. Мало здоровья — стреляйте на бегу и не стойте на месте.",
+      "assets": "characters/shadow",
+      "stats": {
+        "hp": 80,
+        "speed": 260,
+        "jump": 1080,
+        "dmg_mult": 1.1,
+        "roll_speed": 700,
+        "roll_time": 0.42,
+        "mana": {
+          "max": 100,
+          "start": 100,
+          "regen": 12
+        }
+      },
+      "weapons": [],
+      "allowed_weapons": [],
+      "crossbows": {
+        "skin": "weapons/mini_crossbow.png",
+        "draw": [
+          36,
+          20
+        ],
+        "grip": [
+          7,
+          14
+        ],
+        "muzzle": [
+          23,
+          6
+        ],
+        "hands": [
+          [
+            14,
+            -16
+          ],
+          [
+            7,
+            -28
+          ]
+        ],
+        "recoil": 4,
+        "ammo": [
+          "ammo_arrow",
+          "ammo_fire",
+          "ammo_heavy",
+          "ammo_harpoon"
+        ]
+      },
+      "base_skills": [
+        "dash",
+        "invisibility_cloak",
+        "clone",
+        "shadow_burst",
+        "blade_fan",
+        "phantom_step",
+        "smoke_bomb"
+      ],
+      "skill_tree": [
+        {
+          "skill": "dash",
+          "unlock_level": 1
+        },
+        {
+          "skill": "swift",
+          "unlock_level": 2
+        },
+        {
+          "skill": "double_jump",
+          "unlock_level": 3
+        },
+        {
+          "skill": "fury",
+          "unlock_level": 4
+        },
+        {
+          "skill": "mana_ranged",
+          "unlock_level": 5
+        },
+        {
+          "skill": "vitality",
+          "unlock_level": 6
+        },
+        {
+          "skill": "mana_regen",
+          "unlock_level": 7
+        },
+        {
+          "skill": "nova",
+          "unlock_level": 8
+        },
+        {
+          "skill": "poison_trap",
+          "unlock_level": 9
+        },
+        {
+          "skill": "dark_vortex",
+          "unlock_level": 10
+        },
+        {
+          "skill": "shadow_rain",
+          "unlock_level": 11
+        },
+        {
+          "skill": "night_blades",
+          "unlock_level": 12
+        },
+        {
+          "skill": "lightfoot",
+          "unlock_level": 13
+        },
+        {
+          "skill": "night_vigor",
+          "unlock_level": 14
+        }
+      ],
+      "skill_overrides": {
+        "dash": {
+          "cooldown": 1.8,
+          "speed": 760,
+          "invulnerability": 0.3,
+          "mana_cost": 10
+        },
+        "mana_ranged": {
+          "name": "Экономия маны: арбалеты",
+          "weapons": [
+            "mini_crossbow"
+          ],
+          "description": "На 25% меньше маны для выстрелов из арбалетов"
+        }
+      },
+      "weapon_overrides": {},
+      "model_scale": 1.0,
+      "hitbox": [
+        20,
+        34
+      ]
     }
-   },
-   "weapons": [],
-   "allowed_weapons": null,
-   "base_skills": [
-    "guitar_pick",
-    "amp",
-    "clone"
-   ],
-   "skill_tree": [
-    {
-     "skill": "dash",
-     "unlock_level": 1
-    },
-    {
-     "skill": "resonance",
-     "unlock_level": 2
-    },
-    {
-     "skill": "vitality",
-     "unlock_level": 3
-    },
-    {
-     "skill": "swift",
-     "unlock_level": 4
-    },
-    {
-     "skill": "echo",
-     "unlock_level": 5
-    },
-    {
-     "skill": "mana_reserve",
-     "unlock_level": 6
-    },
-    {
-     "skill": "double_jump",
-     "unlock_level": 7
-    },
-    {
-     "skill": "fury",
-     "unlock_level": 8
-    }
-   ],
-   "skill_overrides": {},
-   "weapon_overrides": {},
-   "model_scale": 1.0,
-   "hitbox": [
-    20,
-    34
-   ]
-  },
-  "knight": {
-   "name": "Рыцарь",
-   "role": "Танк",
-   "description": "пенис",
-   "assets": "characters/knight",
-   "stats": {
-    "hp": 150,
-    "speed": 180,
-    "jump": 930,
-    "dmg_mult": 1.2,
-    "roll_speed": 520,
-    "hurt_inv": 1.1,
-    "mana": {
-     "max": 80,
-     "start": 80,
-     "regen": 8
-    }
-   },
-   "weapons": [
-    "rusty_sword",
-    "fire_flask"
-   ],
-   "allowed_weapons": [
-    "rusty_sword",
-    "iron_pike",
-    "fire_flask",
-    "short_bow"
-   ],
-   "base_skills": [
-    "shield",
-    "clone"
-   ],
-   "skill_tree": [
-    {
-     "skill": "shield",
-     "unlock_level": 1
-    },
-    {
-     "skill": "vitality",
-     "unlock_level": 2
-    },
-    {
-     "skill": "heal",
-     "unlock_level": 3
-    },
-    {
-     "skill": "fury",
-     "unlock_level": 4
-    },
-    {
-     "skill": "nova",
-     "unlock_level": 5
-    },
-    {
-     "skill": "mana_blades",
-     "unlock_level": 6
-    },
-    {
-     "skill": "mana_reserve",
-     "unlock_level": 7
-    },
-    {
-     "skill": "mana_regen",
-     "unlock_level": 8
-    }
-   ],
-   "skill_overrides": {
-    "shield": {
-     "capacity": 90,
-     "cooldown": 8.0
-    }
-   },
-   "weapon_overrides": {},
-   "model_scale": 1.0,
-   "hitbox": [
-    20,
-    34
-   ]
-  },
-  "ranger": {
-   "name": "Инженер",
-   "role": "Телекинетик",
-   "description": "Управляет полем телекинеза: притягивает и отталкивает врагов и предметы, сносит толпу конусом перед собой и держит одного врага в захвате. Быстрый и прыгучий — с самого начала умеет двойной прыжок и рывок. Оружия нет: ЛКМ или Q — применить выбранное умение в курсор, C/V — листать книгу умений (показаны предыдущее, текущее и следующее).",
-   "assets": "characters/ranger",
-   "spellcaster": true,
-   "stats": {
-    "hp": 95,
-    "speed": 235,
-    "jump": 1050,
-    "dmg_mult": 1.0,
-    "mana": {
-     "max": 110,
-     "start": 110,
-     "regen": 12
-    }
-   },
-   "weapons": [],
-   "allowed_weapons": null,
-   "base_skills": [
-    "telekinesis",
-    "telekinesis_cone",
-    "telekinesis_hold",
-    "dash",
-    "double_jump",
-    "clone"
-   ],
-   "skill_tree": [
-    {
-     "skill": "telekinesis",
-     "unlock_level": 1
-    },
-    {
-     "skill": "telekinesis_cone",
-     "unlock_level": 1
-    },
-    {
-     "skill": "telekinesis_hold",
-     "unlock_level": 1
-    },
-    {
-     "skill": "dash",
-     "unlock_level": 1
-    },
-    {
-     "skill": "double_jump",
-     "unlock_level": 1
-    },
-    {
-     "skill": "mana_ranged",
-     "unlock_level": 2
-    },
-    {
-     "skill": "swift",
-     "unlock_level": 3
-    },
-    {
-     "skill": "heal",
-     "unlock_level": 4
-    },
-    {
-     "skill": "fury",
-     "unlock_level": 5
-    },
-    {
-     "skill": "mana_regen",
-     "unlock_level": 6
-    },
-    {
-     "skill": "nova",
-     "unlock_level": 7
-    }
-   ],
-   "skill_overrides": {
-    "dash": {
-     "cooldown": 2.5
-    }
-   },
-   "weapon_overrides": {},
-   "model_scale": 1.0,
-   "hitbox": [
-    20,
-    34
-   ]
-  },
-  "mage": {
-   "name": "Чародей",
-   "role": "Маг",
-   "description": "Чистый заклинатель: оружия нет, вместо него книга заклинаний. ЛКМ или Q — применить выбранное заклинание в курсор, C/V — листать книгу (показаны предыдущее, текущее и следующее). Огромный запас маны и быстрая регенерация, но мало здоровья.",
-   "assets": "characters/mage",
-   "spellcaster": true,
-   "stats": {
-    "hp": 75,
-    "speed": 200,
-    "jump": 1000,
-    "dmg_mult": 0.9,
-    "mana": {
-     "max": 160,
-     "start": 160,
-     "regen": 18,
-     "regen_delay": 0.6
-    }
-   },
-   "weapons": [],
-   "allowed_weapons": null,
-   "base_skills": [
-    "black_hole",
-    "chain_lightning",
-    "fireball",
-    "fire_stream",
-    "ice_shard",
-    "thunderstrike",
-    "arcane_orb",
-    "frost_nova",
-    "meteor",
-    "clone"
-   ],
-   "skill_tree": [
-    {
-     "skill": "mana_regen",
-     "unlock_level": 2
-    },
-    {
-     "skill": "mana_reserve",
-     "unlock_level": 3
-    },
-    {
-     "skill": "fury",
-     "unlock_level": 4
-    },
-    {
-     "skill": "vitality",
-     "unlock_level": 5
-    },
-    {
-     "skill": "double_jump",
-     "unlock_level": 6
-    }
-   ],
-   "skill_overrides": {},
-   "weapon_overrides": {},
-   "model_scale": 1.0,
-   "hitbox": [
-    20,
-    34
-   ]
-  },
-  "shadow": {
-   "name": "Тень",
-   "role": "Убийца",
-   "description": "Самый быстрый герой с длинным перекатом и почти мгновенным рывком, вместо оружия — два мини-арбалета. ЛКМ стреляет левым, ПКМ — правым, каждый заряжается отдельно. У каждого арбалета своё окно снарядов (предыдущий, текущий, следующий): 1/2 — снаряд левого, 3/4 — правого. Стрелы: обычные, огненные, усиленные. Мало здоровья — стреляйте на бегу и не стойте на месте.",
-   "assets": "characters/shadow",
-   "stats": {
-    "hp": 80,
-    "speed": 260,
-    "jump": 1080,
-    "dmg_mult": 1.1,
-    "roll_speed": 700,
-    "roll_time": 0.42,
-    "mana": {
-     "max": 100,
-     "start": 100,
-     "regen": 12
-    }
-   },
-   "weapons": [],
-   "allowed_weapons": [],
-   "crossbows": {
-    "skin": "weapons/mini_crossbow.png",
-    "draw": [
-     36,
-     20
-    ],
-    "grip": [
-     7,
-     14
-    ],
-    "muzzle": [
-     23,
-     6
-    ],
-    "hands": [
-     [
-      14,
-      -16
-     ],
-     [
-      7,
-      -28
-     ]
-    ],
-    "recoil": 4,
-    "ammo": [
-     "ammo_arrow",
-     "ammo_fire",
-     "ammo_heavy",
-     "ammo_harpoon"
-    ]
-   },
-   "base_skills": [
-    "dash",
-    "invisibility_cloak",
-    "clone"
-   ],
-   "skill_tree": [
-    {
-     "skill": "dash",
-     "unlock_level": 1
-    },
-    {
-     "skill": "swift",
-     "unlock_level": 2
-    },
-    {
-     "skill": "double_jump",
-     "unlock_level": 3
-    },
-    {
-     "skill": "fury",
-     "unlock_level": 4
-    },
-    {
-     "skill": "mana_ranged",
-     "unlock_level": 5
-    },
-    {
-     "skill": "vitality",
-     "unlock_level": 6
-    },
-    {
-     "skill": "mana_regen",
-     "unlock_level": 7
-    },
-    {
-     "skill": "nova",
-     "unlock_level": 8
-    }
-   ],
-   "skill_overrides": {
-    "dash": {
-     "cooldown": 1.8,
-     "speed": 760,
-     "invulnerability": 0.3,
-     "mana_cost": 10
-    },
-    "mana_ranged": {
-     "name": "Экономия маны: арбалеты",
-     "weapons": [
-      "mini_crossbow"
-     ],
-     "description": "На 25% меньше маны для выстрелов из арбалетов"
-    }
-   },
-   "weapon_overrides": {},
-   "model_scale": 1.0,
-   "hitbox": [
-    20,
-    34
-   ]
   }
- }
 }

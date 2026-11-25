@@ -8,15 +8,21 @@ from core import CFG, SETTINGS, DATA, ASSETS, T, COLS, ROWS, W, H, MW, MH, VIEW_
 CAMERA_ZOOM = 0.92  # меньше 1.0 — камера дальше, видно больше окружения
 from anim import clear_cache, sprite, mob_frame
 import weapon
+import filters
 import inventory
 import containers
 import crafting   # крафт инженера: ресурсы на полу, очки-зрение, перчатка-телекинез, турели
 import mechs
+import npc        # мирные NPC и торговцы: гуляют по карте, на E у торговца — окно торговли
+import trade      # окно торговли (открывается npc.try_trade)
 import hud
 import spells
+import spell_tablet   # планшет заклинаний мага: пять ячеек, ползунки силы каста, колесо мыши, кнопка скрытия
 import crossbow
 import bard
 import clone       # клоны героев (навык "Клон" в spells.py)
+import checkpoint  # чекпоинты: смерть — не конец забега, возрождение у кристалла со штрафом (10 сек неподвижности)
+import loot        # лут с мобов: предметы с шансами и монеты (вкладка «Лут» в редакторе мобов)
 import save_io     # система сохранений: полный сейв забега в saves/save_<N>.json
 import saves_menu  # вкладка "СОХРАНЕНИЯ" в главном меню и меню загрузки из паузы
 import pause_menu  # новое меню паузы (Esc): продолжить/герой/сохранить/загрузить/главное меню
@@ -24,12 +30,15 @@ import swap        # смена героя посреди забега ("ВЫБ�
 import invisibility
 import status
 from projectiles import volley
+import mob
 from mob import Mob, Corpse, spawn_boss
+import zones
 import characters as char_menu
 from maps import Campaign, Drop, END, VH, check, random_weapon, pos_of, world_text, world_links, two_way
 import multiplayer as mp
 import lighting
 import devtools
+import effects
 from devtools import hostile
 
 # Навыки по умолчанию, если у персонажа в data/characters.json нет base_skills.
@@ -102,6 +111,9 @@ class Player(Body):
         s.refresh_mana(True); s.hp = s.maxhp
         s.skill_index = 0; s.air_jumps = 0
         s.skill_cooldowns = {key: 0.0 for key in s.skills}; s.skill_notice = 0.0
+        # Сила каста по каждому заклинанию (0..1) — ползунки на планшете мага (spell_tablet.py):
+        # масштабирует урон, ману, кулдаун и время каста (spells.POWER). Не-маги не используют.
+        s.cast_power = {}
         s.shield_time = 0.0; s.shield_hp = 0.0; s.shield_face = s.face; s.shield_asset_cache = {}
         s.last_weapon = s.slots[0]; s.skill_cast = None
         crossbow.init(s)   # мини-арбалеты (Тень): виды снарядов, перезарядка и отдача по каждому арбалету — см. crossbow.py
@@ -120,6 +132,10 @@ class Player(Body):
         s.goggles = False   # очки инженера: G включает «зрение» (жёлтый фильтр + подсветка ресурсов), см. crafting.py
         # Мультиплеер: номер и имя игрока, прогресс воскрешения, «отошёл от входа» (для выходов).
         s.pid, s.name, s.revive, s.armed, s.downed = 0, "", 0.0, False, False
+        # Чекпоинт (checkpoint.py): точка возрождения (id карты, x, земля) и штраф смерти —
+        # «заморозка» в кристалле, секунды (10 по умолчанию: settings -> checkpoint_freeze_seconds).
+        s.cp, s.frozen = None, 0.0
+        s.coins = 0   # монеты (loot.py): кучки с мобов подбираются касанием; счётчик — в HUD и сейве
         # tp — номер «телепорта» (хост переставил игрока), hitc/kb — счётчик попаданий и отброс: клиент повторяет их у себя.
         s.tp, s.hitc, s.kb = 0, 0, (0.0, 0.0)
         # Невидимость (invisibility.py): s.invis — состояние эффекта или None; тик — в update, прозрачность — в draw.
@@ -287,6 +303,7 @@ class Player(Body):
         s.vx = (sign(s.cx - fx_x) or 1) * kb; s.vy = -260; fx.shake = .2; fx.stop = .06
         s.hitc += 1; s.kb = (s.vx, s.vy)
         if s.state in ("attack", "ladder"): s.state = "move"; s.atk = None
+        effects.emit(fx, "player_hurt", s.cx, s.cy, dir=sign(s.cx - fx_x) or 1)   # частицы на полученный урон
     @in_char
     def refresh_mana(s, full=False):
         """Прочитать настройки маны из player.json (full — заполнить стартовым значением)."""
@@ -315,12 +332,14 @@ class Player(Body):
         invisibility.on_attack(s, fx)   # атака из невидимости сбрасывает эффект
         s.atk = dict(w=wid, n=n, step=st, t=0.0, wu=st["windup"], ac=st["active"], rec=st["recovery"], fired=False, hit=set())
         s.state = "attack"
+        effects.emit(fx, "weapon_swing", s.cx + s.face * 14, s.cy, dir=s.face, target_id=wid)   # частицы на начало удара
     def strike(s, mobs, fx):
         a = s.atk; st = a["step"]; rw, rh = st["reach"]
         s.hitbox = pg.Rect(int(s.x + s.w if s.face > 0 else s.x - rw), int(s.cy - rh / 2), rw, rh)
         for m in mobs:
             if id(m) not in a["hit"] and (m.collides_rect(s.hitbox) if hasattr(m, "collides_rect") else s.hitbox.colliderect(m.rect)):
                 a["hit"].add(id(m)); m.hurt(st["damage"] * s.dmg_mult(), s.face * st["knockback"], fx)
+                effects.emit(fx, "weapon_hit", (s.hitbox.centerx + m.cx) / 2, m.cy, dir=s.face, target_id=a["w"])   # частицы в точке попадания
                 for eff in inventory.hit_effects(s): status.apply(m, eff, fx)   # эффекты надетых аксессуаров
                 s.mana = min(s.maxmana, s.mana + weapon.mana_hit(a["w"], st))   # попадание возвращает ману
     def fire(s, projs, st):
@@ -349,7 +368,26 @@ class Player(Body):
     @in_char
     def use_skill(s, mobs, projs, fx):
         """Использует текущий активный навык/заклинание. Эффекты — реестр @spell в spells.py."""
+        # Меч, превращённый в ружьё (mode: "gun" у оружия в руках), не даёт ставить щит.
+        defs = CFG.get("skills", {})
+        active = [sid for sid in s.skills if defs.get(sid, {}).get("category", "active") == "active"]
+        if active:
+            sid = active[s.skill_index % len(active)]
+            if sid == "shield" and weapon.gun_mode(s):
+                fx.text("В режиме ружья щит недоступен", s.cx, s.y - 20); return
         spells.cast(s, mobs, projs, fx)
+    @in_char
+    def toggle_weapon_mode(s):
+        """Режим оружия: меч <-> ружьё (поле alt_mode в data/weapons.json). Меняет предмет в той руке,
+        где лежит оружие с alt_mode; входя в ружейный режим (mode: "gun"), гасит активный щит."""
+        for i, wid in enumerate(s.slots):
+            alt = CFG["weapons"].get(wid, {}).get("alt_mode")
+            if not (alt and alt in CFG["weapons"]): continue
+            gun = CFG["weapons"][alt].get("mode") == "gun"
+            s.slots[i] = alt; s.combo = (None, 0, 0)   # серия ударов не переезжает между режимами
+            if s.last_weapon == wid: s.last_weapon = alt
+            if gun: s.shield_time = 0.0; s.shield_hp = 0.0   # в ружьё щит сложится сам
+            return gun
 
     def ledge(s, g):
         c = int((s.x + s.w + 2) // T) if s.wall > 0 else int((s.x - 2) // T); hr = int((s.y + 6) // T)
@@ -402,7 +440,8 @@ class Player(Body):
             s.use_skill(mobs, projs, fx)
         # Заклинатель (spellcaster — маг/инженер): ЛКМ кастует текущее умение, ПКМ свободна — на ней можно носить оружие (инвентарь, Tab);
         # пустая ПКМ ничего не делает. Кастуем только когда заклинание готово — иначе зажатая ЛКМ спамила бы сообщениями.
-        if CFG.get("character", {}).get("spellcaster"):
+        # У мага (cast_power — планшет) ЛКМ каст не запускает: заклинание применяет только клавиша навыка (Q) — мышью выбирают силу каста.
+        if CFG.get("character", {}).get("spellcaster") and not spells.has_cast_power(s.char_id):
             if s.buf.get("a1", 0) > 0 and spells.ready(s):
                 s.buf["a1"] = 0
                 s.use_skill(mobs, projs, fx)
@@ -481,6 +520,7 @@ class Player(Body):
                 else:
                     s.vy = -p["jump"]
                     if s.coy <= 0: s.air_jumps += 1
+                    effects.emit(fx, "jump", s.cx, s.y + s.h, dir=s.face)   # частицы прыжка
                 s.buf["jump"] = 0; s.coy = 0
             elif s.buf["a1"] and s.slots[0]: s.face = s.facing(d); s.start_attack(0, fx)   # пустая ЛКМ не мешает ПКМ
             elif s.buf["a2"]: s.face = s.facing(d); s.start_attack(1, fx)
@@ -490,7 +530,14 @@ class Player(Body):
         if s.state != "ladder":
             s.vy = min(s.vy + p["gravity"] * (p["fall_mult"] if s.vy > 0 else 1) * dt, p["max_fall"])
         if crossbow.enabled(): crossbow.rope_step(s, dt, d)   # гарпуны: подтягивание, раскачивание, ограничение длины верёвки
+        # Частицы шагов (effects.walk_step, hook "walk"), прыжка и приземления.
+        fall_v = s.vy   # скорость падения ДО физики — на приземлении vy уже обнулён
         s.move(g, dt, drop=s.drop_t > 0)
+        effects.walk_step(s, fx, dt)   # пыль из-под ног
+        if dt > 0:
+            was_ground = getattr(s, "was_ground", True)
+            if s.ground and not was_ground and fall_v > 280: effects.emit(fx, "land", s.cx, s.y + s.h, dir=s.face)
+            s.was_ground = s.ground
         if p.get("ledge", True) and s.state == "move" and not s.ground and s.wall and s.wall == d and s.vy > -80 and s.lock <= 0:
             s.ledge(g)
 
@@ -533,6 +580,7 @@ def set_app_icon():
 class Game:
     show_world = False   # M: карта мира открыта (игра на паузе)
     inv_open = False     # Tab: инвентарь открыт (игра на паузе, в сети герой стоит) — см. inventory.py
+    trade_open = None    # окно торговли (E у торговца, см. trade.py): {"npc", "buy", "sell", "scroll", "msg"}
     inv_hold = None      # ячейка предмета, который несёт курсор ("b3" / "h0" как ("b", 3)); None — ничего не несём
     inv_msg = None       # (текст, до какого момента показывать) — отказ при переносе
     crafting = None      # активный крафт инженера (см. crafting.py): None или dict; Esc — отмена
@@ -551,7 +599,7 @@ class Game:
         s.mp_name = str(SETTINGS.get("player_name") or mp.default_name())[:16]; s.mp_ip = str(SETTINGS.get("mp_last_ip", ""))
         s.clock = pg.time.Clock(); s.new_game()
         # Стартовое меню; после Esc игровой мир сохраняется и ставится на паузу.
-        s.level_menu = False; s.level_choices = []; s.level_menu_level = 1; s.skill_unlock_anim = None
+        s.level_menu = False; s.level_choices = []; s.level_menu_level = 1; s.skill_unlock_anim = None; s.skill_menu_scroll = None
         s.menu_mode = "start"  # start | pause | None
         s.menu_selection = 0
         s.menu_edit = False
@@ -577,7 +625,7 @@ class Game:
         s.menu_veil.fill((6, 6, 12, 72))
         pg.mouse.set_visible(False if s.menu_cursor is not None or SETTINGS.get("mouse_aim", True) else True)
     def new_game(s, loop=0, character=None):
-        s.inv_open = False; s.inv_hold = None
+        s.inv_open = False; s.inv_hold = None; s.trade_open = None
         s.crafting = None; s.placing = None; s.place_lock = 0.0; s.place_hold = False; s.craft_sel = 0
         if loop == 0:
             if character is not None or CHAR["id"] is None:
@@ -640,17 +688,28 @@ class Game:
         rw = r.d.get("reward")   # {"item": "random" | id оружия, "chance": 0.5} — выпадает у игрока
         if rw and random.random() < rw.get("chance", 1):
             wid = random_weapon() if rw.get("item", "random") == "random" else rw["item"]
-            if wid in CFG["weapons"]: r.drops.append(Drop(s.pl.cx, s.pl.y + s.pl.h - 14, wid))
+            if wid in CFG["weapons"]: r.drops.append(Drop(s.pl.cx, s.pl.y + s.pl.h, wid))   # награда падает на землю
     def gain_xp(s, amount):
         for level, sid in award_xp(s.pl, amount, s.fx):
             s.level_menu = True
             s.level_menu_started = pg.time.get_ticks()
             s.level_menu_level = level
+            s.skill_menu_scroll = None   # прокрутка меню навыков: авто — показать открываемый навык
             if sid: s.skill_unlock_anim = {"skill": sid, "start": pg.time.get_ticks(), "duration": 1100}
             s.level_choices = []
         if s.level_menu:
             pg.mouse.set_visible(True)
 
+    def skill_menu_wheel(s, delta):
+        """Меню навыков: колесо мыши листает дерево по строкам (окно cols×rows)."""
+        if not s.level_menu: return
+        ui = CFG.get("skill_menu", {}); tree = CFG.get("skill_tree", {})
+        cols = max(1, int(ui.get("columns", 4))); rows = max(1, int(ui.get("rows", 2)))
+        total_rows = (len(tree.get("slots", [])) + cols - 1) // cols
+        max_scroll = max(0, total_rows - rows)
+        cur = s.skill_menu_scroll
+        if cur is None: cur = 0
+        s.skill_menu_scroll = max(0, min(max_scroll, cur + delta))
     def choose_level_skill(s, sid):
         if sid not in CFG.get("skills", {}) or CFG["skills"][sid].get("category", "active") != "active": return
         pl = s.pl
@@ -686,37 +745,54 @@ class Game:
                     else: pl.slots[i], dr.wid = dr.wid, pl.slots[i]
                     pl.combo = (None, 0, 0)
                     s.fx.text(CFG["weapons"][pl.slots[i]]["name"], pl.cx, pl.y - 10); break
-            else:   # рядом нет предметов на полу — E открывает сундук рядом или дёргает рычаг (containers.py / mechs.py)
-                if not containers.try_open(s.room, pl, s.fx):
-                    mechs.try_toggle(s.room, pl, s.fx)
+            else:   # рядом нет предметов на полу — E у торговца открывает торговлю, иначе сундук рядом или рычаг
+                if not npc.try_trade(s, pl):
+                    if not containers.try_open(s.room, pl, s.fx):
+                        mechs.try_toggle(s.room, pl, s.fx)
     AMMO_ACTIONS = {"xb0_prev": (0, -1), "xb0_next": (0, 1), "xb1_prev": (1, -1), "xb1_next": (1, 1)}   # смена снаряда: (арбалет, направление)
-    ACTIONS = ("jump", "roll", "a1", "a2", "skill", "next", "prev", "pickup") + tuple(AMMO_ACTIONS)
+    ACTIONS = ("jump", "roll", "a1", "a2", "skill", "next", "prev", "pickup", "weapon_mode") + tuple(AMMO_ACTIONS)
     def apply_action(s, pl, name):
-        """Действие игрока pl: прыжок, перекат, атаки, навык, смена навыка, подобрать предмет."""
+        """Действие игрока pl: прыжок, перекат, атаки, навык, смена навыка, подобрать предмет, режим оружия."""
         if name in ("jump", "roll", "a1", "a2", "skill"): pl.press(name)
         elif name == "next": pl.swap_skill(1)
         elif name == "prev": pl.swap_skill(-1)
         elif name == "pickup": s.pickup(pl)
+        elif name == "weapon_mode": s.toggle_weapon_mode(pl)
         elif name in s.AMMO_ACTIONS: pl.swap_ammo(*s.AMMO_ACTIONS[name])
         elif isinstance(name, str) and name.startswith("inv:"): inventory.apply(s, pl, name)   # инвентарь: взять оружие из рюкзака в руку / выбросить
+        elif isinstance(name, str) and name.startswith("skpow:"):
+            try: _, sid, pw = name.split(":", 2); spells.set_cast_power(pl, sid, float(pw))   # сила каста с планшета клиента
+            except (TypeError, ValueError): pass
     def valid_action(s, name):
         """Можно ли принять такое действие от игрока по сети (хост проверяет события клиентов)."""
-        return name in s.ACTIONS or (isinstance(name, str) and name.startswith("inv:") and len(name) <= 40)
+        return name in s.ACTIONS or (isinstance(name, str) and ((name.startswith("inv:") and len(name) <= 40) or (name.startswith("skpow:") and len(name) <= 60)))
     def act(s, name):
         """Действие своего игрока. В сетевой игре клиент отправляет его хосту."""
         if s.net:
             if s.net.in_game: s.net.local_action(name)
             return
+        if getattr(s.pl, "frozen", 0.0) > 0: return   # штраф смерти: герой стоит кристаллом — действий нет
         s.apply_action(s.pl, name)
+    def toggle_weapon_mode(s, pl):
+        """Переключение режима меча (клавиша из настроек, по умолчанию B): меч <-> ружьё.
+        Оружие ищется в руках по полю alt_mode (у рыцаря это rusty_sword); вход в ружейный режим
+        гасит щит. Сообщение — в мире над героем."""
+        gun = pl.toggle_weapon_mode()   # @in_char: смотрит в данные героя этого игрока
+        if gun is None:
+            if pl is s.pl or not s.net: s.fx.text("У этого оружия нет второго режима", pl.cx, pl.y - 30)
+            return
+        if pl is s.pl or not s.net:   # в сети сообщение видит только тот, чей герой переключил режим
+            name = CFG["weapons"].get(pl.last_weapon, {}).get("name", "?")
+            s.fx.text(name + (" — щит недоступен" if gun else ""), pl.cx, pl.y - 30)
     def overlay_open(s):
-        """Открыто меню/карта/настройки — в сетевой игре свой персонаж в это время стоит на месте."""
-        return s.menu_mode is not None or s.show_world or s.controls_open or s.level_menu or s.hud_edit or s.dev.open or s.inv_open
+        """Открыто меню/карта/окно торговли/настройки — в сетевой игре свой персонаж в это время стоит на месте."""
+        return s.menu_mode is not None or s.show_world or s.controls_open or s.level_menu or s.hud_edit or s.dev.open or s.inv_open or s.trade_open is not None
     def net_leave(s, message="", menu="mp"):
         """Выйти из сетевой игры (или лобби) в меню мультиплеера; одиночный мир создаётся заново."""
         if s.net: s.net.close()
         s.net = None; containers.ROLL_SPAWN = True   # одиночный мир снова бросает шанс появления ящиков
         s.new_game(character=SETTINGS.get("last_character"))
-        s.show_world = s.controls_open = s.level_menu = s.hud_edit = s.inv_open = False; s.inv_hold = None
+        s.show_world = s.controls_open = s.level_menu = s.hud_edit = s.inv_open = False; s.inv_hold = None; s.trade_open = None
         if menu == "connect": mp.open_connect(s)
         else: mp.open_menu(s)
         s.mp_status = message
@@ -724,13 +800,16 @@ class Game:
         mp.housekeeping(s)
         if s.net:   # сетевая игра: хост считает мир, клиент получает его от хоста
             s.net.update(dt); return
-        fx, pl, r = s.fx, s.pl, s.room; sim = 0 if (fx.stop > 0 or s.show_world or s.controls_open or s.menu_mode is not None or s.level_menu or s.dev.open or s.inv_open) else dt   # меню ставит игру на паузу
+        fx, pl, r = s.fx, s.pl, s.room; sim = 0 if (fx.stop > 0 or s.show_world or s.controls_open or s.menu_mode is not None or s.level_menu or s.dev.open or s.inv_open or s.trade_open is not None) else dt   # меню и окно торговли ставят игру на паузу
         fx.stop = max(0, fx.stop - dt); fx.shake = max(0, fx.shake - dt)
         for it in fx.items: it[4] -= dt
         fx.items = [it for it in fx.items if it[4] > 0]
+        effects.update(fx.parts, dt)   # частицы-эффекты: гравитация, торможение, движение (даже при hitstop — как fx.items)
         clone.update_all(pl, sim, r.g, r.mobs + r.containers, s.projs, fx)   # клоны героев: свой ИИ, атаки, растворение
-        if pl.hp <= 0: return
-        mpos = pg.mouse.get_pos(); pl.aim = (mpos[0] / CAMERA_ZOOM + s.cam[0], mpos[1] / CAMERA_ZOOM + s.cam[1]) if SETTINGS.get("mouse_aim", True) else None
+        checkpoint.update(s, sim)   # чекпоинты: тает «заморозка» после возрождения (неуязвимость); герой вошёл в кристалл — лечение и автосейв
+        if pl.hp <= 0: checkpoint.respawn(s); return   # смерть — не конец забега: назад к последнему чекпоинту (штраф — 10 сек кристалла, checkpoint.freeze)
+        frozen = getattr(pl, "frozen", 0.0) > 0   # штраф смерти: герой стоит кристаллом — ввода нет, физика работает (как у замороженных игроков хоста мультиплеера)
+        mpos = pg.mouse.get_pos(); pl.aim = None if frozen else ((mpos[0] / CAMERA_ZOOM + s.cam[0], mpos[1] / CAMERA_ZOOM + s.cam[1]) if SETTINGS.get("mouse_aim", True) else None)
         mb = pg.mouse.get_pressed()   # зажатая кнопка = непрерывные атаки / комбо
         # Крафт/установка постройки: скиллы и атаки выключены, чтобы не «сбивать» постройку
         # (у мага/инженера ЛКМ — и скилл-клавиша, и кнопка установки: клик по месту не должен кастовать).
@@ -739,37 +818,47 @@ class Game:
         if getattr(s, "place_hold", False) and not mb[0]:
             s.place_hold = False   # кнопку, которой ставили, отпустили — блок больше не нужен
         no_skills = bool(s.placing or s.crafting) or bool(getattr(s, "place_hold", False)) or s.place_lock > 0
-        if (mb[0] or s.key_down("attack1")) and not s.dev.open and not s.inv_open and not no_skills: pl.press("a1")   # клики по меню разработчика и инвентарю — не атаки
-        if (mb[2] or s.key_down("attack2")) and not s.dev.open and not s.inv_open and not no_skills: pl.press("a2")
+        if not frozen:   # замороженный (штраф смерти) не атакует — как замороженные игроки у хоста мультиплеера
+            if (mb[0] or s.key_down("attack1")) and not s.dev.open and not s.inv_open and s.trade_open is None and not no_skills: pl.press("a1")   # клики по меню разработчика, инвентарю и торговле — не атаки
+            if (mb[2] or s.key_down("attack2")) and not s.dev.open and not s.inv_open and s.trade_open is None and not no_skills: pl.press("a2")
         pl.drops = r.drops   # телекинез дотягивается до предметов на полу текущей комнаты
         pl.grid = r.g        # сетка комнаты: клон ищет по ней свободное место призыва (clone.spawn)
         pl.no_skills = no_skills
-        pl.skill_held = s.skill_held() and not no_skills   # удерживаемые заклинания (захват инженера) работают, пока клавиша зажата; при установке — выключены
+        pl.skill_held = s.skill_held() and not no_skills and not frozen   # удерживаемые заклинания (захват инженера) работают, пока клавиша зажата; при установке и в «кристалле» — выключены
         mechs.presolve(r, pl)   # кнопки/рычаги -> сигналы каналов; двери обновляют клетки ДО физики
-        pl.update(sim, pg.key.get_pressed(), r.g, r.mobs + r.containers, s.projs, fx); pl.update_anim(sim)   # ящики — тоже цели ударов и заклинаний
-        w = SimpleNamespace(g=r.g, pl=pl, mobs=r.mobs, containers=r.containers, projs=s.projs, fx=fx, turrets=r.turrets, clones=clone.alive(pl))   # «мир» для мобов и пуль (турели инженера, клоны)
+        pl.update(sim, mp.NO_KEYS if frozen else pg.key.get_pressed(), r.g, r.mobs + r.containers, s.projs, fx); pl.update_anim(sim)   # ящики — тоже цели ударов и заклинаний; замороженному герою идёт «пустая клавиатура» — стоит неподвижно
+        w = SimpleNamespace(g=r.g, pl=pl, mobs=r.mobs, containers=r.containers, projs=s.projs, fx=fx, turrets=r.turrets, clones=clone.alive(pl), zones=r.zones)   # «мир» для мобов и пуль (турели инженера, клоны; zones — лужи от бомб)
         pl0 = w.pl
         for m in r.mobs:
             w.pl = clone.decoy(w, m)   # клон-приманка: враг переключается на клона, пока тот жив
             m.update(sim, w)
-            if m.d.get("contact") and (m.touches_rect(pl.rect) if hasattr(m, "touches_rect") else pl.rect.colliderect(m.rect)): pl.hit(m.d["contact"], m.cx, fx)
+            if m.d.get("contact") and not getattr(m, "buried", False) and (m.touches_rect(pl.rect) if hasattr(m, "touches_rect") else pl.rect.colliderect(m.rect)): pl.hit(m.d["contact"], m.cx, fx)
             xp = m.pop_xp() if hasattr(m, "pop_xp") else 0
             if xp: s.gain_xp(xp)          # опыт за уничтоженные руки босса
         w.pl = pl0   # после цикла мобов «мир» снова смотрит на героя
         for q in s.projs: q.update(sim, w)
         s.projs = [q for q in s.projs if not q.dead]
+        zones.update_room(r, sim, w)   # лужи от бомб мобов (zones.py): урон стоящим в них
+        r.zones = [z for z in r.zones if not z.dead]
         crafting.update(s, sim)   # крафт/установка/турели инженера (только одиночная игра: сеть — раньше по return)
         containers.sweep(r, fx)   # сломанные ящики: освобождают клетки и роняют содержимое
+        npc.update_room(r, sim)   # мирные NPC гуляют по карте (на паузе стоят; мобы их не трогают, атаки игрока мимо)
         mechs.update(r, sim, pl, fx)   # лифты/платформы несут героя и мобов; порталы телепортируют
+        loot.update_room(r, pl, fx)   # монеты: подбор кучек касанием (pl.coins)
+        extras = []
         for m in r.mobs:
             if m.hp <= 0:
                 if not getattr(m, "xp_paid", False):
                     m.xp_paid = True
                     s.gain_xp(int(m.d.get("xp", 10)))
+                    loot.drop_for_mob(r, m, fx)   # лут моба: предметы по своим шансам + кучка монет (data/mobs.json -> loot/coins)
+                    extras += mob.death_effects(m, w)   # механики смерти: взрыв (explode) / разделение (split)
+                effects.emit(fx, "mob_death", m.cx, m.cy, dir=m.dir, target_id=m.kind)   # частицы смерти (mob_death)
                 fx.ring(m.cx, m.cy, 28); c = Corpse(m)
                 if not c.dead: r.corpses.append(c)
         for c in r.corpses: c.update(sim)
         r.corpses = [c for c in r.corpses if not c.dead]
+        r.mobs += extras
         r.mobs = [m for m in r.mobs if m.hp > 0]
         for m in r.mobs:   # упал за край карты — умер
             if m.y > r.height_px + 200 or m.y < -400 or m.x < -400 or m.x > r.width_px + 400: m.hp = 0
@@ -788,19 +877,21 @@ class Game:
             if s.room is r and not s.done:   # выхода нет — пропасть: урон и назад к месту появления
                 pl.hit(r.d.get("fall_damage", CFG["maps"].get("fall_damage", 15)), pl.cx, fx); s.place(*s.respawn)
     CONTROL_DEFAULTS = {"jump": "SPACE", "roll": "LSHIFT", "attack1": "J", "attack2": "L", "pickup": "E", "skill": "Q", "skill_next": "C", "skill_prev": "V",
-                        "ammo1_prev": "1", "ammo1_next": "2", "ammo2_prev": "3", "ammo2_next": "4", "inventory": "TAB", "craft": "F", "goggles": "G"}
+                        "ammo1_prev": "1", "ammo1_next": "2", "ammo2_prev": "3", "ammo2_next": "4", "inventory": "TAB", "craft": "F", "goggles": "G", "weapon_mode": "B"}
     CONTROL_LABELS = {"jump": "Прыжок", "roll": "Уклонение", "attack1": "Атака 1 (клавиша)", "attack2": "Атака 2 (клавиша)", "pickup": "Подобрать предмет", "skill": "Использовать скилл", "skill_next": "Следующий скилл", "skill_prev": "Предыдущий скилл",
-                      "ammo1_prev": "Арбалет ЛКМ / нота: пред.", "ammo1_next": "Арбалет ЛКМ / нота: след.", "ammo2_prev": "Арбалет ПКМ: пред. снаряд", "ammo2_next": "Арбалет ПКМ: след. снаряд", "inventory": "Инвентарь", "craft": "Крафт инженера", "goggles": "Очки инженера"}
+                      "ammo1_prev": "Арбалет ЛКМ / нота: пред.", "ammo1_next": "Арбалет ЛКМ / нота: след.", "ammo2_prev": "Арбалет ПКМ: пред. снаряд", "ammo2_next": "Арбалет ПКМ: след. снаряд", "inventory": "Инвентарь", "craft": "Крафт инженера", "goggles": "Очки инженера", "weapon_mode": "Режим меча (меч/ружьё)"}
     def controls(s):
         cfg = SETTINGS.setdefault("controls", {})
         for action, keyname in s.CONTROL_DEFAULTS.items(): cfg.setdefault(action, keyname)
         return cfg
     def skill_held(s):
-        """Зажата ли сейчас клавиша навыка (у мага — ещё и ЛКМ). Нужна удерживаемым заклинаниям (skills.json: "channel")."""
+        """Зажата ли сейчас клавиша навыка (у инженера — ещё и ЛКМ). Нужна удерживаемым заклинаниям (skills.json: "channel").
+        У мага (cast_power) ЛКМ не считается: каст только с клавиши навыка (мышью выбирают заклинание и силу)."""
         if s.overlay_open(): return False
         try: down = pg.key.get_pressed()[pg.key.key_code(s.controls()["skill"])]
         except (ValueError, TypeError, KeyError, IndexError): down = False
-        if not down and CFG.get("character", {}).get("spellcaster"): down = pg.mouse.get_pressed()[0]
+        pl = getattr(s, "pl", None)
+        if not down and CFG.get("character", {}).get("spellcaster") and not spells.has_cast_power(pl.char_id if pl is not None else None): down = pg.mouse.get_pressed()[0]
         return bool(down)
     def key_name(s, key):
         try: return pg.key.name(pg.key.key_code(key))
@@ -814,10 +905,13 @@ class Game:
             if k in (pg.K_ESCAPE, pg.K_RETURN, pg.K_SPACE):
                 s.level_menu = False
                 s.skill_unlock_anim = None
+                s.skill_menu_scroll = None
                 pg.mouse.set_visible(not SETTINGS.get("mouse_aim", True))
             return
         if s.inv_open and s.menu_mode is None:   # открыт инвентарь (Tab): Tab/Esc — закрыть, X — выбросить
             inventory.key(s, k); return
+        if s.trade_open is not None:              # окно торговли: Tab/Esc — закрыть, остальное — в trade.key
+            trade.key(s, k); return
         if s.menu_mode in ("select", "lobby"): char_menu.key(s, k); return
         if s.menu_mode in mp.MENU_MODES: mp.menu_key(s, k); return
         if s.menu_mode in saves_menu.MODES: saves_menu.menu_key(s, k); return
@@ -853,6 +947,7 @@ class Game:
                 if key in ("hp", "mana"):
                     cfg[key][2] = max(20, min(500, cfg[key][2] + (8 if k in (pg.K_EQUALS, pg.K_PLUS, pg.K_KP_PLUS) else -8)))
                     cfg[key][3] = max(4, min(50, cfg[key][3] + (2 if k in (pg.K_EQUALS, pg.K_PLUS, pg.K_KP_PLUS) else -2)))
+                elif key == "tablet": cfg[key][2] = max(140, min(320, cfg[key][2] + (8 if k in (pg.K_EQUALS, pg.K_PLUS, pg.K_KP_PLUS) else -8)))   # сторона планшета мага
                 else: cfg[key][2] = max(16, min(128, cfg[key][2] + (4 if k in (pg.K_EQUALS, pg.K_PLUS, pg.K_KP_PLUS) else -4)))
                 s.save_settings(); return
             return
@@ -881,6 +976,7 @@ class Game:
         elif pressed("skill"): s.act("skill")
         elif pressed("skill_next"): s.act("next")
         elif pressed("skill_prev"): s.act("prev")
+        elif pressed("weapon_mode"): s.act("weapon_mode")   # меч рыцаря <-> ружьё
         elif pressed("craft"):
             if not s.net: crafting.try_start(s)   # инженер: собрать рецепт из ресурсов рядом
         elif pressed("goggles"):
@@ -1118,7 +1214,7 @@ class Game:
         s.txt("Настройки сохраняются в data/settings.json", W // 2 - 150, VIEW_H - 28, (160, 220, 175), s.small)
     def reload(s):
         """F5: перечитать JSON и картинки, пересобрать карты; игрок остаётся на месте."""
-        reload_data(); clear_cache(); pl = s.pl; x, y, st = pl.x, pl.y, pl.state; pl.refresh_mana()
+        reload_data(); clear_cache(); filters.clear_cache(); pl = s.pl; x, y, st = pl.x, pl.y, pl.state; pl.refresh_mana()
         s.camp.reload(); s.warn(check()); s.fx.text("данные перезагружены", s.cam[0] + W / 2, s.cam[1] + 80)
         if CFG["maps"].get("print_world", True): print(world_text())
         if s.room.id not in CFG["map_defs"]: s.room = None; s.go(s.camp.first, None); return
@@ -1133,22 +1229,28 @@ class Game:
         v, r, pl = s.view, s.room, s.pl; v.blit(r.layer, (0, 0))
         light_t, light_dt = lighting.frame_time()
         lighting.draw_sources(v, r, light_t, light_dt)   # факелы, фонари, кристаллы — с живым пламенем и искрами
+        checkpoint.draw_room(v, r, pg.time.get_ticks(), pl)   # кристаллы-чекпоинты комнаты (у точки возрождения — свечение)
         containers.draw(r, v)   # ящики и сундуки (под предметами, мобами и героем)
         containers.draw_prompts(v, r, pl, s.font)
+        npc.draw_room(v, r)     # мирные NPC (торговцы и жители)
+        npc.draw_prompts(v, r, pl, s.font)
         mechs.draw(r, v)   # механизмы: рычаги, кнопки, двери, лифты, порталы, платформы
         mechs.draw_prompts(v, r, pl, s.font)
         for dr in r.drops:
             if isinstance(dr, crafting.ResourceDrop): continue   # ресурсы рисует crafting.draw_world ниже
             dr.draw(v)
-            if abs(dr.x - pl.cx) < 36: v.blit(s.font.render("[E] " + inventory.item_info(dr.wid)["name"], True, (255, 230, 120)), (dr.x - 60, dr.y - 34))
+            if isinstance(dr, loot.Coin) or abs(dr.x - pl.cx) >= 36: continue   # монеты подбираются касанием — подсказки [E] не нужно
+            v.blit(s.font.render("[E] " + inventory.item_info(dr.wid)["name"], True, (255, 230, 120)), (dr.x - 60, dr.y - 34))
         crafting.draw_world(s, v)   # ресурсы (свечение+подписи в очках), доступные рецепты, индикатор крафта
         for c in r.corpses: c.draw(v)
+        for z in r.zones: z.draw(v)   # лужи (кислота/огонь/лёд) — под мобами
         for m in r.mobs: m.draw(v, s.debug)
         for q in s.projs: q.draw(v)
         for c in clone.view_of(s): c.draw(v, s.debug)   # клоны героев (в сети клиент рисует их из снимка)
         if s.net and s.net.in_game: mp.draw_players(s, v)   # все игроки, имена, павшие союзники
         elif pl.inv <= 0 or int(pg.time.get_ticks() / 60) % 2:
             pl.draw(v)
+        if not (s.net and s.net.in_game): checkpoint.draw_crystal(v, pl, pg.time.get_ticks())   # «кристалл» возрождения поверх замороженного героя (штраф смерти); в сети его рисует mp.draw_players
         for m in r.mobs:
             if hasattr(m, "draw_front"): m.draw_front(v)      # рука, держащая игрока, поверх него
         r.draw_decor_over(v)   # мелкие детали карты со слоем "over" — поверх героя, мобов и пуль
@@ -1164,6 +1266,7 @@ class Game:
             elif kind == "beam": _draw_beam(v, x, y, data[0], data[1], data[2], max(0.0, min(1.0, t / .22)))
             elif kind == "bolt": _draw_bolt(v, x, y, data, max(0.0, min(1.0, t / .3)))
             elif kind == "flash": _draw_flash(v, x, y, data[0], data[1], max(0.0, min(1.0, t / .25)))
+        effects.draw(s.fx.parts, v)   # частицы-эффекты (effects.py)
         # Не сдвигаем готовый кадр относительно экрана: при таком shake
         # по краям появлялись чёрные полосы. Камера ограничивается картой ниже.
         # Небольшой отдалённый зум: видно больше уровня вокруг персонажа.
@@ -1186,6 +1289,7 @@ class Game:
         for m in r.mobs:
             if hasattr(m, "draw_overlay"): m.draw_overlay(s.scr, s.cam, CAMERA_ZOOM)   # таблички манекена поверх темноты
         if crafting.vision_on(pl): crafting.draw_vision_filter(s.scr)   # жёлтый фильтр очков инженера поверх кадра
+        if weapon.gun_mode(pl): weapon.draw_gun_filter(s.scr)   # красный фильтр ружейного режима меча рыцаря
         order = s.camp.order   # прогресс: квадратик на каждую карту из order
         for i, mid in enumerate(order):
             rm = s.camp.maps.get(mid); rc = (W - 18 * len(order) - 8 + i * 18, 8, 14, 10)
@@ -1201,24 +1305,32 @@ class Game:
         hud.draw_boss_bar(s.scr, r.mobs, s.font)
         if s.camp.loop: s.txt(f"Круг {s.camp.loop + 1}", W - 90, VIEW_H - 24, (180, 180, 200))
         if s.net and s.net.in_game: mp.draw_overlay(s)   # союзники, сообщения о смерти/конце круга, уровень
+        elif getattr(pl, "frozen", 0.0) > 0: s.txt(f"ШТРАФ СМЕРТИ — кристалл растает через {int(pl.frozen) + 1}…", W // 2 - 300, 200, (110, 225, 255), s.big)
         elif pl.hp <= 0: s.txt("ТЫ УМЕР — R: заново", W // 2 - 220, 200, (255, 90, 90), s.big)
         elif s.done: s.txt("ВСЕ КАРТЫ ПРОЙДЕНЫ — Enter: ещё круг", W // 2 - 380, 200, (120, 255, 150), s.big)
         if s.level_menu: s.draw_level_menu()
         if s.inv_open: inventory.draw(s)
+        if s.trade_open is not None: trade.draw(s)   # окно торговли поверх игры
         if s.show_world: s.draw_world()
         if s.controls_open: s.draw_controls()
         if s.hud_edit: s.draw_hud_editor()
         if s.dev.open: s.dev.draw(s.scr)
         if s.menu_mode is not None: s.draw_menu()
-        if pl.aim and s.menu_mode is None and not s.dev.open and not s.inv_open:   # прицел
-            mx, my = int((pl.aim[0] - s.cam[0]) * CAMERA_ZOOM), int((pl.aim[1] - s.cam[1]) * CAMERA_ZOOM); col = (255, 255, 255); pg.draw.circle(s.scr, col, (mx, my), 10, 1); pg.draw.circle(s.scr, col, (mx, my), 1)
-            for a in ((-17, 0, -7, 0), (7, 0, 17, 0), (0, -17, 0, -7), (0, 7, 0, 17)): pg.draw.line(s.scr, col, (mx + a[0], my + a[1]), (mx + a[2], my + a[3]))
+        if pl.aim and s.menu_mode is None and not s.dev.open and not s.inv_open and s.trade_open is None:   # прицел
+            mx, my = int((pl.aim[0] - s.cam[0]) * CAMERA_ZOOM), int((pl.aim[1] - s.cam[1]) * CAMERA_ZOOM)
+            ximg = filters.crosshair(pl.char_id)   # свой прицел: assets/characters/<id>/crosshair(.png|/) или assets/ui/crosshair(.png|/)
+            if ximg is not None:
+                s.scr.blit(ximg, ximg.get_rect(center=(mx, my)))
+            else:
+                col = (255, 255, 255); pg.draw.circle(s.scr, col, (mx, my), 10, 1); pg.draw.circle(s.scr, col, (mx, my), 1)
+                for a in ((-17, 0, -7, 0), (7, 0, 17, 0), (0, -17, 0, -7), (0, 7, 0, 17)): pg.draw.line(s.scr, col, (mx + a[0], my + a[1]), (mx + a[2], my + a[3]))
         pg.display.flip()
     def draw_level_menu(s):
         # Меню повышения уровня автоматически закрывается через 4 секунды.
         if pg.time.get_ticks() - getattr(s, "level_menu_started", pg.time.get_ticks()) >= 4000:
             s.level_menu = False
             s.skill_unlock_anim = None
+            s.skill_menu_scroll = None
             pg.mouse.set_visible(not SETTINGS.get("mouse_aim", True))
             return
         # Визуальное оформление меню навыков полностью настраивается через assets/skill_menu.json.
@@ -1264,12 +1376,29 @@ class Game:
 
         defs = CFG.get("skills", {})
         tree = CFG.get("skill_tree", {})
-        slots = list(tree.get("slots", []))[:int(ui.get("max_slots", 8))]
-        max_slots = max(1, int(ui.get("max_slots", 8)))
-        while len(slots) < max_slots:
-            slots.append({"skill": None, "unlock_level": 999})
+        # Окно cols×rows (по умолчанию 4×2 = 8 ячеек). Весь список дерева НЕ обрезается:
+        # лишние строки скрыты ниже окна и листаются колесом мыши (skill_menu_wheel).
+        slots = list(tree.get("slots", []))
         cols = max(1, int(ui.get("columns", tree.get("grid_columns", 4))))
         rows = max(1, int(ui.get("rows", tree.get("grid_rows", 2))))
+        while len(slots) < cols * rows:
+            slots.append({"skill": None, "unlock_level": 999})
+        total_rows = (len(slots) + cols - 1) // cols
+        max_scroll = max(0, total_rows - rows)
+        # Прокрутка: s.skill_menu_scroll — ручная (колесо, int) или None — автослежение:
+        # окно сдвигается так, чтобы открываемый навык (анимация) или следующий доступный был виден.
+        if getattr(s, "skill_menu_scroll", None) is None:
+            target_row = None
+            anim_now = getattr(s, "skill_unlock_anim", None)
+            if anim_now:
+                for i, slot in enumerate(slots):
+                    if slot.get("skill") == anim_now.get("skill"): target_row = i // cols; break
+            if target_row is None:
+                for i, slot in enumerate(slots):
+                    sid = slot.get("skill")
+                    if sid and sid in defs and sid not in s.pl.skills: target_row = i // cols; break
+            s.skill_menu_scroll = max(0, min(max_scroll, target_row if target_row is not None else 0))
+        scroll = max(0, min(max_scroll, int(s.skill_menu_scroll)))
         gap_x, gap_y = int(ui.get("gap_x", 14)), int(ui.get("gap_y", 16))
         cell_w = int(ui.get("cell_width", min(180, (W - 70 - gap_x * (cols - 1)) // cols)))
         cell_h = int(ui.get("cell_height", 150))
@@ -1298,6 +1427,8 @@ class Game:
         for i, slot in enumerate(slots):
             sid = slot.get("skill")
             d = defs.get(sid, {}) if sid else {}
+            col, row = i % cols, i // cols
+            if row < scroll or row >= scroll + rows: continue   # окно: строки выше/ниже не рисуются
             # Навык открыт только если он действительно добавлен персонажу.
             # Уровень сам по себе не снимает замки со всех предыдущих/будущих ячеек.
             # Анимация принадлежит только одному конкретному ID навыка,
@@ -1306,8 +1437,7 @@ class Game:
             anim = getattr(s, "skill_unlock_anim", None)
             is_animating_unlock = bool(sid and anim and anim.get("skill") == sid)
             unlocked = bool(sid and sid in defs and (sid in s.pl.skills or is_animating_unlock))
-            col, row = i % cols, i // cols
-            rect = pg.Rect(ox + col * (cell_w + gap_x), oy + row * (cell_h + gap_y), cell_w, cell_h)
+            rect = pg.Rect(ox + col * (cell_w + gap_x), oy + (row - scroll) * (cell_h + gap_y), cell_w, cell_h)
             bg_col = unlocked_bg if unlocked else locked_bg
             border_col = tuple(d.get("color", [100, 210, 150])) if unlocked else locked_border
             texture = image(slot_unlocked if unlocked else slot_locked, (cell_w, cell_h))
@@ -1379,6 +1509,17 @@ class Game:
                 s.txt(f"[{i+1}]", rect.x + 8, rect.bottom - int(ui.get("slot_number_bottom_offset", 23)),
                       color("slot_number_color", (225, 225, 240)), s.small)
 
+        if max_scroll > 0:   # дерево не влезает в окно: стрелки + счётчик скрытых ячеек
+            arrow = color("scroll_arrow_color", (255, 220, 130))
+            cx = ox + total_w // 2
+            top_y = oy - int(ui.get("scroll_gap_top", 14))
+            bottom_y = oy + rows * (cell_h + gap_y) + int(ui.get("scroll_gap_bottom", 6))
+            if scroll > 0:
+                pg.draw.polygon(s.scr, arrow, [(cx - 7, top_y + 6), (cx + 7, top_y + 6), (cx, top_y)])
+                s.txt(f"колесо — выше ({scroll * cols})", cx + 14, top_y, arrow, s.small)
+            if scroll < max_scroll:
+                pg.draw.polygon(s.scr, arrow, [(cx - 7, bottom_y), (cx + 7, bottom_y), (cx, bottom_y + 6)])
+                s.txt(f"колесо — ещё навыки ({(total_rows - scroll - rows) * cols})", cx + 14, bottom_y - 6, arrow, s.small)
         footer_text = str(ui.get("footer", "Активные навыки: Q — использовать, C/V — смена. Пассивные навыки включаются автоматически. Игра на паузе."))
         if ui.get("show_footer", True) and footer_text:
             footer = s.small.render(footer_text, True, color("footer_color", (210, 210, 225)))
@@ -1418,7 +1559,7 @@ class Game:
         while True:
             dt = min(s.clock.tick(60) / 1000, 1 / 30)
             # В меню используем курсор из assets; в забеге сохраняем обычное управление мышью.
-            pg.mouse.set_visible(s.menu_mode is not None and s.menu_cursor is None or s.menu_mode is None and not SETTINGS.get("mouse_aim", True) or s.dev.open or s.inv_open)
+            pg.mouse.set_visible(s.menu_mode is not None and s.menu_cursor is None or s.menu_mode is None and not SETTINGS.get("mouse_aim", True) or s.dev.open or s.inv_open or s.trade_open is not None)
             for e in pg.event.get():
                 if e.type == pg.QUIT:
                     if s.net: s.net.close()
@@ -1429,8 +1570,12 @@ class Game:
                 if s.menu_mode is not None:
                     s.menu_event(e)
                 elif s.hud_edit: s.hud_event(e)
+                elif s.trade_open is not None: trade.event(s, e)   # окно торговли забирает мышь целиком
                 elif s.inv_open: inventory.event(s, e)
                 elif e.type == pg.MOUSEBUTTONDOWN and s.controls_open: s.controls_event(e)
+                elif s.level_menu and e.type == pg.MOUSEBUTTONDOWN and e.button in (4, 5):
+                    s.skill_menu_wheel(1 if e.button == 5 else -1)   # колесо: прокрутка дерева навыков
+                elif spell_tablet.event(s, e): pass   # планшет мага: колесо листает заклинания, кнопки прячет/возвращает, ползунки — сила каста
                 elif e.type == pg.MOUSEBUTTONDOWN and e.button in (4, 5) and not s.net:
                     crafting.cycle_recipe(s, 1 if e.button == 5 else -1)   # колесо мыши: выбор рецепта крафта
                 elif e.type == pg.MOUSEBUTTONDOWN and e.button in (1, 3): s.act("a1" if e.button == 1 else "a2")

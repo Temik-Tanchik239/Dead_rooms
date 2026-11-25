@@ -17,7 +17,7 @@ MW, MH = COLS * T, ROWS * T      # размер карты в пикселях
 VIEW_H = 16 * T                  # высота игрового окна (камера показывает кусок карты)
 W, H = 30 * T, VIEW_H            # размер окна; HUD рисуется прямо поверх игрового поля (панель прозрачная)
 CFG = {}
-DATA_FILES = ("player", "weapons", "mobs", "maps", "projectiles", "skills", "crafting")   # загружаются из data/<имя>.json; F5 перечитывает
+DATA_FILES = ("player", "weapons", "mobs", "maps", "projectiles", "skills", "crafting", "npcs")   # загружаются из data/<имя>.json; F5 перечитывает
 
 def reload_data():
     for n in DATA_FILES:
@@ -48,8 +48,13 @@ def reload_data():
         CFG["skill_menu"] = {}
     # Ящики и сундуки (типы, прочность, содержимое по умолчанию) — data/containers.json, см. containers.py. Файл необязателен.
     CFG["containers"] = read_json(DATA / "containers.json", {})
+    # Частицы-эффекты: внешний вид (effects) и привязки к событиям (attachments) — см. effects.py. Файлы необязательны.
+    CFG["effects"] = read_json(DATA / "effects.json", {})
+    CFG["attachments"] = read_json(DATA / "attachments.json", [])
     # Механизмы (рычаги, кнопки, двери, лифты, телепорты, платформы) — data/mechs.json, см. mechs.py. Файл необязателен.
     CFG["mechs"] = read_json(DATA / "mechs.json", {})
+    # NPC (торговцы и мирные жители) — data/npcs.json, см. npc.py и trade.py. Файл необязателен.
+    CFG["npcs"] = read_json(DATA / "npcs.json", {})
     # Инвентарь (рюкзак, смена оружия в руках, оформление окна Tab) — assets/inventory.json, см. inventory.py. Файл необязателен.
     CFG["inventory"] = read_json(ASSETS / "inventory.json", {})
     # карты: data/maps/<id>.json, файлы на "_" (заготовки) не читаются
@@ -170,7 +175,7 @@ def circle_hits_rect(x, y, radius, rect):
     return (nx - x) ** 2 + (ny - y) ** 2 <= radius * radius
 
 class FX:
-    def __init__(s): s.shake = s.stop = 0; s.items = []
+    def __init__(s): s.shake = s.stop = 0; s.items = []; s.parts = []   # parts — частицы из effects.py (data/effects.json + data/attachments.json)
     def text(s, t, x, y): s.items.append(["t", x, y, t, .7])
     def ring(s, x, y, r): s.items.append(["r", x, y, r, .25])
     # Эффекты заклинаний. data — JSON-дружелюбные списки/числа (сериализуются в мультиплеере).

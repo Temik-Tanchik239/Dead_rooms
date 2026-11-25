@@ -135,6 +135,16 @@ class ContainerPanel:
         ttk.Label(box, text="Шанс 100% — предмет выпадает всегда. «Один из»: шансы — доли от 100% (в сумме не больше 100). "
                             "Нет своего списка — ящик берёт содержимое типа из data/containers.json. Список предметов — оружие и вещи из assets/inventory.json -> items; можно вписать и свой id.",
                   wraplength=900, foreground="#555").pack(anchor="w", pady=(4, 0))
+        # частицы разрушения/открытия (data/attachments.json -> container_break/container_open), id = текущий тип
+        try:
+            import attachments_editor
+        except Exception as e:
+            self.part_panel = None; self.ed.status.set(f"Панель частиц не запустилась: {e}")
+        else:
+            self.part_panel = attachments_editor.AttachmentPanel(
+                box, ["container_break", "container_open"], lambda: self.type_from_label(self.type_var.get()),
+                title="Частицы (ящик сломан / сундук открыт; id = текущий тип)", width=860)
+            self.part_panel.pack(fill="x", pady=(4, 0))
 
     # ---------- кисть / выбранный ящик ----------
     def active(self): return bool(self.mode.get())
@@ -167,6 +177,8 @@ class ContainerPanel:
         if self.sel is None: self.title_var.set("Кисть: настройки для НОВЫХ ящиков. Выбери ящик на карте, чтобы править его самого.")
         else:
             c = self.ed.containers[self.sel]; self.title_var.set("Выбран ящик №%d: «%s», клетка (%d, %d)" % (self.sel + 1, self.types.get(c["type"], {}).get("name", c["type"]), c["x"], c["y"]))
+        pp = getattr(self, "part_panel", None)
+        if pp: pp.refresh()   # частицы следуют за выбранным ящиком/типом
 
     def _fields_changed(self):
         """Поля панели -> настройки кисти или выбранного ящика."""
@@ -182,6 +194,8 @@ class ContainerPanel:
         c["loot_mode"] = next((k for k, t in MODES if t == self.lmode_var.get()), None)
         if c["loot_mode"] == self.types.get(c.get("type"), {}).get("loot_mode", "independent") and c.get("loot") is None: c["loot_mode"] = None
         self._fill_tree(); self._refresh()
+        pp = getattr(self, "part_panel", None)
+        if pp: pp.refresh()   # частицы следуют за выбранным типом
 
     # ---------- таблица содержимого ----------
     def effective_loot(self):

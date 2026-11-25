@@ -21,13 +21,18 @@ pl.channel, а на иконке навыка (hud.py) рисуется убыв
 использовать. Состояние — pl.hold (активный поток) и pl.hold_pool (запас по навыкам); см. раздел «потоки» ниже.
 
 Окно мага (hud.py) показывает три активных заклинания — предыдущее, текущее и следующее;
-порядок — список pl.skills (только "active"), текущее — pl.skill_index. Переключение C/V."""
+порядок — список pl.skills (только "active"), текущее — pl.skill_index. Переключение C/V или колесом мыши
+над планшетом (spell_tablet.py). У мага заклинание кастуется в три шага: выбрал заклинание -> выставил силу
+каста на ползунке планшета -> применил (Q; ЛКМ у мага каст не запускает); сила масштабирует урон, ману,
+кулдаун и время каста.
+"""
 import math
 import pygame as pg
-from core import CFG, sign
+from core import CFG, sign, CHAR, char_def
 from projectiles import volley
 import status
 import invisibility
+import effects   # частицы-эффекты (skill_cast и пр.)
 import clone       # клон героя (@spell("clone") ниже)
 import crafting   # телекинез-перчатка инженера (drag_spell_*), тянет предметы с пола
 from anim import frames, ASSETS_EXISTS
@@ -39,7 +44,7 @@ SPELLS = {}
 PROJECTILE_FIELDS = {
     "projectile_skin": "skin", "projectile_frames": "frames", "projectile_fps": "fps",
     "projectile_draw": "draw", "projectile_rotate": "rotate", "projectile_size": "size",
-    "projectile_color": "color", "projectile_speed": "speed",
+    "projectile_color": "color", "projectile_speed": "speed", "projectile_pierce": "pierce",
 }
 
 
@@ -145,7 +150,7 @@ def _channel_break(pl, d, dn):
         return "move"                                      # пошёл или пригнулся
     if pl.state != "move" or getattr(pl, "grab", None) or pl.airborne():
         return "move"                                      # перекат, лестница, атака, падение, захват
-    spellcaster = CFG.get("character", {}).get("spellcaster")   # у мага ЛКМ — это и есть клавиша каста
+    spellcaster = CFG.get("character", {}).get("spellcaster")   # у заклинателей a1/a2 — не атака (у мага ЛКМ вовсе не каст), в блокировку канала не входят
     buttons = ("jump", "roll") if spellcaster else ("jump", "roll", "a1", "a2")
     if any(pl.buf.get(b, 0) > 0 for b in buttons):
         return "move"                                      # прыжок, перекат или удар
@@ -190,7 +195,7 @@ def channel_stop(pl, fx=None, why="release"):
     end = CHANNELS.get(a.get("type"), (None, None))[1]
     if end:
         end(pl, ch, a, fx)
-    pl.skill_cooldowns[sid] = max(0.0, float(a.get("cooldown", 5.0)))
+    pl.skill_cooldowns[sid] = max(0.0, float(a.get("cooldown", 5.0))) * power_scale(cast_power(pl, sid), "cooldown")
     if fx is not None and why in ("move", "damage", "grab"):
         fx.text(f"{a.get('name', sid)}: прервано", pl.cx, pl.y - 18)
 
@@ -223,9 +228,9 @@ def hold_max(a):
     return max(0.1, float(a.get("duration", 3.0)))
 
 
-def hold_cost(a):
-    """Расход маны в секунду, пока навык зажат."""
-    return max(0.0, float(a.get("mana_cost", 10.0)))
+def hold_cost(a, pw=0.0):
+    """Расход маны в секунду, пока навык зажат (сила каста pw делает поток дороже и сильнее)."""
+    return max(0.0, float(a.get("mana_cost", 10.0))) * power_scale(pw, "mana")
 
 
 def hold_rate(a):
@@ -246,23 +251,25 @@ def holding(pl, sid=None):
     return bool(h) and (sid is None or h.get("sid") == sid)
 
 
-def hold_blocker(pl, sid, a):
+def hold_blocker(pl, sid, a, pw=0.0):
     """Почему поток сейчас не начать: None — можно; иначе (текст для игрока или None, «не хватает маны»)."""
     if pl.hp <= 0 or getattr(pl, "grab", None) or getattr(pl, "hold_latch", False):
         return ("", False)                       # молча: схвачен, мёртв или ждём, пока отпустят клавишу
     left = hold_left(pl, sid, a)
     if left <= 0.0:
         return (f"{a.get('name', sid)}: запас исчерпан", False)
-    if pl.mana < hold_cost(a) * HOLD_MIN_START:
+    if pl.mana < hold_cost(a, pw) * HOLD_MIN_START:
         return ("Недостаточно маны", True)
     return None
 
 
 def hold_start(pl, sid, a, mobs, projs, fx):
-    """Начать поток. Первое срабатывание эффекта — сразу; дальше его ведёт hold_update()."""
+    """Начать поток. Первое срабатывание эффекта — сразу; дальше его ведёт hold_update().
+    Сила каста pw запоминается в pl.hold: пока поток зажат, урон и мана/сек считаются по ней."""
     if getattr(pl, "hold_view", False):          # клиент сетевой игры: поток считает хост, здесь только картинка
         return
-    blocked = hold_blocker(pl, sid, a)
+    pw = cast_power(pl, sid)
+    blocked = hold_blocker(pl, sid, a, pw)
     if blocked:
         text, mana = blocked
         if mana:
@@ -275,6 +282,9 @@ def hold_start(pl, sid, a, mobs, projs, fx):
     if fn is None:
         fx.text(f"неизвестное заклинание: {kind}", pl.cx, pl.y - 18)
         return
+    a = dict(power_skill(pl, sid, a))            # сила каста: усиленный урон для первого срабатывания
+    if pw > 0:
+        a["mana_cost"] = float(a.get("mana_cost", 10.0)) * power_scale(pw, "mana")   # hold_cost/hold_update берут из a
     loop = max(0.1, float(a.get("cast_animation", 0.55)))
     pl.skill_cast = (sid, 0.0, loop)
     res = fn(pl, dict(a, _sid=sid), mobs, projs, fx)
@@ -287,7 +297,7 @@ def hold_start(pl, sid, a, mobs, projs, fx):
     pl.mana = max(0.0, pl.mana - hold_cost(a) * start)
     pl.mana_t = CFG["player"].get("mana", {}).get("regen_delay", .9)
     pl.hold_rest.pop(sid, None)
-    pl.hold = dict(res if isinstance(res, dict) else {}, sid=sid, t=0.0,
+    pl.hold = dict(res if isinstance(res, dict) else {}, sid=sid, t=0.0, pw=pw,
                    pulse=max(0.05, float(a.get("interval", HOLD_PULSE))))
 
 
@@ -314,217 +324,13 @@ def hold_update(pl, dt, mobs, projs, fx):
         pl.hold_pool[sid] = min(mx, cur + hold_rate(a) * dt)
     if not h:
         return
-    sid = h["sid"]; a = defs.get(sid, {})
-    loop = max(0.1, float(a.get("cast_animation", 0.55)))
-    h["t"] += dt
-    if h.get("view"):
-        # Клиент в сетевой игре: поток начал/закончил хост. Здесь только таймер, запас и анимация.
-        pl.hold_pool[sid] = max(0.0, hold_left(pl, sid, a) - dt)
-        pl.skill_cast = (sid, h["t"] % loop, loop)
-        return
-    why = None
-    if pl.hp <= 0 or getattr(pl, "grab", None):
-        why = "grab"
-    elif not getattr(pl, "skill_held", False):
-        why = "release"
-    else:
-        left = hold_left(pl, sid, a) - dt
-        spend = hold_cost(a) * dt
-        if left <= 0.0:
-            pl.hold_pool[sid] = 0.0
-            why = "empty"
-        elif pl.mana < spend:
-            pl.mana = 0.0
-            why = "mana"
-        else:
-            pl.hold_pool[sid] = left
-            pl.mana -= spend
-            pl.mana_t = CFG["player"].get("mana", {}).get("regen_delay", .9)   # пока тратим — мана не восстанавливается
-            kind = a.get("type")
-            tick = CHANNELS.get(kind, (None, None))[0]
-            if tick:
-                if tick(pl, h, a, dt, mobs, projs, fx) is False:
-                    why = "target"
-            else:
-                h["pulse"] -= dt
-                if h["pulse"] <= 0:
-                    h["pulse"] = max(0.0, h["pulse"] + max(0.05, float(a.get("interval", HOLD_PULSE))))
-                    fn = SPELLS.get(kind)
-                    if fn is not None and fn(pl, dict(a, _sid=sid), mobs, projs, fx) is False:
-                        why = "target"
-    if why:
-        hold_stop(pl, fx, why)
-        return
-    pl.skill_cast = (sid, h["t"] % loop, loop)   # анимация применения крутится, пока держим
-
-
-def hold_stop(pl, fx=None, why="release"):
-    """Остановить поток: end-хук, запас начинает восстанавливаться.
-    why: release (отпустил) / empty (запас кончился) / mana (кончилась мана) / target (цель пропала) / grab / swap."""
-    h = getattr(pl, "hold", None)
-    if not h:
-        return
-    pl.hold = None
-    pl.skill_cast = None
-    if h.get("view"):
-        return
-    sid = h["sid"]; a = CFG.get("skills", {}).get(sid, {})
-    end = CHANNELS.get(a.get("type"), (None, None))[1]
-    if end:
-        end(pl, h, a, fx)
-    pl.hold_rest[sid] = max(0.0, float(a.get("recharge_delay", 0.0)))
-    if why in ("empty", "mana", "target") and getattr(pl, "skill_held", False):
-        pl.hold_latch = True                     # клавиша всё ещё зажата — заново только после отпускания
-    if fx is not None and why == "empty":
-        fx.text(f"{a.get('name', sid)}: запас исчерпан", pl.cx, pl.y - 18)
-    elif fx is not None and why == "mana":
-        pl.mana_flash = .35
-        fx.text("Недостаточно маны", pl.cx, pl.y - 18)
-
-
-def hold_net(pl):
-    """Состояние потоков для снимка мультиплеера: ([sid, сколько держим] или None, {sid: запас} только у неполных)."""
-    h = getattr(pl, "hold", None)
-    defs = CFG.get("skills", {})
-    pools = {sid: round(v, 2) for sid, v in getattr(pl, "hold_pool", {}).items()
-             if sid in defs and v < hold_max(defs[sid]) - 0.005}
-    return ([h["sid"], round(h["t"], 2)] if h else None), pools
-
-
-def hold_net_apply(pl, hd, hr):
-    """Клиент: принять состояние потоков от хоста (потом поток крутится как «картинка», view=True)."""
-    pl.hold_view = True
-    pl.hold_pool = {k: float(v) for k, v in (hr or {}).items()}
-    if hd:
-        t, cur = float(hd[1]), pl.hold
-        if cur and cur.get("sid") == hd[0] and abs(cur["t"] - t) < .3:
-            t = cur["t"]                         # свой плавный отсчёт между снимками
-        pl.hold = {"sid": hd[0], "t": t, "view": True}
-    else:
-        if pl.hold:
-            pl.skill_cast = None
-        pl.hold = None
-
-
-# ---------------- заклинания-«потоки» (skills.json: "hold": true) ----------------
-#
-# Третий режим навыка (первые два: разовый и удерживаемый «стоя» — "channel"). Отличия от "channel":
-#   * можно держать на бегу, в прыжке, при атаке и под ударами — ничто, кроме отпущенной клавиши, не прерывает;
-#   * у навыка есть ЗАПАС: "duration" секунд, он тратится, пока клавиша зажата, и восстанавливается, когда отпущена —
-#     с того значения, на котором остановились (а не с нуля, как кулдаун);
-#   * "mana_cost" — мана В СЕКУНДУ, а не за применение;
-#   * пока в запасе что-то есть (и хватает маны), навык можно использовать снова в любой момент.
-# Поля навыка: hold, duration (запас, сек), mana_cost (мана/сек), recharge (сек полного восстановления с нуля, по умолчанию
-# равно cooldown), recharge_delay (пауза перед восстановлением после отпускания, по умолчанию 0), interval (период
-# повторения эффекта, сек, по умолчанию 0.35 — для типов без собственных хуков channel(...)).
-# Эффект: у типа есть хуки channel(тип, tick=..., end=...) (напр. телекинетический захват) — используются они;
-# иначе @spell-функция вызывается заново каждые "interval" секунд (потоки снарядов/молний/ударов по области).
-
-HOLD_MIN_START = 0.1   # столько секунд запаса и маны списывается при старте (чтобы частые тычки не были бесплатными)
-HOLD_PULSE = 0.35      # период повторения эффекта по умолчанию
-
-
-def is_hold(a):
-    """Навык-«поток» (skills.json: \"hold\": true). Если заданы и channel, и hold — работает как channel."""
-    return bool(a) and bool(a.get("hold")) and not a.get("channel")
-
-
-def hold_max(a):
-    """Полный запас навыка в секундах."""
-    return max(0.1, float(a.get("duration", 3.0)))
-
-
-def hold_cost(a):
-    """Расход маны в секунду, пока навык зажат."""
-    return max(0.0, float(a.get("mana_cost", 10.0)))
-
-
-def hold_rate(a):
-    """Сколько секунд запаса возвращается за секунду отдыха (полный запас за \"recharge\" секунд)."""
-    return hold_max(a) / max(0.1, float(a.get("recharge", a.get("cooldown", 5.0))))
-
-
-def hold_left(pl, sid, a=None):
-    """Сколько секунд запаса осталось у навыка-потока sid."""
-    a = a if a is not None else CFG.get("skills", {}).get(sid, {})
-    mx = hold_max(a)
-    return max(0.0, min(mx, getattr(pl, "hold_pool", {}).get(sid, mx)))
-
-
-def holding(pl, sid=None):
-    """Зажат ли сейчас поток (и именно sid, если указан)."""
-    h = getattr(pl, "hold", None)
-    return bool(h) and (sid is None or h.get("sid") == sid)
-
-
-def hold_blocker(pl, sid, a):
-    """Почему поток сейчас не начать: None — можно; иначе (текст для игрока или None, «не хватает маны»)."""
-    if pl.hp <= 0 or getattr(pl, "grab", None) or getattr(pl, "hold_latch", False):
-        return ("", False)                       # молча: схвачен, мёртв или ждём, пока отпустят клавишу
-    left = hold_left(pl, sid, a)
-    if left <= 0.0:
-        return (f"{a.get('name', sid)}: запас исчерпан", False)
-    if pl.mana < hold_cost(a) * HOLD_MIN_START:
-        return ("Недостаточно маны", True)
-    return None
-
-
-def hold_start(pl, sid, a, mobs, projs, fx):
-    """Начать поток. Первое срабатывание эффекта — сразу; дальше его ведёт hold_update()."""
-    if getattr(pl, "hold_view", False):          # клиент сетевой игры: поток считает хост, здесь только картинка
-        return
-    blocked = hold_blocker(pl, sid, a)
-    if blocked:
-        text, mana = blocked
-        if mana:
-            pl.mana_flash = .35
-        if text:
-            fx.text(text, pl.cx, pl.y - 18)
-        return
-    kind = a.get("type", "nova")
-    fn = SPELLS.get(kind)
-    if fn is None:
-        fx.text(f"неизвестное заклинание: {kind}", pl.cx, pl.y - 18)
-        return
-    loop = max(0.1, float(a.get("cast_animation", 0.55)))
-    pl.skill_cast = (sid, 0.0, loop)
-    res = fn(pl, dict(a, _sid=sid), mobs, projs, fx)
-    if res is False:                             # не вышло (нет цели и т.п.) — ни маны, ни запаса не тратится
-        pl.skill_cast = None
-        return
-    start = HOLD_MIN_START
-    pl.hold_pool[sid] = max(0.0, hold_left(pl, sid, a) - start)
-    pl.mana = max(0.0, pl.mana - hold_cost(a) * start)
-    pl.mana_t = CFG["player"].get("mana", {}).get("regen_delay", .9)
-    pl.hold_rest.pop(sid, None)
-    pl.hold = dict(res if isinstance(res, dict) else {}, sid=sid, t=0.0,
-                   pulse=max(0.05, float(a.get("interval", HOLD_PULSE))))
-
-
-def hold_update(pl, dt, mobs, projs, fx):
-    """Каждый кадр (зовётся из Player.update): восстановление запаса у всех потоков, которые сейчас не зажаты,
-    и ведение зажатого потока — расход запаса и маны, эффект, остановка (отпустил / запас или мана кончились)."""
-    defs = CFG.get("skills", {})
-    if not getattr(pl, "skill_held", False):
-        pl.hold_latch = False                    # клавишу отпустили — можно начинать заново
-    h = getattr(pl, "hold", None)
-    for sid in getattr(pl, "skills", []):        # отдых: запас растёт с того значения, на котором остановились
-        a = defs.get(sid)
-        if not is_hold(a) or (h and h.get("sid") == sid):
-            continue
-        mx = hold_max(a)
-        cur = pl.hold_pool.get(sid, mx)
-        if cur >= mx:
-            pl.hold_pool.pop(sid, None)
-            continue
-        rest = pl.hold_rest.get(sid, 0.0)
-        if rest > 0:
-            pl.hold_rest[sid] = rest - dt
-            continue
-        pl.hold_pool[sid] = min(mx, cur + hold_rate(a) * dt)
-    if not h:
-        return
-    sid = h["sid"]; a = defs.get(sid, {})
+    sid = h["sid"]; a = dict(defs.get(sid, {}))   # сила каста: урон и мана/сек — по pw, сохранённой при старте
+    pw = float(h.get("pw", 0.0) or 0.0)
+    if pw > 0:
+        if "damage" in a:
+            try: a["damage"] = float(a["damage"]) * power_scale(pw, "damage")
+            except (TypeError, ValueError): pass
+        a["mana_cost"] = float(a.get("mana_cost", 10.0)) * power_scale(pw, "mana")
     loop = max(0.1, float(a.get("cast_animation", 0.55)))
     h["t"] += dt
     if h.get("view"):
@@ -622,6 +428,54 @@ def active_skills(pl):
     return [sid for sid in getattr(pl, "skills", []) if defs.get(sid, {}).get("category", "active") == "active"]
 
 
+# ---------------- сила каста (маг: "cast_power": true в characters.json) ----------------
+#
+# Каст — три шага: выбрать заклинание -> выбрать силу -> применить. Сила (0..1) хранится по каждому
+# заклинанию в pl.cast_power (ползунки на планшете мага — spell_tablet.py; сейв — save_io).
+# Сила масштабирует характеристики заклинания: 0 — минимум (быстро, дёшево и слабо), 1 — максимум
+# (добавка POWER: при 1.0 урон удваивается, мана дорожает в 2.5 раза, кулдаун и время каста удваиваются).
+POWER = {"damage": 1.0, "mana": 1.5, "cooldown": 1.0, "cast": 1.0}
+
+
+def has_cast_power(cid=None):
+    """Умеет ли герой управлять силой каста (characters.json: "cast_power": true — пока только маг)."""
+    return bool(char_def(cid if cid is not None else CHAR["id"]).get("cast_power"))
+
+
+def cast_power(pl, sid=None):
+    """Текущая сила каста (0..1) заклинания sid у героя pl. Герои без "cast_power" — всегда 0."""
+    if not has_cast_power(getattr(pl, "char_id", None)):
+        return 0.0
+    try:
+        return max(0.0, min(1.0, float(getattr(pl, "cast_power", {}).get(sid, 0.0))))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def set_cast_power(pl, sid, pw):
+    """Сохранить силу каста (0..1) заклинания sid. У героев без "cast_power" ничего не делает."""
+    if has_cast_power(getattr(pl, "char_id", None)):
+        try: pl.cast_power[sid] = max(0.0, min(1.0, float(pw)))
+        except (TypeError, ValueError): pass
+
+
+def power_scale(pw, key):
+    """Множитель характеристики (damage/mana/cooldown/cast) при силе каста pw: 0 -> 1.0, 1 -> 1+POWER[key]."""
+    return 1.0 + max(0.0, min(1.0, float(pw))) * POWER.get(key, 0.0)
+
+
+def power_skill(pl, sid, a=None):
+    """Описание навыка a с уроном, усиленным силой каста (копия; общие данные CFG не меняются)."""
+    a = a if a is not None else CFG.get("skills", {}).get(sid, {})
+    pw = cast_power(pl, sid)
+    if pw <= 0 or "damage" not in a:
+        return a
+    d = dict(a)
+    try: d["damage"] = float(a["damage"]) * power_scale(pw, "damage")
+    except (TypeError, ValueError): pass
+    return d
+
+
 def spellbook(pl):
     """(prev, current, next) — id заклинаний для окна мага. Любое может быть None/повтором, если их < 3."""
     act = active_skills(pl)
@@ -633,17 +487,18 @@ def spellbook(pl):
 
 
 def ready(pl):
-    """Готово ли текущее заклинание (нет кулдауна и хватает маны). Для авто-каста мага по зажатой ЛКМ."""
+    """Готово ли текущее заклинание (нет кулдауна и хватает маны с учётом силы каста)."""
     act = active_skills(pl)
     if not act or channeling(pl) or holding(pl):
         return False
     sid = act[pl.skill_index % len(act)]
     a = CFG.get("skills", {}).get(sid, {})
+    pw = cast_power(pl, sid)
     if is_hold(a):                       # поток: нужен запас и немного маны (кулдауна нет)
-        return hold_blocker(pl, sid, a) is None and not getattr(pl, "hold_view", False)
+        return hold_blocker(pl, sid, a, pw) is None and not getattr(pl, "hold_view", False)
     if pl.skill_cooldowns.get(sid, 0) > 0:
         return False
-    return pl.mana >= max(0.0, float(a.get("mana_cost", 20.0)))
+    return pl.mana >= max(0.0, float(a.get("mana_cost", 20.0))) * power_scale(pw, "mana")
 
 
 def aim_point(pl, default_dist=60):
@@ -654,13 +509,13 @@ def aim_point(pl, default_dist=60):
 
 
 def cast(pl, mobs, projs, fx):
-    """Применить текущее активное заклинание (Q, а у мага ещё и ЛКМ). Тонкий диспетчер поверх @spell."""
+    """Применить текущее активное заклинание (клавиша навыка Q; ЛКМ у мага не кастует). Тонкий диспетчер поверх @spell."""
     defs = CFG.get("skills", {})
     act = active_skills(pl)
     if not act or channeling(pl) or holding(pl):    # уже колдуем/держим заклинание — новые нажатия игнорируются
         return
     sid = act[pl.skill_index % len(act)]
-    a = defs.get(sid)
+    a = power_skill(pl, sid, defs.get(sid))   # сила каста: урон усилен (мана/кулдаун/время — ниже по pw)
     if not a:
         return
     if is_hold(a):                   # поток: свой запас вместо кулдауна, мана — в секунду (см. hold_start)
@@ -669,7 +524,8 @@ def cast(pl, mobs, projs, fx):
     if pl.skill_cooldowns.get(sid, 0) > 0:
         fx.text(f"{a.get('name', sid)}: {pl.skill_cooldowns[sid]:.1f}с", pl.cx, pl.y - 18)
         return
-    cost = max(0.0, float(a.get("mana_cost", 20.0)))
+    pw = cast_power(pl, sid)
+    cost = max(0.0, float(a.get("mana_cost", 20.0))) * power_scale(pw, "mana")
     if pl.mana < cost:
         pl.mana_flash = .35
         fx.text("Недостаточно маны", pl.cx, pl.y - 18)
@@ -685,7 +541,8 @@ def cast(pl, mobs, projs, fx):
         if why:
             fx.text(why, pl.cx, pl.y - 18)
             return
-    pl.skill_cast = (sid, 0.0, float(a.get("cast_animation", 0.55)))
+    pl.skill_cast = (sid, 0.0, float(a.get("cast_animation", 0.55)) * power_scale(pw, "cast"))
+    effects.emit(fx, "skill_cast", pl.cx, pl.y + pl.h * 0.35, dir=pl.face, target_id=sid)   # частицы применения навыка (skill_cast)
     res = fn(pl, dict(a, _sid=sid), mobs, projs, fx)
     if res is False:                 # заклинание не сработало (нет цели и т.п.) — ни маны, ни перезарядки
         pl.skill_cast = None
@@ -696,7 +553,7 @@ def cast(pl, mobs, projs, fx):
     if hold:                         # удерживаемое: перезарядка стартует, когда каст закончится (channel_stop)
         begin_channel(pl, sid, a, res if isinstance(res, dict) else None)
     else:
-        pl.skill_cooldowns[sid] = max(0.0, float(a.get("cooldown", 5.0)))
+        pl.skill_cooldowns[sid] = max(0.0, float(a.get("cooldown", 5.0))) * power_scale(pw, "cooldown")
     fx.text(f"{a.get('name', sid)} (-{cost:g} маны)", pl.cx, pl.y - 18)
 
 
@@ -761,14 +618,48 @@ def _invisibility(pl, a, mobs, projs, fx):
 @spell("projectile")
 def _projectile(pl, a, mobs, projs, fx):
     """Выстрел снарядом в курсор. "projectile" — тип/описание пули; эффект пули (поле "effect"
-    у типа в data/projectiles.json, напр. заморозка) применяется при попадании внутри projectiles.py."""
+    у типа в data/projectiles.json, напр. заморозка) применяется при попадании внутри projectiles.py.
+    "at_cursor": true — снаряд появляется прямо в точке курсора со скоростью 0 (для кастов «в область»:
+    воронка, зоны, шторм, дождь — поведение пули в projectiles.py делает всю работу)."""
     pr = projectile_spec(a)
+    dmg = a.get("damage", 20) * pl.dmg_mult()
+    if a.get("at_cursor"):
+        ox, oy = aim_point(pl, 80)
+        volley(projs, pr, ox, oy, 0.0, dmg, True, a.get("count", 1), a.get("spread", 0), owner=pl)
+        return
     hx, hy = pl.hand("shoot")
     ang = 0 if pl.face > 0 else math.pi
     if pl.aim:
         ang = math.atan2(pl.aim[1] - hy, pl.aim[0] - hx)
     volley(projs, pr, hx + math.cos(ang) * 14, hy + math.sin(ang) * 14, ang,
-           a.get("damage", 20) * pl.dmg_mult(), True, a.get("count", 1), a.get("spread", 0))
+           dmg, True, a.get("count", 1), a.get("spread", 0), owner=pl)
+
+
+@spell("beam")
+def _beam(pl, a, mobs, projs, fx):
+    """Чародейский луч (рейлган): мгновенный разряд по линии до "range" — пронзает ВСЕХ врагов на пути
+    (задевает тех, чей центр ближе "width" пикселей до линии). "effect" — статус всем задетым."""
+    reach = float(a.get("range", 440)); width = float(a.get("width", 26))
+    dmg = a.get("damage", 40) * pl.dmg_mult()
+    kb = a.get("knockback", 160)
+    color = list(a.get("color", [190, 130, 255]))
+    eff = a.get("effect", {})
+    hx, hy = pl.hand("shoot")
+    ang = 0.0 if pl.face > 0 else math.pi
+    if pl.aim:
+        ang = math.atan2(pl.aim[1] - hy, pl.aim[0] - hx)
+    dx, dy = math.cos(ang), math.sin(ang)
+    fx.beam(hx, hy, hx + dx * reach, hy + dy * reach, color)
+    fx.flash(hx + dx * reach * .5, hy + dy * reach * .5, reach * .5, color)
+    fx.shake = max(fx.shake, .25)
+    for m in mobs:
+        if m.hp <= 0: continue
+        px, py = m.cx - hx, m.cy - hy
+        prj = px * dx + py * dy
+        if prj < 0 or prj > reach: continue          # за спиной или дальше луча
+        if abs(px * dy - py * dx) > width: continue  # мимо линии
+        m.hurt(dmg, (sign(m.cx - hx) or pl.face) * kb, fx)
+        if eff and hasattr(m, "frozen"): status.apply(m, eff, fx)
 
 
 @spell("chain_lightning")

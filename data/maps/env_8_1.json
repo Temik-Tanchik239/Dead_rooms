@@ -1,8 +1,8 @@
 {
   "name": "Канализация",
   "pos": [
-    8,
-    1
+    7,
+    14
   ],
   "background": "backgrounds/canalisacia.png",
   "bg_mode": "cover",

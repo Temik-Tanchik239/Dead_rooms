@@ -27,7 +27,7 @@ F5 перечитывает файлы и обновляет уже стоящи
 """
 import copy, math
 import pygame as pg
-from core import CFG, W, VIEW_H, T, free
+from core import CFG, W, VIEW_H, T, free, sign
 from mob import Mob
 from anim import sprite, mob_frame, ASSETS_EXISTS
 import status
@@ -91,8 +91,10 @@ class Dummy(Mob):
 
     def hurt(s, dmg, kb, fx):
         """Удар: считаем урон, показываем число; без отбрасывания, стана и сбития атак."""
+        import effects
         s.last_hit = dmg; s.hp -= dmg; s.flash = .1; fx.stop = .05
         s.hurt_left = float(look().get("hurt_time", .25)); s.anim = ""   # анимация «удар» стартует заново
+        effects.emit(fx, "mob_hit", s.cx, s.cy, dir=sign(kb) or 1, target_id=KIND)   # частицы попадания — и на манекене
         fx.text(str(int(dmg)), s.cx, s.y)
 
     def dps(s):

@@ -1,4 +1,4 @@
-"""Простой редактор карт DEAD ROOMS. Запуск: python map_editor.py"""
+"""Редактор игры DEAD ROOMS (карты, навыки, мобы, аксессуары, эффекты-частицы...). Запуск: python map_editor.py (или launch_map_editor.bat)"""
 import json
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, colorchooser
@@ -20,6 +20,14 @@ try:
     from resource_panel import ResourcePanel   # панель «Ресурсы» (кисти ресурсов + разброс карты); без неё редактор работает как раньше
 except Exception:
     import traceback; traceback.print_exc(); ResourcePanel = None
+try:
+    from npc_panel import NpcPanel   # панель «NPC» (расстановка торговцев и жителей); без неё редактор работает как раньше
+except Exception:
+    import traceback; traceback.print_exc(); NpcPanel = None
+try:
+    from mob_panel import MobPanel   # панель «Мобы» (расстановка мобов по карте); без неё редактор работает как раньше
+except Exception:
+    import traceback; traceback.print_exc(); MobPanel = None
 
 ROOT = Path(__file__).resolve().parent
 MAP_DIR = ROOT / "data" / "maps"
@@ -96,6 +104,7 @@ PALETTE = [
     ("o", "Свет: фонарь", {"type": "empty", "light": "lantern"}),
     ("+", "Свет: кристалл", {"type": "empty", "light": "crystal"}),
     ("%", "Свет: магическая сфера", {"type": "empty", "light": "orb"}),
+    ("O", "Чекпоинт", {"type": "empty", "checkpoint": True}),
     ("W", "Ресурс: древесина", {"type": "resource", "resource": "wood"}),
     ("N", "Ресурс: металл", {"type": "resource", "resource": "metal"}),
     ("K", "Ресурс: кристалл", {"type": "resource", "resource": "crystal"}),
@@ -103,18 +112,19 @@ PALETTE = [
     ("Z", "Ресурс: случайный", {"type": "resource", "resource": "random"}),
 ]
 # Эти символы уже есть в общей легенде data/maps.json — в легенду карты их не копируем.
-GLOBAL_SYMBOLS = (".", "#", "=", "H", "x", "<", ">", "L", "R", "U", "D", "P", "S", "B", "C", "?", "*", "o", "+", "%")
+GLOBAL_SYMBOLS = (".", "#", "=", "H", "x", "<", ">", "L", "R", "U", "D", "P", "S", "B", "C", "?", "*", "o", "+", "%", "O")
 LEGEND = {ch: data for ch, _, data in PALETTE if ch not in GLOBAL_SYMBOLS}
 LEGEND.update({".": "empty", "#": "wall", "=": "platform", "H": "ladder", "x": {"type": "spikes", "damage": 10},
                "<": {"exit": "prev"}, ">": {"exit": "next"}, "L": {"exit": "left"}, "R": {"exit": "right"},
                "U": {"exit": "up", "type": "ladder"}, "D": {"exit": "down", "type": "ladder"},
                "P": {"player": True}, "S": {"mob": "random"}, "B": {"boss": True}, "C": {"type": "empty", "boss": True, "boss_type": "morgart"}, "?": {"item": "random"},
-               "*": {"light": "torch"}, "o": {"light": "lantern"}, "+": {"light": "crystal"}, "%": {"light": "orb"}})
+               "*": {"light": "torch"}, "o": {"light": "lantern"}, "+": {"light": "crystal"}, "%": {"light": "orb"},
+               "O": {"type": "empty", "checkpoint": True}})
 
 COLORS = {".": "#20202a", "#": "#85858c", "=": "#b08a5a", "H": "#c6a66b", "x": "#d94a4a",
           "P": "#62d6ff", "S": "#d58bff", "B": "#ff5368", "C": "#bd58ff", "?": "#f5d75e", "<": "#8bd49b", ">": "#8bd49b",
           "L": "#8bd49b", "R": "#8bd49b", "U": "#8bd49b", "D": "#8bd49b",
-          "*": "#ff9a3c", "o": "#ffd99a", "+": "#6fd2ff", "%": "#be6eff",
+          "*": "#ff9a3c", "o": "#ffd99a", "+": "#6fd2ff", "%": "#be6eff", "O": "#6fd2ff",
           "W": "#a26e3e", "N": "#96a2b9", "K": "#78dcff", "F": "#ff9628", "Z": "#e8d8a0"}
 for ch, _, data in PALETTE:
     if "sprite" in data:
@@ -158,7 +168,7 @@ class Editor:
     def __init__(self, container, window=None):
         self.root = container
         if window is not None:
-            window.title("DEAD ROOMS — редактор карт")
+            window.title("DEAD ROOMS — редактор игры")
             window.geometry("1100x820")
         self.map_w, self.map_h = W, H
         self.rows = [["." for _ in range(self.map_w)] for _ in range(self.map_h)]
@@ -168,7 +178,6 @@ class Editor:
         self.map_id = tk.StringVar(value="my_map")
         self.name = tk.StringVar(value="Новая карта")
         self.status = tk.StringVar(value="Выбери элемент слева и рисуй мышью. Колесо мыши прокручивает карту.")
-        self.rects = {}
         self.custom = {}   # символ -> запись легенды своего света
         self.light_kind = tk.StringVar(value=LIGHT_KINDS[0][0])
         self.light_rgb = list(LIGHT_COLORS[0][1])
@@ -189,11 +198,32 @@ class Editor:
         self.containers = []; self.cpanel = None   # ящики и сундуки карты (список записей, см. container_panel.py)
         self.mechs = []; self.mpanel = None   # механизмы карты (список записей, см. mech_panel.py)
         self.rpanel = None   # ресурсы карты (кисти + разброс, см. resource_panel.py)
+        self.npcs = []; self.npanel = None   # NPC карты (торговцы и жители, список записей, см. npc_panel.py)
+        self.mobpl = None                    # панель расстановки мобов (mob_panel.py)
         self.zoom = 1.0                       # масштаб холста: 1 клетка = CELL*zoom экранных px
         self.zoom_var = tk.StringVar(value="100%")
         self.cell_brush = "#"                # последняя обычная кисть (чтобы вернуть её из вкладок света)
         self._img_cache = {}                  # (id(PhotoImage), zoom) -> перемасштабированная картинка
         self._cell_scale_cache = {}
+        self._view_job = None                 # отложенная перерисовка видимой области (после прокрутки)
+        self._last_view = None                # последняя отрисованная видимая область (клетки, без запаса)
+        # ---- страница «Мир»: весь мир одним холстом — карты вплотную по координатам pos ----
+        self.world_on = False                 # True — вместо карты показан целостный мир
+        self.world_maps = []                  # записи: {id, path, name, pos, w, h, data, rows, legend, custom, start}
+        self.world_sel = None                 # выбранная локация (id)
+        self.world_drag = None                # [запись, canvasx, canvasy] при перетаскивании локации
+        self.world_move = tk.BooleanVar(value=False)  # галочка «двигать локации» (иначе кисть рисует по картам)
+        self._world_painting = False          # идёт штрих кисти на странице мира
+        self._world_dirty = set()             # id карт, правленых на странице мира (пишутся в файл при отпускании)
+        self.world_px = 6.0                   # масштаб страницы мира: px на одну клетку карты
+        self._world_ox = 0.0; self._world_oy = 0.0   # левый-верхний угол сетки мира на канвасе (px)
+        self._world_pitch = (W, H)            # размер слота сетки в клетках (слот = место одной карты)
+        self._world_lo_x = 0; self._world_lo_y = 0    # pos левого-верхнего слота сетки
+        self._world_slots = (1, 1)            # сколько слотов по x и y занимает мир
+        self._world_previews = {}             # id -> (P, PhotoImage) цветной мини-карты (кэш)
+        self._world_cell_img = {}             # (символ, k) -> спрайт клетки для страницы мира (кэш)
+        self._world_fitted = False            # масштаб мира уже подобран (при первом показе)
+        self._world_center_start = False      # после первого показа центрироваться на стартовой карте
         self._brush_trace = False
         self.brush.trace_add("write", self._brush_changed)
         self._load_preview_images()
@@ -238,6 +268,17 @@ class Editor:
         self.darkness_var = tk.StringVar(value="")
         ttk.Spinbox(bar2, from_=0, to=100, increment=5, textvariable=self.darkness_var, width=5).pack(side="left", padx=4)
         ttk.Label(bar2, text="(пусто — авто: темно, только если на карте есть блоки света; 0 — светло)").pack(side="left", padx=4)
+        self.world_btn = ttk.Button(bar2, text="Мир: весь мир одним холстом", command=self.toggle_world)
+        self.world_btn.pack(side="left", padx=(16, 0))
+        ttk.Checkbutton(bar2, text="двигать локации", variable=self.world_move,
+                        command=self._world_hint_update).pack(side="left", padx=(2, 0))
+        self.world_open_btn = ttk.Button(bar2, text="Открыть выбранную", command=lambda: self.world_open(), state="disabled")
+        self.world_open_btn.pack(side="left", padx=4)
+        self.world_fit_btn = ttk.Button(bar2, text="Вписать мир", command=self.world_fit_all, state="disabled")
+        self.world_fit_btn.pack(side="left")
+        self.world_refresh_btn = ttk.Button(bar2, text="Обновить мир", command=self.world_refresh, state="disabled")
+        self.world_refresh_btn.pack(side="left")
+        self.world_hint = ttk.Label(bar2, text="", foreground="#8a8a98")
         ttk.Label(bar2, text="Масштаб:").pack(side="right", padx=(10, 3))
         ttk.Button(bar2, text="−", width=3, command=lambda: self.zoom_step(-1)).pack(side="right")
         self.zoom_combo = ttk.Combobox(bar2, textvariable=self.zoom_var, width=6, state="readonly",
@@ -249,13 +290,15 @@ class Editor:
         ttk.Button(bar2, text="Fit", command=self.zoom_fit).pack(side="right")
         ttk.Label(bar2, text="  Ctrl+колесо — масштаб под курсором", foreground="#8a8a98").pack(side="right", padx=(0, 8))
 
-        # ---------- холст карты ----------
+        # ---------- холст карты + страница «Мир» (в одном месте, переключаются кнопкой) ----------
         board = ttk.Frame(outer); board.pack(fill="both", expand=True)
         self.canvas = tk.Canvas(board, bg="#15151b", highlightthickness=0,
                                 scrollregion=(0, 0, self.map_w * self.cell_size(), self.map_h * self.cell_size()))
+        self.world_canvas = tk.Canvas(board, bg="#101018", highlightthickness=0)   # страница «Мир»: все локации
         sx = ttk.Scrollbar(board, orient="horizontal", command=self.canvas.xview)
         sy = ttk.Scrollbar(board, orient="vertical", command=self.canvas.yview)
-        self.canvas.configure(xscrollcommand=sx.set, yscrollcommand=sy.set)
+        self.sx, self.sy = sx, sy
+        self.canvas.configure(xscrollcommand=self._xscrolled, yscrollcommand=self._yscrolled)
         self.canvas.grid(row=0, column=0, sticky="nsew")
         sy.grid(row=0, column=1, sticky="ns"); sx.grid(row=1, column=0, sticky="ew")
         board.rowconfigure(0, weight=1); board.columnconfigure(0, weight=1)
@@ -263,6 +306,17 @@ class Editor:
         self.canvas.bind("<Button-3>", self.erase)
         self.canvas.bind("<MouseWheel>", self._wheel)
         self.canvas.bind("<Button-4>", self._wheel); self.canvas.bind("<Button-5>", self._wheel)
+        self.canvas.bind("<Configure>", lambda e: self._view_changed())
+        wc = self.world_canvas
+        wc.bind("<Button-1>", self.world_press)
+        wc.bind("<B1-Motion>", self.world_motion)
+        wc.bind("<ButtonRelease-1>", self.world_release)
+        wc.bind("<Button-3>", self.world_erase)
+        wc.bind("<B3-Motion>", self.world_erase_motion)
+        wc.bind("<ButtonRelease-3>", self.world_release)
+        wc.bind("<Double-Button-1>", self.world_dbl_open)
+        wc.bind("<MouseWheel>", self._world_wheel)
+        wc.bind("<Button-4>", self._world_wheel); wc.bind("<Button-5>", self._world_wheel)
 
         # ---------- вкладки аспектов (каждый — свой режим создания) ----------
         self.aspects = ttk.Notebook(outer); self.aspects.pack(fill="x", pady=(6, 0))
@@ -273,6 +327,8 @@ class Editor:
         self._tab_mech = ttk.Frame(self.aspects); self.aspects.add(self._tab_mech, text="  Механизмы  ")
         self._tab_decor = ttk.Frame(self.aspects); self.aspects.add(self._tab_decor, text="  Детали  ")
         self._tab_res = ttk.Frame(self.aspects); self.aspects.add(self._tab_res, text="  Ресурсы  ")
+        self._tab_mobs = ttk.Frame(self.aspects); self.aspects.add(self._tab_mobs, text="  Мобы  ")
+        self._tab_npc = ttk.Frame(self.aspects); self.aspects.add(self._tab_npc, text="  NPC  ")
         self.aspects.bind("<<NotebookTabChanged>>", self._aspect_changed)
         self._palette_tab(self._tab_tiles)
         self._light_panel(self._tab_light)
@@ -295,10 +351,18 @@ class Editor:
             try: self.rpanel = ResourcePanel(self, self._tab_res, ROOT, CELL, PALETTE)
             except Exception:
                 import traceback; traceback.print_exc(); self.rpanel = None
+        if NpcPanel is not None:
+            try: self.npanel = NpcPanel(self, self._tab_npc, ROOT, CELL, PALETTE)
+            except Exception:
+                import traceback; traceback.print_exc(); self.npanel = None
+        if MobPanel is not None:
+            try: self.mobpl = MobPanel(self, self._tab_mobs, ROOT, CELL, PALETTE)
+            except Exception:
+                import traceback; traceback.print_exc(); self.mobpl = None
 
         # ---------- строка статуса ----------
         ttk.Label(outer, textvariable=self.status, wraplength=1260).pack(fill="x", pady=(6, 0))
-        ttk.Label(outer, text="ЛКМ — рисовать, ПКМ — стереть; колесо — листать, Ctrl+колесо — масштаб; вкладки внизу: сетка, свет, боссы, ящики, механизмы, детали, ресурсы.",
+        ttk.Label(outer, text="ЛКМ — рисовать, ПКМ — стереть; колесо — листать, Ctrl+колесо — масштаб; вкладки внизу: сетка, свет, боссы, ящики, механизмы, детали, ресурсы, мобы; «Мир» — весь мир одним холстом: рисуй кистью прямо по картам (пишется в их файлы), галочка «двигать локации» переносит карты по сетке pos.",
                   foreground="#8a8a98").pack(anchor="w", pady=(2, 0))
 
     # ---------- палитра «Сетка» ----------
@@ -339,6 +403,10 @@ class Editor:
             self._force_mode(self.mpanel, True)
         elif tab is self._tab_decor and self.dpanel is not None:
             self._force_mode(self.dpanel, True)
+        elif tab is self._tab_mobs and self.mobpl is not None:
+            self._force_mode(self.mobpl, True)
+        elif tab is self._tab_npc and self.npanel is not None:
+            self._force_mode(self.npanel, True)
         elif tab is self._tab_res and self.rpanel is not None:
             self.brush.set(self.cell_brush)
             self.status.set("Ресурсы: выбери кисть ресурса и рисуй по сетке — в игре на этой клетке появится спавн ресурса. "
@@ -351,7 +419,7 @@ class Editor:
     def _deactivate_modes(self):
         """Выключить все режимы создания, кроме базовой «сетки»."""
         self.morg_mode.set(False)
-        for p in (self.cpanel, self.mpanel, self.dpanel):
+        for p in (self.cpanel, self.mpanel, self.dpanel, self.npanel, self.mobpl):
             if p is not None and p.mode.get():
                 p.mode.set(False); p._mode_changed()
 
@@ -489,11 +557,41 @@ class Editor:
     def _background_changed(self, _event=None):
         self._draw_all()
 
+    # ---------- быстрая отрисовка больших карт: рисуем только видимую область, правим по одной клетке ----------
+    def _visible_cells(self, pad=4):
+        """Диапазон клеток (x0, y0, x1, y1) в окне просмотра с запасом pad — на карте 300×300 рисуем
+        только видимое, иначе канвас захлебывается в десятках тысяч элементов."""
+        S = self.cell_size()
+        x0 = int(self.canvas.canvasx(0) // S) - pad; y0 = int(self.canvas.canvasy(0) // S) - pad
+        x1 = int((self.canvas.canvasx(self.canvas.winfo_width()) + S - 1) // S) + pad
+        y1 = int((self.canvas.canvasy(self.canvas.winfo_height()) + S - 1) // S) + pad
+        return max(0, x0), max(0, y0), min(self.map_w, max(0, x1)), min(self.map_h, max(0, y1))
+
+    def _xscrolled(self, first, last):
+        self.sx.set(first, last); self._view_changed()
+
+    def _yscrolled(self, first, last):
+        self.sy.set(first, last); self._view_changed()
+
+    def _view_changed(self, *_):
+        """Прокрутка/изменение окна: перерисовать, когда видимая область действительно изменилась (after_idle)."""
+        if self.world_on or self._view_job is not None: return
+        self._view_job = self.root.after_idle(self._redraw_view)
+
+    def _redraw_view(self):
+        self._view_job = None
+        if self.world_on: return
+        view = self._visible_cells(0)
+        if view != self._last_view: self._draw_all()   # диапазон сместился — рисуем новую видимую область
+
     def _draw_all(self):
+        if self.world_on: self._draw_world(); return
         self._morg_sync_panel()
         self._sync_zoom()
-        self.canvas.delete("all"); self.rects = {}
+        c = self.canvas; c.delete("all")
         S = self.cell_size()
+        self._last_view = self._visible_cells(0)
+        vx0, vy0, vx1, vy1 = self._visible_cells()   # с запасом 4 клетки на быстрые прокрутки
         bg = self.background.get()
         bg_img = self.background_images.get(bg)
         if bg_img:
@@ -501,21 +599,26 @@ class Editor:
             mw, mh = int(self.map_w * S), int(self.map_h * S)
             if bg == "Кирпичная плитка":
                 bw, bh = max(1, bi.width()), max(1, bi.height())
-                for by in range(0, mh, bh):
-                    for bx in range(0, mw, bw):
-                        self.canvas.create_image(bx, by, image=bi, anchor="nw", tags=("background",))
+                bx0 = int(max(0, (vx0 * S) // bw)) * bw; by0 = int(max(0, (vy0 * S) // bh)) * bh   # тайлим только видимое
+                bx1 = int(min(mw, vx1 * S + bw)); by1 = int(min(mh, vy1 * S + bh))
+                for by in range(by0, by1, bh):
+                    for bx in range(bx0, bx1, bw):
+                        c.create_image(bx, by, image=bi, anchor="nw", tags=("background",))
             else:
-                self.canvas.create_image((mw - bi.width()) // 2,
-                                         (mh - bi.height()) // 2,
-                                         image=bi, anchor="nw", tags=("background",))
-        for y, row in enumerate(self.rows):
-            for x, ch in enumerate(row):
-                self._draw_cell(x, y, ch)
-        self.canvas.tag_lower("background")
+                c.create_image((mw - bi.width()) // 2,
+                               (mh - bi.height()) // 2,
+                               image=bi, anchor="nw", tags=("background",))
+        for y in range(vy0, vy1):
+            row = self.rows[y]
+            for x in range(vx0, vx1):
+                self._draw_cell(x, y, row[x])
+        c.tag_lower("background")
         if self.dpanel: self.dpanel.draw()          # мелкие детали: «позади» — под клетками, «поверх» — над ними
         self._draw_morgart_anchors()
         if self.cpanel: self.cpanel.draw()
         if self.mpanel: self.mpanel.draw()
+        if self.npanel: self.npanel.draw()   # NPC карты
+        if self.mobpl: self.mobpl.draw()   # расставленные мобы
 
     # ---------- перемасштабирование картинок ----------
     def _scaled_image(self, img, factor):
@@ -759,23 +862,31 @@ class Editor:
 
     def _draw_cell(self, x, y, ch):
         S = self.cell_size()
+        tag = f"c:{x},{y}"                          # все элементы клетки под одним тегом — быстрая правка
         x0, y0 = x * S, y * S
-        rid = self.canvas.create_rectangle(x0, y0, x0 + S, y0 + S,
-                                           fill="" if ch == "." else self._cell_color(ch),
-                                           outline="#555563", width=1)
+        self.canvas.create_rectangle(x0, y0, x0 + S, y0 + S,
+                                     fill="" if ch == "." else self._cell_color(ch),
+                                     outline="#555563", width=1, tags=("cells", tag))
         if ch in self.custom:   # свой свет: кружок цвета света, размер = сила
             lvl = self.custom[ch].get("light", {}).get("strength", 3)
             r = max(1.0, (2 + int(lvl)) * self.zoom)
-            self.canvas.create_oval(x0 + S / 2 - r, y0 + S / 2 - r, x0 + S / 2 + r, y0 + S / 2 + r, fill="#fffbe8", outline="#111118")
-            self.rects[(x, y)] = rid
+            self.canvas.create_oval(x0 + S / 2 - r, y0 + S / 2 - r, x0 + S / 2 + r, y0 + S / 2 + r, fill="#fffbe8", outline="#111118", tags=("cells", tag))
             return
         img = self._cell_image(ch)
         if img:
-            self.canvas.create_image(x0, y0, image=img, anchor="nw")
+            self.canvas.create_image(x0, y0, image=img, anchor="nw", tags=("cells", tag))
         elif ch != ".":
             fs = max(7, int(9 * self.zoom))
-            self.canvas.create_text(x0 + S / 2, y0 + S / 2, text=ch, fill="#111118", font=("Arial", fs, "bold"))
-        self.rects[(x, y)] = rid
+            self.canvas.create_text(x0 + S / 2, y0 + S / 2, text=ch, fill="#111118", font=("Arial", fs, "bold"), tags=("cells", tag))
+
+    def _redraw_cell(self, x, y):
+        """Перерисовать ОДНУ клетку без полного _draw_all — правка на карте любого размера мгновенна."""
+        if not (0 <= x < self.map_w and 0 <= y < self.map_h): return
+        self.canvas.delete(f"c:{x},{y}")
+        self._draw_cell(x, y, self.rows[y][x])
+        c = self.canvas
+        c.tag_lower("decor_back"); c.tag_lower("background")   # фон и «позади клеток» — вниз, как при полной перерисовке
+        c.tag_raise("decor"); c.tag_raise("ct"); c.tag_raise("mc"); c.tag_raise("morgart_anchor")   # верхние слои — наверх
 
     def _cell_from_event(self, event):
         S = self.cell_size()
@@ -788,6 +899,7 @@ class Editor:
             return
         if self.mpanel and self.mpanel.active():   # режим механизмов: ставим/выбираем только по нажатию (не при протягивании)
             if "Press" in str(getattr(event, "type", "")) or str(getattr(event, "type", "")) == "4": self.mpanel.click(event)
+            elif "Motion" in str(getattr(event, "type", "")) or str(getattr(event, "type", "")) == "6": self.mpanel.drag_motion(event)   # тянем точку пути платформы
             return
         if self.dpanel and self.dpanel.active():   # режим деталей: нажатие ставит/хватает, протягивание двигает
             if "Press" in str(getattr(event, "type", "")) or str(getattr(event, "type", "")) == "4": self.dpanel.press(event)
@@ -795,6 +907,12 @@ class Editor:
             return
         if self.cpanel and self.cpanel.active():   # режим ящиков: ставим/выбираем только по нажатию, а не при протягивании
             if "Press" in str(getattr(event, "type", "")) or str(getattr(event, "type", "")) == "4": self.cpanel.click(event)
+            return
+        if self.npanel and self.npanel.active():   # режим NPC: ставим только по нажатию (не при протягивании)
+            if "Press" in str(getattr(event, "type", "")) or str(getattr(event, "type", "")) == "4": self.npanel.click(event)
+            return
+        if self.mobpl and self.mobpl.active():   # режим мобов: ставим только по нажатию (не при протягивании)
+            if "Press" in str(getattr(event, "type", "")) or str(getattr(event, "type", "")) == "4": self.mobpl.click(event)
             return
         x, y = self._cell_from_event(event)
         if 0 <= x < self.map_w and 0 <= y < self.map_h:
@@ -805,18 +923,21 @@ class Editor:
             if self.rows[y][x] == ch: return
             self.rows[y][x] = ch
             label = describe_light(self.custom[ch]) if ch in self.custom else dict((a,b) for a,b,_ in PALETTE).get(ch, ch)
-            self._draw_all(); self.status.set(f"Клетка ({x}, {y}): {label}")
+            self._redraw_cell(x, y); self.status.set(f"Клетка ({x}, {y}): {label}")   # быстрая правка одной клетки
 
     def erase(self, event):
         if self.mpanel and self.mpanel.active(): self.mpanel.erase(event); return  # режим механизмов: ПКМ убирает механизм
         if self.dpanel and self.dpanel.active(): self.dpanel.erase(event); return   # режим деталей: ПКМ убирает деталь
         if self.cpanel and self.cpanel.active(): self.cpanel.erase(event); return   # режим ящиков: ПКМ убирает ящик
+        if self.npanel and self.npanel.active(): self.npanel.erase(event); return   # режим NPC: ПКМ убирает NPC
+        if self.mobpl and self.mobpl.active(): self.mobpl.erase(event); return   # режим мобов: ПКМ убирает моба
         self.rows_at(event, ".")
 
     def rows_at(self, event, ch):
         x, y = self._cell_from_event(event)
         if 0 <= x < self.map_w and 0 <= y < self.map_h:
-            self.rows[y][x] = ch; self._draw_all()
+            if self.rows[y][x] == ch: return
+            self.rows[y][x] = ch; self._redraw_cell(x, y)   # быстрая правка одной клетки
 
     def resize_map(self):
         try:
@@ -839,6 +960,8 @@ class Editor:
         if self.dpanel: self.dpanel.crop(new_w, new_h)
         if self.mpanel: self.mpanel.crop(new_w, new_h)
         if self.rpanel: self.rpanel.crop(new_w, new_h)
+        if self.npanel: self.npanel.crop(new_w, new_h)
+        if self.mobpl: self.mobpl.crop(new_w, new_h)
         self.canvas.configure(scrollregion=(0, 0, self.map_w * self.cell_size(), self.map_h * self.cell_size()))
         self._draw_all()
         self.status.set(f"Размер карты: {self.map_w}×{self.map_h} клеток")
@@ -850,10 +973,13 @@ class Editor:
             if self.dpanel: self.dpanel.reset()
             if self.mpanel: self.mpanel.reset()
             if self.rpanel: self.rpanel.reset()
+            if self.npanel: self.npanel.reset()
+            if self.mobpl: self.mobpl.reset()
             self._draw_all()
 
-    def open_map(self):
-        path = filedialog.askopenfilename(initialdir=MAP_DIR, filetypes=[("JSON карты", "*.json")])
+    def open_map(self, path=None):
+        if path is None:
+            path = filedialog.askopenfilename(initialdir=MAP_DIR, filetypes=[("JSON карты", "*.json")])
         if not path: return
         try:
             data = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -875,7 +1001,10 @@ class Editor:
             if self.cpanel: self.cpanel.load(data.get("containers"))
             if self.dpanel: self.dpanel.load(data.get("decor"))
             if self.mpanel: self.mpanel.load(data.get("mechanisms"))
+            if self.mpanel: self.mpanel.load_wires(data.get("wires"))   # провода между механизмами (только для редактора)
             if self.rpanel: self.rpanel.load(data.get("resources"))
+            if self.npanel: self.npanel.load(data.get("npcs"))
+            if self.mobpl: self.mobpl.load(data.get("mobs"))
             self.canvas.configure(scrollregion=(0, 0, self.map_w * self.cell_size(), self.map_h * self.cell_size()))
             self._draw_all(); self.zoom_fit()
             self.status.set(f"Загружена карта: {path}")
@@ -927,10 +1056,22 @@ class Editor:
             mechs = self.mpanel.dump()
             if mechs: data["mechanisms"] = mechs
             else: data.pop("mechanisms", None)
+        if self.mpanel:   # провода между механизмами — подсказка в редакторе, игра их не читает
+            wires = self.mpanel.dump_wires()
+            if wires: data["wires"] = wires
+            else: data.pop("wires", None)
         if self.rpanel:   # ресурсы карты: кисти-клетки уже в legend; поле "resources" — свой разброс
             resc = self.rpanel.dump()
             if resc: data["resources"] = resc
             else: data.pop("resources", None)
+        if self.npanel:   # NPC карты: торговцы и жители (типы — data/npcs.json)
+            npcs = self.npanel.dump()
+            if npcs: data["npcs"] = npcs
+            else: data.pop("npcs", None)
+        if self.mobpl:   # мобы карты: расстановка вкладкой «Мобы» (типы — data/mobs.json)
+            mobs = self.mobpl.dump()
+            if mobs: data["mobs"] = mobs
+            else: data.pop("mobs", None)
         try:
             path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             if MAP_CONFIG.exists():
@@ -944,10 +1085,466 @@ class Editor:
                 MAP_CONFIG.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             if old_path and old_path != path and old_path.exists():
                 old_path.unlink()
+            try: rel = path.relative_to(ROOT)
+            except ValueError: rel = path   # карта открыта не из data/maps проекта
             self.current_path = path
-            self.status.set(f"Сохранено: {path.relative_to(ROOT)} (карта добавлена в порядок загрузки)")
+            self.status.set(f"Сохранено: {rel} (карта добавлена в порядок загрузки)")
             messagebox.showinfo("Карта сохранена", f"Сохранено в:\n{path}\n\nЕсли игра уже запущена, нажми F5 для перезагрузки данных.")
         except Exception as e: messagebox.showerror("Ошибка сохранения", str(e))
+
+    # ================= МИР: все локации на одной странице =================
+    # Каждая карта стоит в клетке координатной сетки — это её "pos" из json (выходы L/R/U/D в игре
+    # работают по этой сетке). Страница показывает все локации сразу; локацию можно перетащить —
+    # новая pos запишется в json карты, и соседние встают рядом. Карты без pos ждут внизу страницы.
+
+    # ================= МИР: весь мир одним холстом =================
+    # Все карты стоят вплотную друг к другу по своим координатам pos — та же сетка, что и в игре:
+    # x вправо, y вниз (в игре выход «вниз» ведёт к карте с y+1, «вверх» — с y−1; консольная сетка
+    # мира по F5 печатается так же). Правка кистью прямо на этом холсте меняет клетки ТОЙ карты,
+    # на которой рисуешь, и при отпускании кнопки записывается в её json. При отдалении карты
+    # показываются цветными мини-картами (клетка = пиксель), при приближении — настоящими клетками.
+
+    WORLD_FULL_K = 8.0   # px на клетку: с такого масштаба рисуем настоящие клетки (мельче — мини-карты)
+
+    def toggle_world(self):
+        self.world_mode(not self.world_on)
+
+    def world_mode(self, on):
+        """Вкл/выкл страницу мира: вместо холста одной карты — весь мир по координатной сетке pos."""
+        if on == self.world_on: return
+        if on: self._scan_world()
+        else: self._world_save_dirty()
+        self.world_on = on
+        st = "normal" if on else "disabled"
+        self.world_open_btn.configure(state=st)
+        self.world_fit_btn.configure(state=st)
+        self.world_refresh_btn.configure(state=st)
+        if on:
+            self.canvas.grid_remove(); self.sx.grid_remove(); self.sy.grid_remove()
+            self.world_canvas.grid(row=0, column=0, sticky="nsew")
+            self._world_hint_update()
+            self._world_fitted = False
+            self.root.after_idle(self._world_enter)
+        else:
+            self.world_hint.configure(text="")
+            self.world_canvas.grid_remove()
+            self.canvas.grid(); self.sx.grid(); self.sy.grid()   # grid() без аргументов вернёт прежние позиции
+            self._draw_all()
+
+    def _world_hint_update(self):
+        if self.world_move.get():
+            self.world_hint.configure(text="«двигать локации»: тащи карту ЛКМ на другое место сетки — её pos запишется в json; двойной клик — открыть в редакторе.")
+        else:
+            self.world_hint.configure(text="ЛКМ — рисовать кистью по любой карте (отпустишь кнопку — запишется в её json), ПКМ — стереть; галочка «двигать локации» — переносить карты по сетке; Ctrl+колесо — масштаб.")
+
+    def world_refresh(self):
+        """Перечитать data/maps/*.json (несохранённые правки мира сначала записываются в файлы)."""
+        self._world_save_dirty()
+        self._scan_world(); self._draw_world()
+
+    def world_fit_all(self):
+        """«Вписать мир»: показать весь мир целиком, как бы велик он ни был."""
+        self._world_fitted = False
+        self._world_fit(hard=True); self._draw_world()
+
+    def _world_enter(self):
+        if not self.world_on: return
+        self._world_fit(); self._draw_world()
+        if self._world_center_start:
+            self._world_center_start = False
+            self._world_show_start()
+        self.status.set(f"Мир: локаций — {len(self.world_maps)}. Рисуй кистью прямо по миру — правка запишется в json той карты, на которой рисовал (в игре потом F5).")
+
+    def _scan_world(self):
+        """Собрать все карты data/maps/*.json целиком: данные, клетки (списками символов — для правки),
+        свои легенды; и посчитать сетку мира (размер слота = максимальный размер карт)."""
+        start = None
+        try:
+            if MAP_CONFIG.exists(): start = json.loads(MAP_CONFIG.read_text(encoding="utf-8")).get("start")
+        except ValueError:
+            pass
+        out = []
+        for p in sorted(MAP_DIR.glob("*.json")):
+            try: data = json.loads(p.read_text(encoding="utf-8"))
+            except (OSError, ValueError): continue
+            raw = data.get("rows", [])
+            w = max(5, max((len(r) for r in raw), default=W)); h = max(5, len(raw) or H)
+            rows = [[(raw[y][x] if y < len(raw) and x < len(raw[y]) else ".") for x in range(w)] for y in range(h)]
+            pos = data.get("pos")
+            pos = [int(pos[0]), int(pos[1])] if isinstance(pos, (list, tuple)) and len(pos) == 2 else None
+            out.append({"id": p.stem, "path": p, "name": data.get("name", p.stem), "pos": pos, "w": w, "h": h,
+                        "data": data, "rows": rows, "legend": data.get("legend", {}),
+                        "custom": {kc: v for kc, v in data.get("legend", {}).items() if isinstance(v, dict) and isinstance(v.get("light"), dict)},
+                        "start": p.stem == start})
+        # открытая в редакторе карта: страница мира показывает её рабочую копию (вместе с несохранёнными правками)
+        if self.current_path is not None:
+            me = next((m for m in out if m["path"] == self.current_path), None)
+            if me is not None and (self.map_w, self.map_h) == (me["w"], me["h"]):
+                me["rows"] = [row[:] for row in self.rows]
+        self.world_maps = out
+        self._world_dirty.clear()
+        self._world_previews.clear(); self._world_cell_img.clear()
+        placed = [m for m in out if m["pos"]]
+        pw = max((m["w"] for m in placed), default=W); ph = max((m["h"] for m in placed), default=H)
+        self._world_pitch = (pw, ph)   # слот сетки мира: одна карта занимает pos * (pw, ph) клеток
+        self._world_lo_x = min((m["pos"][0] for m in placed), default=0)
+        self._world_lo_y = min((m["pos"][1] for m in placed), default=0)
+        self._world_slots = (max((m["pos"][0] for m in placed), default=self._world_lo_x) - self._world_lo_x + 1,
+                             max((m["pos"][1] for m in placed), default=self._world_lo_y) - self._world_lo_y + 1)
+
+    def _world_fit(self, hard=False):
+        """Масштаб мира (px на клетку карты). Обычный показ: вписать, но не мельче 0.5 px/клетку —
+        если мир огромен, мельче не опускаемся и после отрисовки центруемся на стартовой карте.
+        hard=True («Вписать мир») — вписать весь мир целиком (минимум 0.12)."""
+        if self._world_fitted: return
+        wc = self.world_canvas; w = wc.winfo_width(); h = wc.winfo_height()
+        if w <= 1: w, h = 1100, 760
+        pw, ph = self._world_pitch
+        if not any(m["pos"] for m in self.world_maps):
+            self.world_px = 6.0; self._world_fitted = True; return
+        span_x = self._world_slots[0] * pw + 6; span_y = self._world_slots[1] * ph + 6
+        k = min(w / span_x, h / span_y)
+        self.world_px = max(0.12, min(12.0, k)) if hard else max(0.5, min(12.0, k))
+        self._world_fitted = True
+        self._world_center_start = not hard and k < 0.5   # мир целиком не читается — покажем стартовую карту
+
+    def _world_show_start(self):
+        """Прокрутить страницу мира к стартовой карте (когда весь мир слишком велик для окна)."""
+        wc = self.world_canvas
+        m = next((x for x in self.world_maps if x["start"] and x["pos"]), None)
+        if m is None: m = next((x for x in self.world_maps if x["pos"]), None)
+        if m is None: return
+        r = self._world_rect(m)
+        sr = str(wc.cget("scrollregion")).replace(",", " ").split()
+        spanx = float(sr[2]) - float(sr[0]) if len(sr) >= 3 else 1.0
+        spany = float(sr[3]) - float(sr[1]) if len(sr) >= 4 else 1.0
+        wc.update_idletasks()
+        fx = max(0.0, min(1.0, ((r[0] + r[2]) / 2 - wc.winfo_width() / 2) / max(1.0, spanx)))
+        fy = max(0.0, min(1.0, ((r[1] + r[3]) / 2 - wc.winfo_height() / 2) / max(1.0, spany)))
+        wc.xview_moveto(fx); wc.yview_moveto(fy)
+
+    def _world_rect(self, m):
+        """(x0, y0, x1, y1) прямоугольника карты на холсте мира, в экранных px.
+        Слоты сетки: x-слоты вправо, y-слоты вниз (в игре «вниз» = pos y+1). Во время
+        перетаскивания вместо pos используется предварительная позиция drag_pos."""
+        k = self.world_px
+        pos = m.get("drag_pos") or m["pos"]
+        if not pos: return m.get("nop_rect")
+        pw, ph = self._world_pitch
+        x0 = self._world_ox + (pos[0] - self._world_lo_x) * pw * k
+        y0 = self._world_oy + (pos[1] - self._world_lo_y) * ph * k
+        return (x0, y0, x0 + m["w"] * k, y0 + m["h"] * k)
+
+    def _world_cell_color(self, m, ch):
+        """Цвет клетки карты мира: свой свет — цветом света, общие символы — по COLORS,
+        свои символы — по типу из легенды самой карты."""
+        cust = m["custom"].get(ch)
+        if cust: return hex_color(light_color(cust.get("light")))
+        if ch in COLORS: return COLORS[ch]
+        d = m["legend"].get(ch)
+        if isinstance(d, dict):
+            return {"wall": "#85858c", "platform": "#b08a5a", "ladder": "#c6a66b", "spikes": "#d94a4a",
+                    "resource": "#e8d8a0", "empty": "#20202a"}.get(d.get("type"), "#b08a5a")
+        return "#b08a5a"
+
+    def _world_preview(self, m, k):
+        """Цветная мини-карта (клетка = P×P px, кэш). Показывается при отдалении, когда рисовать
+        каждую клетку отдельно — слишком много элементов для холста."""
+        P = max(1, min(3, int(round(k))))
+        w, h = m["w"], m["h"]
+        while P > 1 and w * h * P * P > 200000: P -= 1   # карта 300×300 не должна строить картинку 900×900
+        got = self._world_previews.get(m["id"])
+        if got is not None and got[0] == P: return got
+        img = tk.PhotoImage(master=self.world_canvas, width=w * P, height=h * P)
+        bg = "#1b1b26"
+        data_rows = []
+        for j in range(h):
+            cells = [bg if ch == "." else self._world_cell_color(m, ch) for ch in m["rows"][j]]
+            line = "{" + " ".join(" ".join([c] * P) for c in cells) + "}"
+            data_rows.extend([line] * P)
+        for start in range(0, len(data_rows), 64):   # порциями — не собирать гигантскую строку целиком
+            try: img.put(" ".join(data_rows[start:start + 64]), to=(0, start))
+            except tk.TclError: pass
+        self._world_previews[m["id"]] = (P, img)
+        return (P, img)
+
+    def _world_preview_update_cell(self, m, lx, ly):
+        """Правка одной клетки при отдалённом виде: обновить пиксели уже показанной мини-карты."""
+        got = self._world_previews.get(m["id"])
+        if got is None: return
+        P, img = got
+        ch = m["rows"][ly][lx]
+        col = "#1b1b26" if ch == "." else self._world_cell_color(m, ch)
+        line = "{" + " ".join([col] * img.width()) + "}"
+        try:
+            for dy in range(P): img.put(line, to=(0, ly * P + dy))
+        except tk.TclError: pass
+
+    def _world_cell(self, m, lx, ly, ch, x0, y0, k):
+        """Одна клетка карты мира в полном масштабе: цвет/рамка, спрайт или символ, свой свет — кружком."""
+        tag = f"wc:{m['id']}:{lx},{ly}"    # все элементы клетки под одним тегом — быстрая правка
+        fill = "" if ch == "." else self._world_cell_color(m, ch)
+        self.world_canvas.create_rectangle(x0, y0, x0 + k, y0 + k, fill=fill, outline="#555563", width=1, tags=("wcells", tag))
+        if ch in m["custom"]:   # свой свет: кружок цвета света, размер = сила (как в обычном режиме)
+            lvl = m["custom"][ch].get("light", {}).get("strength", 3)
+            r = max(1.0, (2 + int(lvl)) * k / CELL)
+            self.world_canvas.create_oval(x0 + k / 2 - r, y0 + k / 2 - r, x0 + k / 2 + r, y0 + k / 2 + r, fill="#fffbe8", outline="#111118", tags=("wcells", tag))
+            return
+        key = (ch, round(k, 3))
+        img = self._world_cell_img.get(key)
+        if img is None:
+            base = self.sprite_images.get(ch)
+            if base is not None:
+                img = self._scaled_image(base, k / max(1, base.width()))
+                self._world_cell_img[key] = img
+        if img: self.world_canvas.create_image(x0, y0, image=img, anchor="nw", tags=("wcells", tag))
+        elif ch != ".":
+            fs = max(7, int(9 * k / CELL))
+            self.world_canvas.create_text(x0 + k / 2, y0 + k / 2, text=ch, fill="#111118", font=("Arial", fs, "bold"), tags=("wcells", tag))
+
+    def _draw_world(self):
+        """Целостный мир: все карты по своим pos, вплотную друг к другу. Видимая область рисуется
+        по-настоящему (клетки со спрайтами) при крупном масштабе, цветными мини-картами — при мелком.
+        Совпадающие pos подсвечиваются красным; стартовая карта — золотая рамка; карты без pos — строкой под миром."""
+        wc = self.world_canvas; wc.delete("all")
+        if not self.world_maps:
+            wc.configure(scrollregion=(0, 0, 100, 40))
+            wc.create_text(24, 24, anchor="nw", fill="#8a8a98", text="В data/maps нет ни одной карты.")
+            return
+        k = self.world_px
+        M = max(24.0, 3.0 * k)   # поля вокруг мира
+        pw, ph = self._world_pitch
+        self._world_ox = M; self._world_oy = M
+        W_ = 2 * M + self._world_slots[0] * pw * k
+        H_ = 2 * M + self._world_slots[1] * ph * k
+        nop = [m for m in self.world_maps if not m["pos"]]   # карты без pos — строкой под миром
+        nop_x, nop_y = M, H_
+        for m in nop:
+            m["nop_rect"] = (nop_x, nop_y, nop_x + m["w"] * k, nop_y + m["h"] * k)
+            nop_x += m["w"] * k + 2 * k
+            W_ = max(W_, nop_x); H_ = max(H_, nop_y + m["h"] * k + M)
+        wc.configure(scrollregion=(0, 0, W_, H_))
+        vx0, vy0 = wc.canvasx(0), wc.canvasy(0)
+        vx1 = vx0 + max(1.0, wc.winfo_width()); vy1 = vy0 + max(1.0, wc.winfo_height())
+        # линии координатной сетки (один слот = место одной карты = её pos)
+        for i in range(self._world_slots[0] + 1):
+            X = M + i * pw * k
+            wc.create_line(X, M, X, M + self._world_slots[1] * ph * k,
+                           fill="#2c2c40" if (self._world_lo_x + i) % 5 == 0 else "#1d1d2a")
+        for j in range(self._world_slots[1] + 1):
+            Y = M + j * ph * k
+            wc.create_line(M, Y, M + self._world_slots[0] * pw * k, Y,
+                           fill="#2c2c40" if (self._world_lo_y + j) % 5 == 0 else "#1d1d2a")
+        wc.create_text(M, M - 3, anchor="sw", fill="#6f6f85",
+                       text=f"сетка мира: x вправо, y вниз — один слот = одна карта (её pos); масштаб {k:.2f} px на клетку карты")
+        if nop:
+            wc.create_text(M, nop_y - 2, anchor="sw", fill="#a3555e", text="без pos — перетащи на сетку (галочка «двигать локации»):")
+        full = k >= self.WORLD_FULL_K
+        by_pos = {}
+        for m in self.world_maps:
+            if m["pos"]: by_pos.setdefault(tuple(m["pos"]), []).append(m)
+        dup = {p for p, ms in by_pos.items() if len(ms) > 1}
+        f8 = max(8, int(8 * min(2.0, k / 8.0)))
+        for m in self.world_maps:
+            r = self._world_rect(m)
+            if not r or r[2] < vx0 or r[0] > vx1 or r[3] < vy0 or r[1] > vy1: continue   # вне экрана
+            sel = m["id"] == self.world_sel
+            border, bw = "#d8d8ea" if sel else "#55556a", 2 if sel else 1
+            if m["start"]: border, bw = "#ffd75e", 3
+            if tuple(m.get("drag_pos") or m["pos"] or ()) in dup: border, bw = "#ff5a5a", 3
+            if full:   # крупный масштаб: настоящие клетки (только видимые)
+                lx0 = max(0, int((max(r[0], vx0) - r[0]) // k)); ly0 = max(0, int((max(r[1], vy0) - r[1]) // k))
+                lx1 = min(m["w"], int((min(r[2], vx1) - r[0]) // k) + 1)
+                ly1 = min(m["h"], int((min(r[3], vy1) - r[1]) // k) + 1)
+                for ly in range(ly0, ly1):
+                    row = m["rows"][ly]; base_y = r[1] + ly * k
+                    for lx in range(lx0, lx1):
+                        self._world_cell(m, lx, ly, row[lx], r[0] + lx * k, base_y, k)
+            else:      # отдаление: цветная мини-карта
+                pw2 = self._world_preview(m, k)
+                pi = self._scaled_image(pw2[1], min(2.0, k / pw2[0]))   # мини-карту не раздуваем — зум не тормозит
+                if pi is not None and m["w"] * k >= 6: wc.create_image(r[0], r[1], image=pi, anchor="nw", tags=("wcells",))
+            wc.create_rectangle(*r, fill="", outline=border, width=bw,
+                                dash=(4, 2) if m["path"] == self.current_path else (), tags=("wborders",))
+            if m["w"] * k >= 44:   # подписи: id, название, координата pos (с тенью, чтобы читались на клетках)
+                wc.create_text(r[0] + 4, r[1] + 4, anchor="nw", text=m["id"], fill="#101014", font=("Arial", f8, "bold"))
+                wc.create_text(r[0] + 3, r[1] + 3, anchor="nw", text=m["id"], fill="#e8e8f2", font=("Arial", f8, "bold"), tags=("wlabels",))
+                if m["w"] * k >= 130:
+                    nm = m["name"][:26]
+                    wc.create_text(r[0] + 4, r[1] + 6 + f8 * 1.6, anchor="nw", text=nm, fill="#101014", font=("Arial", f8))
+                    wc.create_text(r[0] + 3, r[1] + 5 + f8 * 1.6, anchor="nw", text=nm, fill="#a8a8c0", font=("Arial", f8), tags=("wlabels",))
+                pos_lbl = "pos [%d, %d]" % tuple(m["pos"]) if m["pos"] else "без pos"
+                if m["start"]: pos_lbl += "  · СТАРТ"
+                wc.create_text(r[0] + 4, r[3] - 1, anchor="sw", text=pos_lbl, fill="#101014", font=("Arial", f8))
+                wc.create_text(r[0] + 3, r[3] - 2, anchor="sw", text=pos_lbl, fill="#ffd75e" if m["start"] else "#8a8a98", font=("Arial", f8), tags=("wlabels",))
+
+    def _world_wheel(self, event):
+        up = getattr(event, "num", 0) == 4 or (getattr(event, "delta", 0) or 0) > 0
+        if getattr(event, "state", 0) & 0x4:   # Ctrl+колесо — масштаб страницы мира
+            self._world_zoom(1 if up else -1, event.x, event.y); return "break"
+        units = -3 if up else 3
+        if getattr(event, "state", 0) & 0x1:   # Shift+колесо — по горизонтали
+            self.world_canvas.xview_scroll(units, "units")
+        else:
+            self.world_canvas.yview_scroll(units, "units")
+        return "break"
+
+    def _world_zoom(self, d, ax, ay):
+        """Масштаб мира под курсором (как zoom_set у карты)."""
+        wc = self.world_canvas
+        old = self.world_px
+        wx = wc.canvasx(ax); wy = wc.canvasy(ay)
+        ox_old, oy_old = self._world_ox, self._world_oy
+        self.world_px = max(0.12, min(32.0, old * (1.25 if d > 0 else 0.8)))
+        self._draw_world()
+        gx = (wx - ox_old) / old; gy = (wy - oy_old) / old            # клетка мира под курсором
+        tx = self._world_ox + gx * self.world_px; ty = self._world_oy + gy * self.world_px
+        wc.update_idletasks()
+        sr = str(wc.cget("scrollregion")).replace(",", " ").split()
+        spanx = float(sr[2]) - float(sr[0]) if len(sr) >= 3 else 1.0
+        spany = float(sr[3]) - float(sr[1]) if len(sr) >= 4 else 1.0
+        fx = max(0.0, min(1.0, (tx - ax) / max(1.0, spanx)))
+        fy = max(0.0, min(1.0, (ty - ay) / max(1.0, spany)))
+        wc.xview_moveto(fx); wc.yview_moveto(fy)
+
+    # ---- рисование по картам мира и перетаскивание локаций ----
+    def _world_at(self, x, y):
+        """Карта под точкой холста мира (перебор с конца — верхние попадаются первыми)."""
+        for m in reversed(self.world_maps):
+            r = self._world_rect(m)
+            if r and r[0] <= x <= r[2] and r[1] <= y <= r[3]: return m
+        return None
+
+    def _world_paint_at(self, m, x, y, erase):
+        """Кисть/ластик на странице мира: точка холста -> клетка той карты, на которой рисуем."""
+        r = self._world_rect(m)
+        if not r: return
+        k = self.world_px
+        lx = int((x - r[0]) // k); ly = int((y - r[1]) // k)
+        if not erase and self.brush.get() == LIGHT_BRUSH:
+            self.status.set("Свой свет на странице мира не ставится — вернись в обычный режим (вкладка «Свет»).")
+            return
+        self._world_edit_cell(m, lx, ly, "." if erase else self.brush.get())
+
+    def _world_edit_cell(self, m, lx, ly, ch):
+        """Правка одной клетки карты прямо на странице мира. Файл карты запишется при отпускании
+        кнопки (_world_save_dirty); если эта карта сейчас открыта в редакторе — правится и её копия."""
+        if not (0 <= lx < m["w"] and 0 <= ly < m["h"]): return
+        if m["rows"][ly][lx] == ch: return
+        m["rows"][ly][lx] = ch
+        self._world_dirty.add(m["id"])
+        if m["id"] == self.map_id.get() and (self.map_w, self.map_h) == (m["w"], m["h"]):
+            self.rows = m["rows"]   # открытая карта: держим рабочую копию редактора той же
+        if self.world_px >= self.WORLD_FULL_K:
+            self._world_redraw_cell(m, lx, ly)          # крупный масштаб: перерисовать клетку
+        else:
+            self._world_preview_update_cell(m, lx, ly)  # отдаление: обновить пиксель мини-карты
+        label = describe_light(m["custom"][ch]) if ch in m["custom"] else dict((a, b) for a, b, _ in PALETTE).get(ch, ch)
+        self.status.set(f"{m['id']} ({lx}, {ly}): {label} — запишется в json при отпускании кнопки")
+
+    def _world_redraw_cell(self, m, lx, ly):
+        """Перерисовать одну клетку карты мира в полном масштабе (без полной перерисовки страницы)."""
+        r = self._world_rect(m)
+        if not r: return
+        k = self.world_px
+        self.world_canvas.delete(f"wc:{m['id']}:{lx},{ly}")
+        self._world_cell(m, lx, ly, m["rows"][ly][lx], r[0] + lx * k, r[1] + ly * k, k)
+        self.world_canvas.tag_raise("wborders"); self.world_canvas.tag_raise("wlabels")
+
+    def world_press(self, event):
+        x = self.world_canvas.canvasx(event.x); y = self.world_canvas.canvasy(event.y)
+        m = self._world_at(x, y)
+        self.world_sel = m["id"] if m else None
+        if self.world_move.get():                      # режим «двигать локации»: готовимся перетащить карту
+            self.world_drag = [m, x, y] if m else None
+            if m: self._draw_world()
+            return
+        self.world_drag = None; self._world_painting = True
+        if m: self._world_paint_at(m, x, y, False)
+
+    def world_motion(self, event):
+        if self.world_move.get():
+            if not self.world_drag: return
+            m = self.world_drag[0]
+            x = self.world_canvas.canvasx(event.x); y = self.world_canvas.canvasy(event.y)
+            pw, ph = self._world_pitch; k = self.world_px
+            base = m["pos"] if m["pos"] else [self._world_lo_x, self._world_lo_y + self._world_slots[1]]
+            npos = [base[0] + int(round((x - self.world_drag[1]) / (pw * k))),
+                    base[1] + int(round((y - self.world_drag[2]) / (ph * k)))]
+            if m.get("drag_pos") == npos: return
+            m["drag_pos"] = npos
+            self._draw_world()
+            self.status.set(f"{m['id']}: pos [{npos[0]}, {npos[1]}] — отпусти, чтобы записать в json карты")
+            return
+        if not self._world_painting: return
+        x = self.world_canvas.canvasx(event.x); y = self.world_canvas.canvasy(event.y)
+        m = self._world_at(x, y)
+        if m: self._world_paint_at(m, x, y, False)
+
+    def world_erase(self, event):
+        """ПКМ на странице мира — стереть клетку (ластик), в том числе протягиванием."""
+        if self.world_move.get(): return
+        x = self.world_canvas.canvasx(event.x); y = self.world_canvas.canvasy(event.y)
+        m = self._world_at(x, y)
+        self._world_painting = True
+        if m: self._world_paint_at(m, x, y, True)
+
+    def world_erase_motion(self, event):
+        if self.world_move.get() or not self._world_painting: return
+        x = self.world_canvas.canvasx(event.x); y = self.world_canvas.canvasy(event.y)
+        m = self._world_at(x, y)
+        if m: self._world_paint_at(m, x, y, True)
+
+    def world_release(self, event):
+        if self.world_move.get():
+            if self.world_drag:
+                m = self.world_drag[0]; self.world_drag = None
+                npos = m.pop("drag_pos", None)
+                if npos and npos != m["pos"]: self._world_write_pos(m, npos)
+                self._draw_world()
+            return
+        self._world_painting = False
+        self.world_drag = None
+        self._world_save_dirty()
+
+    def _world_save_dirty(self):
+        """Записать в json все карты, правленые на странице мира (кисть, ластик, перенос)."""
+        if not self._world_dirty: return
+        saved = []
+        for m in self.world_maps:
+            if m["id"] not in self._world_dirty: continue
+            try:
+                data = m["data"]
+                data["rows"] = ["".join(r) for r in m["rows"]]
+                if m["pos"]: data["pos"] = [int(m["pos"][0]), int(m["pos"][1])]
+                m["path"].write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                saved.append(m["id"])
+            except (OSError, ValueError) as e:
+                messagebox.showerror("Мир", f"Не удалось сохранить {m['id']}:\n{e}")
+        self._world_dirty.clear()
+        if saved: self.status.set(f"Мир: записано в файлы — {', '.join(saved)}. Если игра запущена, нажми в ней F5.")
+
+    def _world_write_pos(self, m, pos):
+        """Новая pos после перетаскивания: пишется в json карты (и в открытую в редакторе копию)."""
+        m["pos"] = [int(pos[0]), int(pos[1])]
+        m["data"]["pos"] = list(m["pos"])
+        if self.current_path == m["path"]: self.meta["pos"] = list(m["pos"])
+        self._world_dirty.add(m["id"])
+        self._world_save_dirty()
+
+    def world_open(self, event=None):
+        """Открыть выбранную локацию в обычном редакторе (кнопка; двойной клик — в режиме «двигать»)."""
+        m = next((x for x in self.world_maps if x["id"] == self.world_sel), None)
+        if m is None: return
+        self._world_save_dirty()
+        same = m["path"] == self.current_path
+        self.world_mode(False)
+        if not same: self.open_map(str(m["path"]))   # уже открытая карта — просто возвращаемся к ней
+
+    def world_dbl_open(self, event):
+        """Двойной клик открывает локацию только в режиме «двигать локации»
+        (в режиме кисти двойной клик — это просто два мазка кистью)."""
+        if self.world_move.get(): self.world_open()
 
 # ======================================================================================
 #  РЕДАКТОР НАВЫКОВ  (вторая вкладка; пишет data/skills.json и привязки в data/characters.json)
@@ -1186,6 +1783,7 @@ class SkillEditor:
         self._weapons_block(self.dyn)                # __weapons__
         self._effect_block(self.dyn)                 # __effect__
         self._cast_block(self.dyn)                   # __cast__
+        self._particles_block(mid)                   # частицы каста (data/attachments.json -> hook skill_cast)
 
         # описание
         ttk.Label(mid, text="Описание:").pack(anchor="w", pady=(4, 0))
@@ -1207,6 +1805,19 @@ class SkillEditor:
         self.mode_var.trace_add("write", self._relayout)
         self.effect_kind.trace_add("write", lambda *a: self._update_preview())
         self._relayout()
+
+    def _particles_block(self, parent):
+        """Частицы каста (data/attachments.json -> hook skill_cast): эффект, сила, движение; id = текущий навык."""
+        try:
+            import attachments_editor
+        except Exception as e:
+            self.status.set(f"Панель частиц не запустилась: {e}"); return
+        self.part_panel = attachments_editor.AttachmentPanel(
+            parent, ["skill_cast"],
+            lambda: (self.vars["id"].get().strip() if self.vars["id"].get().strip() else self.editing_id or ""),
+            title="Частицы каста (навык применён)", width=430)
+        self.part_panel.pack(fill="x", pady=(6, 0))
+        self.vars["id"].trace_add("write", lambda *a: self.part_panel.refresh())   # правишь ID — частицы следуют
 
     def _row(self, parent, label, key, width=20, var=None, hint=None):
         """Строка «подпись + Entry» (для всегда видимых id/name)."""
@@ -1529,6 +2140,8 @@ class SkillEditor:
         self.desc_text.delete("1.0", "end"); self.desc_text.insert("1.0", s.get("description", ""))
         # привязка к героям
         self._load_char_assignment(sid)
+        pp = getattr(self, "part_panel", None)
+        if pp: pp.refresh()   # панель частиц — под новый навык
         self._relayout()        # показать только нужные поля для этого типа + обновить превью
         self.status.set(f"Редактируется навык: {sid}")
 
@@ -1559,6 +2172,8 @@ class SkillEditor:
         self.desc_text.delete("1.0", "end")
         for in_tree, base, lvl in self.char_rows.values():
             in_tree.set(False); base.set(False); lvl.set("1")
+        pp = getattr(self, "part_panel", None)
+        if pp: pp.refresh()   # панель частиц — контекст сброшен
         self._relayout()
         self.status.set("Новый навык: заполни поля и сохрани.")
 
@@ -1753,7 +2368,7 @@ def _apply_editor_icon(root):
 
 
 def _build_mobs_tab(nb, root):
-    """Вкладка «Мобы» (mob_editor.py). Если она не запустилась (нет файла/ошибка) — редактор карт всё равно открывается,
+    """Вкладка «Мобы» (mob_editor.py). Если она не запустилась (нет файла/ошибка) — редактор игры всё равно открывается,
     а на вкладке показан текст ошибки, а не пустое окно и не молчаливый вылет."""
     tab = ttk.Frame(nb); nb.add(tab, text="  Мобы  ")
     try:
@@ -1781,6 +2396,20 @@ def _build_accessories_tab(nb):
         return None
 
 
+def _build_effects_tab(nb):
+    """Вкладка «Эффекты» (attachments_editor.py): все привязки частиц-эффектов к событиям игры."""
+    tab = ttk.Frame(nb); nb.add(tab, text="  Эффекты  ")
+    try:
+        import attachments_editor
+        eff = attachments_editor.EffectTab(tab); eff.pack(fill="both", expand=True)
+        return eff
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        ttk.Label(tab, text="Вкладка «Эффекты» не запустилась:\n\n%s: %s" % (type(e).__name__, e),
+                  justify="left", foreground="#b00020").pack(anchor="nw", padx=16, pady=16)
+        return None
+
+
 def _build_textures_tab(nb):
     """Вкладка «Текстуры» (texture_editor.py): пиксель-арт для ресурсов, турели и огненного меча."""
     tab = ttk.Frame(nb); nb.add(tab, text="  Текстуры  ")
@@ -1791,6 +2420,35 @@ def _build_textures_tab(nb):
     except Exception as e:
         import traceback; traceback.print_exc()
         ttk.Label(tab, text="Вкладка «Текстуры» не запустилась:\n\n%s: %s" % (type(e).__name__, e),
+                  justify="left", foreground="#b00020").pack(anchor="nw", padx=16, pady=16)
+        return None
+
+
+def _build_traders_tab(nb):
+    """Вкладка «Торговцы» (trader_editor.py): выбор существующего торговца и настройка его ассортимента (data/npcs.json)."""
+    tab = ttk.Frame(nb); nb.add(tab, text="  Торговцы  ")
+    try:
+        import trader_editor
+        te = trader_editor.TraderTab(tab); te.pack(fill="both", expand=True)
+        return te
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        ttk.Label(tab, text="Вкладка «Торговцы» не запустилась:\n\n%s: %s" % (type(e).__name__, e),
+                  justify="left", foreground="#b00020").pack(anchor="nw", padx=16, pady=16)
+        return None
+
+
+def _build_heroes_tab(nb):
+    """Вкладка «Герои» (hero_editor.py): играбельные персонажи (data/characters.json), порядок открытия навыков
+    и внешний вид меню навыков (assets/skill_menu.json)."""
+    tab = ttk.Frame(nb); nb.add(tab, text="  Герои  ")
+    try:
+        import hero_editor
+        he = hero_editor.HeroTab(tab); he.pack(fill="both", expand=True)
+        return he
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        ttk.Label(tab, text="Вкладка «Герои» не запустилась:\n\n%s: %s\n\nПодробности — в консоли." % (type(e).__name__, e),
                   justify="left", foreground="#b00020").pack(anchor="nw", padx=16, pady=16)
         return None
 
@@ -1867,7 +2525,7 @@ def _build_style(root):
 
 if __name__ == "__main__":
     root = tk.Tk()
-    root.title("DEAD ROOMS — редакторы")
+    root.title("DEAD ROOMS — редактор игры")
     root.geometry("1360x920")
     root.minsize(1200, 820)
     _build_style(root)
@@ -1878,14 +2536,21 @@ if __name__ == "__main__":
     Editor(maps_tab, window=None)
     SkillEditor(skills_tab)
     mobs_tab = _build_mobs_tab(nb, root)
+    heroes_tab = _build_heroes_tab(nb)
     acc_tab = _build_accessories_tab(nb)
+    traders_tab = _build_traders_tab(nb)
     tex_tab = _build_textures_tab(nb)
+    eff_tab = _build_effects_tab(nb)
 
     def _on_close():
         # несохранённые правки мобов: спросить, как это делает сама вкладка
         if mobs_tab is not None and not mobs_tab.confirm_close():
             return
+        if heroes_tab is not None and not heroes_tab.confirm_close():
+            return
         if acc_tab is not None and not acc_tab.confirm_close():
+            return
+        if traders_tab is not None and not traders_tab.confirm_close():
             return
         root.destroy()
     root.protocol("WM_DELETE_WINDOW", _on_close)

@@ -8,13 +8,17 @@
   * Сообщение = 4 байта длины + JSON, сжатый zlib. Никакого pickle — чужие данные из сети не исполняются.
 
 Механики в сетевой игре
-  * Отряд ходит по картам вместе: кто первым зашёл в выход, тот переводит на следующую карту всех.
-  * Двери запираются, только когда ВСЕ живые игроки отошли от входа (никто не застрянет в двери).
-  * Мобы выбирают ближайшего живого игрока; удары по площади и вражеские пули задевают всех.
-  * Опыт за убитого моба получает каждый игрок, уровни и навыки — у каждого свои.
+  * Каждый игрок исследует мир САМ: выход срабатывает только для того, кто в него вошёл, остальные
+    остаются на своей карте. У каждой комнаты с игроками свой «мир» (HostSession.sims): комната, пули,
+    FX, точки появления. Комнаты без игроков не симулируются — их состояние просто ждёт.
+  * Двери комнаты запираются, когда все живые игроки В НЕЙ отошли от входа (никто не застрянет в двери).
+  * Мобы комнаты атакуют и отдают опыт только игрокам своей комнаты; удары по площади и вражеские
+    пули задевают всех в комнате.
+  * Опыт за убитого моба получает каждый игрок его комнаты, уровни и навыки — у каждого свои.
   * Оружие на полу подбирает тот, кто нажал E рядом. Награда за зачистку падает рядом со случайным игроком.
-  * Игрок с нулём HP падает. Союзник, постоявший рядом 3 секунды, поднимает его (35% HP);
-    зачистка карты поднимает всех павших (25% HP). Погибли все — хост нажимает R, начинается новый забег.
+  * Смерти с концом забега нет: герой с нулём HP возрождается у последнего чекпоинта (checkpoint.py)
+    с полным здоровьем/маной и «кристаллом» на freeze_time() секунд (неуязвим, ввод отключён).
+    Чекпоинта не было — точка появления его комнаты. Нокаута и подъёма союзниками больше нет.
   * Пауза (Esc), карта мира (M) и настройки не останавливают сетевую игру — персонаж в это время стоит.
   * Подключиться можно и во время забега: новый игрок появляется рядом с союзниками.
 """
@@ -29,6 +33,8 @@ import crossbow
 import bard
 import clone       # клоны героев (навык "Клон" в spells.py; в сети считает хост)
 import invisibility
+import checkpoint  # чекпоинты: смерть возрождает у кристалла, заморозка после возрождения (checkpoint.py)
+import loot        # лут с мобов: предметы по шансам + монеты (считает хост, клиенты видят в снимке комнаты)
 import inventory
 import containers
 import mechs
@@ -36,15 +42,11 @@ from maps import Campaign, Drop, END, random_weapon
 from mob import Mob, Corpse, normalize, spawn_boss, scale_boss_for_players
 from projectiles import Proj
 from attacks import ATTACKS
-from anim import sprite, mob_frame
 
 PORT = 5555                 # TCP: игра
 DISCOVERY_PORT = 5556       # UDP: поиск хостов в локальной сети
 PROTO = 1                   # версия сетевого протокола
 MAX_PLAYERS = 4
-REVIVE_TIME = 3.0           # сколько секунд стоять рядом с павшим союзником, чтобы поднять его
-REVIVE_RADIUS = (56, 64)
-REVIVE_HP, CLEAR_REVIVE_HP = .35, .25
 SPREAD = (0, -18, 18, -36)  # сдвиг игроков по x при появлении на карте
 COLORS = ((255, 214, 92), (110, 200, 255), (140, 235, 140), (240, 130, 200))
 MENU_MODES = ("mp", "connect")
@@ -290,6 +292,9 @@ class NetKeys:
     def skill(s): return s.bits[5]   # зажата клавиша навыка (для удерживаемых заклинаний, см. Player.update)
 
 
+NO_KEYS = NetKeys()   # «клавиатура» замороженного игрока (возрождение у чекпоинта): ничего не зажато
+
+
 class Input:
     def __init__(s): s.keys = NetKeys(); s.aim = None; s.mb = (0, 0); s.pose = None
 
@@ -367,7 +372,7 @@ class HostSession(Session):
         last = SETTINGS.get("last_character")
         s.lobby = [{"id": 0, "name": clean_name(name), "char": last if last in char_ids() else CHAR["id"]}]
         s.conns = {}; s.pending = []; s.inputs = {0: Input()}
-        s.room_armed = False; s.respawn = None; s.warn_t = 0
+        s.sims = {}; s.warn_t = 0   # sims[mid] — «мир» комнаты mid: Room, пули, FX, точки появления
         s.ips = local_ips()
         s.server = Server(port, s.public_info)   # OSError, если порт занят — сообщение покажет меню
 
@@ -455,7 +460,7 @@ class HostSession(Session):
         inp.pose = [_num(v) for v in pose] if isinstance(pose, list) and len(pose) == 7 else None
         p = s.players.get(pid)
         for ev in (msg.get("ev") or [])[:24]:
-            if p and p.hp > 0 and s.g.valid_action(ev): s.g.apply_action(p, ev)
+            if p and p.hp > 0 and getattr(p, "frozen", 0.0) <= 0 and s.g.valid_action(ev): s.act_in_room(p, ev)   # замороженный стоит кристаллом — действий нет
 
     def drop(s, pid):
         conn = s.conns.pop(pid, None)
@@ -463,7 +468,7 @@ class HostSession(Session):
         e = s.entry(pid)
         s.lobby = [x for x in s.lobby if x["id"] != pid]; s.inputs.pop(pid, None)
         p = s.players.pop(pid, None)
-        if p is not None and s.g.fx: s.g.fx.text(f"{p.name} покинул игру", p.cx, p.y - 30)
+        if p is not None: s.room_fx(p).text(f"{p.name} покинул игру", p.cx, p.y - 30)
         if e: s.broadcast_lobby()
 
     # ---------- забег ----------
@@ -472,6 +477,7 @@ class HostSession(Session):
         with use_char(e["char"]):
             p = s.g.Player()
         p.pid, p.name = pid, e["name"]
+        p.room_id = None   # комната игрока; назначается в go()/go_player()/join_game()
         return p
 
     def begin_run(s, loop, fresh):
@@ -481,19 +487,17 @@ class HostSession(Session):
             s.players = {e["id"]: s.make_player(e["id"]) for e in s.lobby}
         else:
             for p in s.players.values():
-                if p.hp <= 0: p.hp = 0
-                p.downed = False; p.revive = 0.0
-                p.hp = min(p.maxhp, p.hp + 30); p.refresh_mana(True)
+                p.hp = min(p.maxhp, p.hp + 30); p.refresh_mana(True)   # мёртвых нет: смерть возрождает у чекпоинта (die)
         # Новый круг — полностью новый набор комнат и мобов. Не переносим
         # сетевые идентификаторы/кэш противников из предыдущего круга.
         g.camp = Campaign(loop); g.room = None; g.done = False; g.fx = FX(); g.projs = []
-        s.mobs = {}; s.room_armed = False; s.respawn = None
+        s.mobs = {}; s.sims = {}   # миры комнат пересоздаются на каждый забег/круг
         g.level_menu = False; s.game_over = False
         g.pl = s.players[0]
         s.go(g.camp.first, None)
 
     def restart(s):
-        if s.phase == "game" and s.game_over:
+        if s.phase == "game" and s.game_over:   # больше не срабатывает: «все погибли» нет — die() возрождает каждого у чекпоинта
             s.begin_run(0, fresh=True)
 
     def next_loop(s):
@@ -501,83 +505,152 @@ class HostSession(Session):
             s.begin_run(s.g.camp.loop + 1, fresh=False)
 
     def join_game(s, pid):
-        """Подключился во время забега — появляется рядом с живым союзником."""
-        g = s.g; p = s.make_player(pid); r = g.room
-        anchor = next((a for a in s.players.values() if a.hp > 0), None)
-        if anchor: place(p, anchor_rect(anchor), anchor.state == "ladder", r, 0 if anchor.state == "ladder" else SPREAD[len(s.players) % len(SPREAD)] or 18)
-        elif s.respawn: place(p, *s.respawn, r)
-        p.armed = not r.exit_touch(p.rect)
+        """Подключился во время забега — появляется рядом с любым союзником. Мёртвых мгновенных
+        больше нет: смерть возрождает у чекпоинта (die), так что живы все игроки."""
+        g = s.g; p = s.make_player(pid)
+        anchor = next(iter(s.players.values()), None)
+        if anchor is not None:
+            p.room_id = anchor.room_id
+            r = s.sim(p.room_id).room
+            place(p, anchor_rect(anchor), anchor.state == "ladder", r, 0 if anchor.state == "ladder" else SPREAD[len(s.players) % len(SPREAD)] or 18)
+        else:
+            p.room_id = g.camp.first; r = s.sim(p.room_id).room
+            place(p, *s.sim(p.room_id).respawn, r)
+        if r.exit_touch(p.rect): p.armed = False   # от входа надо отойти, прежде чем выходы заработают
+        else: p.armed = True; s.sim(p.room_id).armed.add(pid)
         s.players[pid] = p
-        g.fx.text(f"{p.name} присоединился", p.cx, p.y - 30)
+        s.room_fx(p).text(f"{p.name} присоединился", p.cx, p.y - 30)
+
+    # ---------- миры комнат ----------
+    def sim(s, mid):
+        """«Мир» комнаты mid (HostSession.sims[mid]): комната, свои пули, свой FX, точки появления
+        и множество pid, отошедших от входа. Создаётся при первом входе игрока в комнату."""
+        sim = s.sims.get(mid)
+        if sim is None:
+            room = s.g.camp.get(mid)
+            sim = s.sims[mid] = SimpleNamespace(room=room, projs=[], armed=set(), room_armed=False, fx=FX(),
+                                                respawn=(pg.Rect(2 * T, 2 * T, T, T), False))
+            s.arm_room(room, sim)
+        return sim
+
+    def room_fx(s, p):
+        """FX комнаты, где сейчас игрок p: надписи (пал/поднялся/зачищено) видят те, кто в той же комнате."""
+        sim = s.sims.get(p.room_id)
+        return sim.fx if sim else s.g.fx
+
+    def arm_room(s, r, sim):
+        """Первое появление кого-то в комнате: расставить мобов (босса — по маркеру B/C на карте)."""
+        if r.spawned: return
+        r.mobs = []
+        r.spawn()
+        n = len([p for p in s.players.values() if p.room_id == r.id])   # кто уже направляется в эту комнату
+        for mob in r.mobs: scale_boss_for_players(mob, max(1, n))   # здоровье босса растёт с числом игроков
+        if r.cleared and s.g.camp.order and r.id == s.g.camp.order[-1] and not getattr(r, "boss_spawned", False):
+            r.cleared = False
+            players = [p for p in s.players.values() if p.room_id == r.id]
+            s.clear(r, players, [p for p in players if p.hp > 0])
 
     def go(s, mid, via):
-        """Переход всего отряда на карту mid."""
-        g = s.g; camp = g.camp; frm = g.room.id if g.room else None
-        if frm and mid != frm: camp.came_from[mid] = frm
-        r = g.room = camp.get(mid); r.visited = True; g.projs = []; r.corpses = []
-        rect, ladder = r.arrival(frm, via, camp)
-        s.respawn = (rect, ladder)
+        """Начало забега / нового круга: ВСЕ игроки появляются на карте mid (она же карта хоста)."""
+        g = s.g; camp = g.camp
+        r = camp.get(mid); r.visited = True; r.corpses = []
+        for p in s.players.values(): p.room_id = mid
+        sim = s.sim(mid)   # создаёт мир комнаты и расставляет мобов
+        rect, ladder = r.arrival(None, via, camp)
+        sim.respawn = (rect, ladder)
         for i, p in enumerate(s.players.values()):
-            place(p, rect, ladder, r, 0 if ladder else SPREAD[i % len(SPREAD)]); p.armed = False
-        s.room_armed = False
-        if not r.spawned:
-            r.mobs = []
-            r.spawn()
-            for mob in r.mobs: scale_boss_for_players(mob, len(s.players))   # босс с маркера B/C: здоровье растёт с числом игроков
-            if r.cleared and camp.order and r.id == camp.order[-1] and not getattr(r, "boss_spawned", False):
-                r.cleared = False
-                players = list(s.players.values())
-                s.clear(r, players, [p for p in players if p.hp > 0])
+            place(p, rect, ladder, r, 0 if ladder else SPREAD[i % len(SPREAD)])
+            p.armed = False; sim.armed.discard(p.pid); sim.room_armed = False
+        s.sync_host_room()
 
-    def take_exit(s, z):
-        g = s.g; r = g.room; target = g.camp.resolve(r.id, z["entry"]["exit"])
+    def go_player(s, p, mid, via):
+        """Выход сработал для ОДНОГО игрока: он переходит на карту mid, остальные остаются.
+        Для одного героя повторяет то, что main.go/place делают для всего отряда."""
+        g = s.g; camp = g.camp; frm = p.room_id
+        if frm and mid != frm: camp.came_from[mid] = frm
+        r2 = camp.get(mid); r2.visited = True; r2.corpses = []
+        p.room_id = mid
+        sim2 = s.sim(mid)   # создаёт мир комнаты (мобы/босс), если её ещё никто не открывал
+        rect, ladder = r2.arrival(frm, via, camp)
+        sim2.respawn = (rect, ladder)
+        # транзиент прошлой комнаты уходит вместе с игроком: клоны остаются там и растворяются,
+        # гарпуны и ноты обрывает place(), удерживаемые каст и «поток» — вот здесь
+        frm_fx = s.sims[frm].fx if frm in s.sims else g.fx
+        for c in getattr(p, "clones", ()) or ():
+            if c.hp > 0: c.dissolve(frm_fx)
+            c.hp = 0.0; c.gone = True
+        p.clones = []
+        p.channel = None; p.hold = None
+        place(p, rect, ladder, r2)
+        p.armed = False; sim2.armed.discard(p.pid); sim2.room_armed = False   # заново отойти от входа; двери могут запереться по-новой
+        s.sync_host_room()
+
+    def take_exit(s, p, z):
+        """Выход комнаты сработал для игрока p. True — переход выполнен (или END: забег окончен для всех)."""
+        g = s.g; r = s.sim(p.room_id).room; target = g.camp.resolve(r.id, z["entry"]["exit"])
         if target == END: g.done = True; return True
         if target is None:
             if pg.time.get_ticks() > s.warn_t:
-                g.fx.text(f"выход '{z['char']}' никуда не ведёт", z["rect"].centerx, z["rect"].y - 20); s.warn_t = pg.time.get_ticks() + 1500
+                s.room_fx(p).text(f"выход '{z['char']}' никуда не ведёт", z["rect"].centerx, z["rect"].y - 20); s.warn_t = pg.time.get_ticks() + 1500
             return False
-        s.go(target, z["entry"]); return True
+        s.go_player(p, target, z["entry"]); return True
 
-    def respawn_player(s, p):
-        """Упал в пропасть. Если двери заперты, точка входа — внутри двери, поэтому ставим к союзнику."""
-        g = s.g; r = g.room
-        anchor = next((a for a in s.players.values() if a is not p and a.hp > 0), None)
+    def respawn_player(s, p, sim=None):
+        """Упал в пропасть (или die(): у погибшего не было чекпоинта). Якорь — живые игроки ЕГО
+        комнаты; если двери заперты (точка входа внутри двери), ставим к союзнику."""
+        if sim is None: sim = s.sims.get(p.room_id)
+        r = sim.room if sim else s.g.camp.get(p.room_id)
+        anchor = next((a for a in s.players.values() if a is not p and a.hp > 0 and a.room_id == p.room_id), None)
         if r.locked and anchor: place(p, anchor_rect(anchor), False, r)
-        else: place(p, *s.respawn, r)
+        elif sim: place(p, *sim.respawn, r)
 
-    def clear(s, r, players, alive):
-        g = s.g
+    def clear(s, r, players, alive, fx=None):
+        g = s.g; fx = fx if fx is not None else g.fx
         # Только хост вызывает clear(): босс создаётся один раз и попадает в сетевые снимки.
         order = g.camp.order
         if order and r.id == order[-1] and not getattr(r, "boss_spawned", False):
             boss = spawn_boss(r, g.camp.scale(), max(1, len(players)))
             if boss:
                 r.boss_spawned = True; r.mobs.append(boss); r.set_lock(True)
-                g.fx.text("БОСС ПРИБЫЛ!", sum(p.cx for p in (alive or players)) / max(1, len(alive or players)), min((p.y for p in (alive or players)), default=120) - 60)
+                fx.text("БОСС ПРИБЫЛ!", sum(p.cx for p in (alive or players)) / max(1, len(alive or players)), min((p.y for p in (alive or players)), default=120) - 60)
                 return
         r.cleared = True; r.set_lock(False)
         who = alive or players
         cx = sum(p.cx for p in who) / len(who); cy = min(p.y for p in who)
-        g.fx.text("Зачищено!", cx - 30, cy - 60)
+        fx.text("Зачищено!", cx - 30, cy - 60)
         rw = r.d.get("reward")
         if rw and random.random() < rw.get("chance", 1):
             p = random.choice(who)
             with use_char(p.char_id):
                 wid = random_weapon() if rw.get("item", "random") == "random" else rw["item"]
-                if wid in CFG["weapons"]: r.drops.append(Drop(p.cx, p.y + p.h - 14, wid))
-        for p in players:
-            if p.hp <= 0: s.revive(p, CLEAR_REVIVE_HP)
+                if wid in CFG["weapons"]: r.drops.append(Drop(p.cx, p.y + p.h, wid))   # награда падает на землю
 
-    def down(s, p):
-        p.downed = True; p.revive = 0.0; p.state = "move"; p.atk = None; p.skill_cast = None; p.grab = None; p.channel = None; p.hold = None
-        p.shield_time = 0.0; p.shield_hp = 0.0; p.hitbox = None; p.vx = 0
-        if p.h != p.H0: p.y -= p.H0 - p.h; p.h = p.H0
-        s.g.fx.text(f"{p.name} пал!", p.cx - 20, p.y - 30)
-
-    def revive(s, p, frac):
-        p.hp = max(1, round(p.maxhp * frac)); p.downed = False; p.revive = 0.0
-        p.inv = 1.5; p.stun = 0; p.hp_regen_timer = 0.0; p.vx = p.vy = 0
-        s.g.fx.text(f"{p.name} снова в бою!", p.cx - 30, p.y - 30)
+    def die(s, p):
+        """Смерть: назад к чекпоинту игрока (или к точке появления его комнаты), полное
+        здоровье/мана, «кристалл» на freeze_time() секунд (checkpoint.freeze: неуязвим,
+        ввод хост отключает). Нокаута и подъёма союзниками больше нет."""
+        sim = s.sims.get(p.room_id)   # комната, где герой погиб (ВАЖНО: до go_player, который сменит p.room_id)
+        if sim is not None:           # рука Моргарта, державшая героя, отпускает его сразу
+            for m in sim.room.mobs:   # (руки и сами отпускают, когда видят p.grab == None — это страховка
+                hands = getattr(m, "hands", None)
+                if hands:             #  на случай, если комната погибшего больше не симулируется)
+                    for h in hands.list:
+                        if h.held is p: h.release(sim.fx, None, False)
+        cp = getattr(p, "cp", None)
+        if cp and cp[0] in CFG["map_defs"]:
+            s.go_player(p, cp[0], None)          # переход в комнату чекпоинта (tp растёт — клиент перевставится)
+            p.x = cp[1] - p.w / 2; p.y = cp[2] - p.h; p.vx = p.vy = 0.0
+            if p.h != p.H0: p.y -= p.H0 - p.h; p.h = p.H0   # подрезать высоту, как в g.place (погиб в перекате)
+        else:
+            s.respawn_player(p)                  # чекпоинта не было — точка появления его комнаты
+        with use_char(p.char_id):                # максимумы — из настроек ЕГО героя (в сети герои разные)
+            p.hp = p.maxhp
+            p.refresh_mana(True)
+            p.mana = p.maxmana
+        p.atk = None; p.skill_cast = None; p.grab = None; p.channel = None; p.hold = None; p.stun = 0
+        p.shield_time = 0.0; p.shield_hp = 0.0; p.hitbox = None
+        checkpoint.freeze(p)
+        s.room_fx(p).text(f"{p.name} погиб — возвращение к чекпоинту", p.cx, p.y - 30)
 
     def feed_local(s):
         inp = s.inputs.setdefault(0, Input())
@@ -585,29 +658,65 @@ class HostSession(Session):
 
     def local_action(s, name):
         p = s.players.get(0)
-        if p and p.hp > 0: s.g.apply_action(p, name)
+        if p and p.hp > 0 and getattr(p, "frozen", 0.0) <= 0: s.act_in_room(p, name)   # замороженный (возрождение) стоит кристаллом — действий нет
+
+    def act_in_room(s, p, name):
+        """Действие игрока применяется в ЕГО комнате: Game.pickup и inventory.apply смотрят на g.room/g.fx."""
+        g = s.g; sim = s.sims.get(p.room_id)
+        prev = (g.room, g.projs, g.fx)
+        if sim is not None: g.room, g.projs, g.fx = sim.room, sim.projs, sim.fx
+        try: g.apply_action(p, name)
+        finally: g.room, g.projs, g.fx = prev
 
     def step(s, dt):
-        """Один кадр мира — как Game.step в одиночной игре, но для всех игроков сразу."""
-        g = s.g; fx, r = g.fx, g.room
+        """Один кадр мира. Общая часть (ввод хоста), затем — своя симуляция
+        для каждой комнаты, где есть игроки (p.room_id): см. step_room (sims[mid]).
+        «Все погибли» больше не бывает: каждая смерть возрождает героя у его чекпоинта (die)."""
+        g = s.g
+        players = list(s.players.values())
+        s.feed_local()
+        groups = {}
+        for p in players:
+            mid = p.room_id
+            if mid is None: mid = p.room_id = g.camp.first   # страховка: игрок без комнаты — на карту хоста
+            groups.setdefault(mid, []).append(p)
+        for mid, rp in groups.items():
+            s.step_room(s.sims.get(mid) or s.sim(mid), rp, dt)
+        bard.PLAYERS = None   # страховка: вне обновления игроков ноты достают только до самого барда
+        s.sync_host_room()
+
+    def sync_host_room(s):
+        """Комната хоста: g.room/g.projs/g.fx указывают на мир, где стоит герой хоста (отрисовка, HUD, действия)."""
+        g = s.g; me = s.players.get(0)
+        if me is None: return
+        sim = s.sim(me.room_id)
+        g.room = sim.room; g.projs = sim.projs; g.fx = sim.fx
+
+    def step_room(s, sim, players, dt):
+        """Кадр одной комнаты: то же, что Game.step в одиночной игре, но только для игроков этой комнаты."""
+        g = s.g; r = sim.room; fx = sim.fx; projs = sim.projs
         fx.stop = 0; fx.shake = max(0, fx.shake - dt)   # общий «стоп-кадр» в сети выключен: он замораживал бы всех
         for it in fx.items: it[4] -= dt
         fx.items = [it for it in fx.items if it[4] > 0]
-        players = list(s.players.values())
-        s.game_over = bool(players) and all(p.hp <= 0 for p in players)
-        if s.game_over: return
-        s.feed_local()
-        bard.PLAYERS = [q for q in players if q.hp > 0]   # ноты барда достают до всех живых союзников (сбрасывается после цикла)
+        for p in players: checkpoint.tick(p, dt)   # кристалл возрождения: заморозка тает, inv держится на уровне frozen (checkpoint.py)
+        bard.PLAYERS = [q for q in players if q.hp > 0]   # ноты барда достают до живых союзников этой комнаты (сбрасывается после цикла)
         mechs.presolve(r, [p for p in players if p.hp > 0])   # кнопки/рычаги -> сигналы каналов; двери обновляют клетки ДО физики
         for p in players:
-            if p.hp <= 0: continue
+            if p.hp <= 0: continue   # погиб в конце прошлого кадра (шипы/падение) — возродится в die() ниже
             inp = s.inputs.get(p.pid) or Input()
+            if getattr(p, "frozen", 0.0) > 0:
+                # заморожен (только что возродился у чекпоинта): физику и update ведём (упадёт,
+                # встанет на землю), но ввода нет — стоит кристаллом, пока не оттает
+                p.aim = None
+                p.drops = r.drops; p.grid = r.g
+                p.update(dt, NO_KEYS, r.g, r.mobs + r.containers, projs, fx); p.update_anim(dt)
+                continue
             p.aim = inp.aim
             if inp.mb[0]: p.press("a1")
             if inp.mb[1]: p.press("a2")
             p.drops = r.drops   # телекинез дотягивается до предметов на полу
             p.grid = r.g        # сетка комнаты: клон ищет по ней свободное место призыва (clone.spawn)
-            p.update(dt, inp.keys, r.g, r.mobs + r.containers, g.projs, fx); p.update_anim(dt)   # ящики — тоже цели
+            p.update(dt, inp.keys, r.g, r.mobs + r.containers, projs, fx); p.update_anim(dt)   # ящики — тоже цели
             if inp.pose and p.pid != s.my_id:
                 # Движение своего героя клиент считает сам (без задержки сети); хост между пакетами
                 # продолжает его по последним клавишам, а пришедшее положение принимает как точное.
@@ -616,12 +725,20 @@ class HostSession(Session):
                     p.x, p.y, p.vx, p.vy = x, y, vx, vy
                     p.h = int(max(4, min(p.H0, h))); p.face = 1 if face >= 0 else -1
         bard.PLAYERS = None   # обратно: вне обновления игроков ноты достают только до самого барда (и предсказание клиента не трогает чужих)
+        for p in players:   # чекпоинты сети: кристалл под героем лечит и становится точкой возрождения
+            if p.hp <= 0 or p.room_id != r.id: continue
+            for cp in getattr(r, "checkpoints", ()):
+                if p.rect.colliderect(cp["rect"]):
+                    with use_char(p.char_id):
+                        checkpoint.activate(g, p, r, cp, fx)
+                    break
         for p in players:
-            clone.update_all(p, dt, r.g, r.mobs + r.containers, g.projs, fx)   # клоны героев: свой ИИ (считает хост), растворение
+            clone.update_all(p, dt, r.g, r.mobs + r.containers, projs, fx)   # клоны героев: свой ИИ (считает хост), растворение
         w_clones = [c for p in players for c in getattr(p, "clones", ()) if c.hp > 0]
+        for c in w_clones: c.room_id = r.id   # клон живёт в комнате владельца (фильтр отрисовки в clone.view_of)
         alive = [p for p in players if p.hp > 0]
         if alive:
-            w = SimpleNamespace(g=r.g, pl=alive[0], players=alive, mobs=r.mobs, containers=r.containers, projs=g.projs, fx=fx, clones=w_clones)
+            w = SimpleNamespace(g=r.g, pl=alive[0], players=alive, mobs=r.mobs, containers=r.containers, projs=projs, fx=fx, clones=w_clones)
             for m in r.mobs:
                 w.pl = clone.decoy(w, m, invisibility.pick_target(alive, m))   # моб видит ближайшего видимого игрока; живой клон-приманка заметно ближе — переключается на него
                 m.update(dt, w)
@@ -631,15 +748,17 @@ class HostSession(Session):
                 xp = m.pop_xp() if hasattr(m, "pop_xp") else 0
                 for p in players:
                     if xp: g.award_xp(p, xp, fx)          # опыт за уничтоженные руки босса
-            for q in g.projs: q.update(dt, w)
-        g.projs = [q for q in g.projs if not q.dead]
+            for q in projs: q.update(dt, w)
+        sim.projs = [q for q in projs if not q.dead]   # sim.projs перезаписывается: g.projs синхронизирует sync_host_room
+        projs = sim.projs
         containers.sweep(r, fx)   # сломанные ящики: освобождают клетки и роняют содержимое
         mechs.update(r, dt, alive[0] if alive else None, fx)   # лифты/платформы несут героя и мобов; порталы телепортируют
         for m in r.mobs:
             if m.hp <= 0:
                 if not getattr(m, "xp_paid", False):
                     m.xp_paid = True
-                    for p in players: g.award_xp(p, int(m.d.get("xp", 10)), fx)   # опыт получает каждый
+                    for p in players: g.award_xp(p, int(m.d.get("xp", 10)), fx)   # опыт получает каждый в этой комнате
+                    loot.drop_for_mob(r, m, fx)   # лут моба сыплется один раз, на полу его комнаты
                 fx.ring(m.cx, m.cy, 28); c = Corpse(m)
                 if not c.dead: r.corpses.append(c)
         for c in r.corpses: c.update(dt)
@@ -648,46 +767,46 @@ class HostSession(Session):
         for m in r.mobs:
             if m.y > r.height_px + 200 or m.y < -400 or m.x < -400 or m.x > r.width_px + 400: m.hp = 0
         for p in players:
-            if p.hp <= 0 and not p.downed: s.down(p)
+            if p.hp <= 0: s.die(p)   # смерть: возрождение у чекпоинта с кристаллом (die может перевести игрока в другую комнату)
+        players = [p for p in players if p.room_id == r.id]   # погибшие переехали к чекпоинту — их комнату ведёт sim той комнаты
         alive = [p for p in players if p.hp > 0]
-        if r.spawned and not r.cleared and not r.mobs: s.clear(r, players, alive); alive = [p for p in players if p.hp > 0]
-        # павшие: падают на землю, союзник рядом поднимает
-        for d in players:
-            if d.hp > 0: continue
-            with use_char(d.char_id):
-                pc = CFG["player"]
-                d.vx = approach(d.vx, 0, pc["friction"] * dt)
-                d.vy = min(d.vy + pc["gravity"] * dt, pc["max_fall"])
-            d.move(r.g, dt)
-            if d.cy > r.height_px or d.cx < 0 or d.cx > r.width_px: s.respawn_player(d); d.vy = 0
-            near = any(abs(a.cx - d.cx) < REVIVE_RADIUS[0] and abs(a.cy - d.cy) < REVIVE_RADIUS[1] for a in alive)
-            d.revive = d.revive + dt if near else max(0.0, d.revive - dt)
-            if d.revive >= REVIVE_TIME: s.revive(d, REVIVE_HP)
-        alive = [p for p in players if p.hp > 0]
+        if r.spawned and not r.cleared and not r.mobs: s.clear(r, players, alive, fx); alive = [p for p in players if p.hp > 0]
         for p in alive:
             sc, sr = int(p.cx // T), int((p.y + p.h - 2) // T)
             if tile(r.g, sc, sr) == "x": p.hit(r.spike_damage(sc, sr), p.cx, fx)
-        # выходы: двери запираются, когда все живые отошли от входа; переход — для всего отряда
+            loot.update_room(r, p, fx)   # монеты: каждый игрок подбирает кучки касанием сам
+        # выходы — теперь индивидуальные: двери запираются, когда все живые В КОМНАТЕ отошли от входа;
+        # каждый игрок переходит сам (take_exit -> go_player меняет только его p.room_id)
         for p in alive:
-            if not p.armed and not r.exit_touch(p.rect): p.armed = True
-        if not s.room_armed and alive and all(p.armed for p in alive):
-            s.room_armed = True
+            if p.pid not in sim.armed and not r.exit_touch(p.rect): sim.armed.add(p.pid)
+        if not sim.room_armed and alive and all(p.pid in sim.armed for p in alive):
+            sim.room_armed = True
             if r.mobs and r.d.get("lock", CFG["maps"].get("lock", True)): r.set_lock(True)
+        left = set()
         for p in alive:
             z = r.exit_at(p.cx, p.cy)
-            if p.armed and z is not None and s.take_exit(z): return
+            if p.pid in sim.armed and z is not None and s.take_exit(p, z):
+                left.add(p.pid)
+                if g.done: break   # END: забег окончен для всех
         for p in alive:
+            if p.pid in left: continue   # уже перешёл в другую комнату — его дальше ведёт sim той комнаты
             if p.cx < 0 or p.cx > r.width_px or p.cy < 0 or p.cy > r.height_px:
                 z = None if r.locked else (r.exit_at(p.cx, p.cy) or r.exit_near(p.rect))
-                if z and s.take_exit(z): return
-                if g.done: return
-                p.hit(r.d.get("fall_damage", CFG["maps"].get("fall_damage", 15)), p.cx, fx); s.respawn_player(p)
+                if z and s.take_exit(p, z):
+                    if g.done: break
+                    continue
+                p.hit(r.d.get("fall_damage", CFG["maps"].get("fall_damage", 15)), p.cx, fx); s.respawn_player(p, sim)
 
-    # ---------- снимок мира ----------
-    def snapshot(s):
-        g = s.g; r = g.room; R = lambda v: round(v, 1)
+    # ---------- снимок мира (отдельный для каждой комнаты) ----------
+    def snapshot_for(s, room_id):
+        """Снимок для игрока комнаты room_id: его комната целиком (мобы, пули, дропы, трупы, ящики,
+        механизмы, fx, клоны), а прогресс забега — общий. Список игроков — все, с полем rm (комната)."""
+        g = s.g
+        sim = s.sims.get(room_id)
+        r = sim.room if sim else g.camp.get(room_id)
+        R = lambda v: round(v, 1)
         styles, style_idx, projs = [], {}, []
-        for q in g.projs:
+        for q in (sim.projs if sim else []):
             key = getattr(q, "_net_style", None)
             if key is None:
                 st = {k: q.d[k] for k in ("frames", "fps", "skin", "sprite", "_id", "draw", "rotate", "color", "size") if k in q.d}
@@ -709,6 +828,7 @@ class HostSession(Session):
                          m.hands.net_pack() if getattr(m, "hands", None) else None, invisibility.net_pack(m)])
         clones = []
         for p in s.players.values():
+            if p.room_id != room_id: continue   # клоны живут в комнате владельца — их увидят только там
             for c in getattr(p, "clones", ()):
                 if c.hp <= 0: continue
                 if not hasattr(c, "nid"): c.nid = s.next_nid()
@@ -728,19 +848,26 @@ class HostSession(Session):
                         "sl": list(p.slots), "bg": list(getattr(p, "bag", [])), "eq": dict(getattr(p, "equip", {})), "lw": p.last_weapon, "sc": cast,
                         "sh": [round(p.shield_time, 2), p.shield_face, R(p.shield_hp)], "ch": chan, "hd": hd, "hr": hr,
                         "sk": list(p.skills), "si": p.skill_index, "cd": {k: round(v, 2) for k, v in p.skill_cooldowns.items() if v > 0},
-                        "lv": p.level, "xp": p.xp, "xn": p.xp_next, "rv": round(p.revive, 2),
+                        "lv": p.level, "xp": p.xp, "xn": p.xp_next, "fz": round(max(0, getattr(p, "frozen", 0.0)), 2),   # заморозка возрождения (кристалл), сек
+                        "cn": int(getattr(p, "coins", 0)),   # монеты (loot.py): счётчик героя решает хост
                         "tp": p.tp, "hc": p.hitc, "kb": [R(p.kb[0]), R(p.kb[1])], "gr": 1 if p.grab else 0,
+                        "rm": p.room_id,   # комната игрока: у каждого теперь своя (для фильтра отрисовки и predict клиента)
                         "iv": invisibility.net_pack(p), "xb": crossbow.net_pack(p), "bd": bard.net_pack(p)})   # невидимость: [секунд осталось (-1 — бессрочно), прозрачность %, снимать ли при атаке] или None
-        return {"t": "snap", "ht": round(time.monotonic(), 4), "room": r.id, "loop": g.camp.loop,
+        return {"t": "snap", "ht": round(time.monotonic(), 4), "room": room_id, "loop": g.camp.loop,
                 "spawned": bool(r.spawned), "locked": r.locked, "cleared": r.cleared,
                 "prog": {mid: [m.visited, m.cleared] for mid, m in g.camp.maps.items()},
-                "done": g.done, "over": s.game_over, "pl": pls, "mobs": mobs,
+                "done": g.done, "over": False,   # «все погибли» больше не бывает: каждая смерть возрождает у чекпоинта
+                "pl": pls, "mobs": mobs,
                 "corpses": [[c.kind, c.dir, c.rect.x, c.rect.y, c.rect.w, c.rect.h, round(c.t, 3)] for c in r.corpses],
-                "projs": projs, "styles": styles, "drops": [[R(d.x), R(d.y), d.wid] for d in r.drops if isinstance(d, Drop)],   # ресурсы (ResourceDrop) на клиенте не восстанавливаются — их не шлём
+                "projs": projs, "styles": styles,
+                "drops": [[R(d.x), R(d.y), d.wid] for d in r.drops if isinstance(d, Drop)],   # оружие/предметы (ресурсы ResourceDrop на клиенте не восстанавливаются — не шлём)
+                "coins": [[R(d.x), R(d.y), int(d.n)] for d in r.drops if isinstance(d, loot.Coin)],   # кучки монет (loot.py)
                 "cls": clones,   # клоны героев (clone.py): клиент видит их из снимка
                 "ct": containers.state(r),
                 "mc": mechs.state(r),
-                "fx": [[k, R(x), R(y), R(d) if isinstance(d, (int, float)) else d, round(t, 3)] for k, x, y, d, t in g.fx.items]}
+                "fx": [[k, R(x), R(y), R(d) if isinstance(d, (int, float)) else d, round(t, 3)] for k, x, y, d, t in (sim.fx.items if sim else [])],
+                "parts": [[R(p[0]), R(p[1]), R(p[2]), R(p[3]), round(p[4], 3), R(p[5]), R(p[6]), p[7], R(p[8]), R(p[9]), p[10], R(p[11]), round(p[12], 2), 1 if p[13] else 0]
+                          for p in (sim.fx.parts if sim else [])]}
 
     _nid = 0
     def next_nid(s):
@@ -751,9 +878,10 @@ class HostSession(Session):
         for pid, c in list(s.conns.items()): s.process(pid, c)
         if s.phase == "game":
             s.step(dt)
-            if s.conns:
-                data = pack(s.snapshot())
-                for c in s.conns.values(): c.send_raw(data, snapshot=True)
+            s.sync_host_room()   # g.room/g.projs/g.fx хоста — мир его героя (step мог перейти в другую комнату)
+            for pid, c in s.conns.items():   # каждому игроку — снимок ЕГО комнаты; хосту (pid 0) снимок не нужен
+                p = s.players.get(pid)
+                if p is not None: c.send_raw(pack(s.snapshot_for(p.room_id)), snapshot=True)
         s.track_local()
 
     def close(s):
@@ -833,7 +961,7 @@ class ClientSession(Session):
 
     def local_action(s, name):
         p = s.me()
-        if p is None or p.hp <= 0: return
+        if p is None or p.hp <= 0 or getattr(p, "frozen", 0.0) > 0: return   # замороженный стоит кристаллом — действий нет
         s.events.append(name)
         if s.predicting and name in ("jump", "roll", "a1", "a2", "skill"): p.press(name)   # сразу и у себя
 
@@ -868,7 +996,7 @@ class ClientSession(Session):
             s.predict(dt)
             aim = local_aim(g); p = s.me()
             pose = None
-            if p is not None and p.hp > 0 and s.predicting:
+            if p is not None and p.hp > 0 and s.predicting and getattr(p, "frozen", 0.0) <= 0:   # замороженный не двигается — поза не нужна
                 pose = [round(p.x, 2), round(p.y, 2), round(p.vx, 1), round(p.vy, 1), p.h, p.face, s.local_tp]
             s.conn.send({"t": "in", "k": local_bits(g), "aim": [round(aim[0], 1), round(aim[1], 1)] if aim else None,
                          "mb": list(local_mb(g)), "ev": s.events, "pose": pose})
@@ -948,6 +1076,12 @@ class ClientSession(Session):
         g.projs = projs
         g.fx.items = [[it[0], it[1], it[2], it[3], it[4] - ahead] for it in a.get("fx", [])
                       if isinstance(it, list) and len(it) == 5 and it[4] - ahead > 0]
+        parts = []   # частицы-эффекты (effects.py): возраст сдвигается на задержку сети, отжившие отбрасываются
+        for p in a.get("parts", []):
+            if not isinstance(p, list) or len(p) < 14: continue
+            p = list(p); p[4] += ahead; p[13] = bool(p[13])
+            if 0 <= p[4] < p[5]: parts.append(p)
+        g.fx.parts = parts
         me = s.me() or next(iter(s.players.values()), None)
         if me is not None:
             g.pl = me
@@ -965,12 +1099,17 @@ class ClientSession(Session):
             if mid in CFG["map_defs"]:
                 m = s.camp.get(mid); m.visited, m.cleared = bool(vis), bool(clr)
         if sn["room"] not in CFG["map_defs"]: return
-        r = s.camp.get(sn["room"])
+        r = s.camp.get(sn["room"])   # комната игрока ("rm" в списке игроков совпадает с sn["room"] для своего)
+        r.visited = True
         if g.room is not r: g.room = r; s.mobs = {}
         if r.locked != bool(sn["locked"]): r.set_lock(bool(sn["locked"]))
         r.cleared = bool(sn["cleared"])
         r.spawned = bool(sn.get("spawned", True))
         r.drops = [Drop(x, y, wid) for x, y, wid in sn.get("drops", []) if inventory.is_item(wid)]
+        for x, y, n in sn.get("coins", ()) or ():   # монеты: кучки из снимка комнаты (loot.py)
+            try:
+                if int(n) > 0: r.drops.append(loot.Coin(x, y, n))
+            except (TypeError, ValueError): pass
         containers.apply_state(r, sn.get("ct"))   # ящики и сундуки: что сломано / открыто, прочность
         mechs.apply_state(r, sn.get("mc"))   # механизмы: рычаги/кнопки/двери/лифты/порталы
         g.done = bool(sn.get("done")); s.game_over = bool(sn.get("over"))
@@ -992,6 +1131,7 @@ class ClientSession(Session):
             if pid not in latest: del s.players[pid]
         for pid, lp in latest.items():
             p = s.player_obj(pid, lp.get("c"))
+            p.room_id = lp.get("rm", getattr(p, "room_id", None))   # у каждого игрока теперь своя комната
             if pid == s.my_id: s.apply_self(p, lp); continue
             ps = rows_a.get(pid, lp); nb = rows_b.get(pid)
             s.apply_pose(p, ps)
@@ -1022,7 +1162,8 @@ class ClientSession(Session):
         """Что всегда решает хост: здоровье, мана, оружие, навыки, опыт, щит."""
         p.hp, p.maxhp, p.mana, p.maxmana = ps["hp"], ps["mhp"], ps["mp"], ps["mmp"]
         p.mana_flash = max(p.mana_flash, ps["mf"]) if p.pid == s.my_id else ps["mf"]
-        p.revive = ps.get("rv", 0); p.downed = p.hp <= 0
+        p.frozen = float(ps.get("fz", 0.0))   # заморозка возрождения: решает хост; predict() стоит, пока не оттает
+        p.coins = int(ps.get("cn", getattr(p, "coins", 0)) or 0)   # монеты (loot.py): решает хост
         p.slots = list(ps["sl"]); p.bag = list(ps.get("bg", getattr(p, "bag", []))); p.equip = dict(ps.get("eq", getattr(p, "equip", {})))   # рюкзак и экипировку (инвентарь) считает хост
         if p.pid != s.my_id or not s.predicting: p.last_weapon = ps["lw"]
         p.shield_time, p.shield_face, p.shield_hp = ps["sh"]
@@ -1046,8 +1187,10 @@ class ClientSession(Session):
         invisibility.net_apply(p, ps.get("iv"), mine=p.pid == s.my_id and s.predicting)   # невидимость решает хост
 
     def apply_self(s, p, ps):
+        # Заморозка возрождения (p.frozen) предсказание не блокирует: герой жив, tp-перестановка
+        # ставит его у чекпоинта, а predict() стоит, пока fz в снимке не станет 0.
         alive = ps["hp"] > 0
-        if not alive or ps.get("gr"):   # павший или схваченный рукой босса: показываем как у хоста, ничего не предсказываем
+        if not alive or ps.get("gr"):   # кадр смерти или схвачен рукой босса: показываем как у хоста, ничего не предсказываем
             s.predicting = False
             s.apply_pose(p, ps); s.apply_stats(p, ps); p.aim = None
             s.local_hc = ps.get("hc", 0); return
@@ -1069,9 +1212,10 @@ class ClientSession(Session):
         s.apply_stats(p, ps)
 
     def predict(s, dt):
-        """Свой герой: та же физика и атаки, что в одиночной игре, по своим клавишам — без ожидания хоста."""
+        """Свой герой: та же физика и атаки, что в одиночной игре, по своим клавишам — без ожидания хоста.
+        Заморожен (возрождение у чекпоинта) — стоим кристаллом: предсказание вернётся, когда fz в снимке станет 0."""
         p, g = s.me(), s.g
-        if p is None or p.hp <= 0 or not s.predicting: return
+        if p is None or p.hp <= 0 or not s.predicting or getattr(p, "frozen", 0.0) > 0: return
         p.aim = local_aim(g)
         mb = local_mb(g)
         if mb[0]: p.press("a1")
@@ -1126,17 +1270,34 @@ def describe_error(e):
     return str(e) or e.__class__.__name__
 
 
+# Клоны героя живут в комнате владельца (go_player растворяет их при уходе): в отрисовку хоста
+# (clone.view_of возвращает клоны ВСЕХ игроков) подмешиваем фильтр по комнате — иначе чужой клон
+# из другой карты «висел» бы в комнате хоста.
+_view_of_orig = clone.view_of
+def _view_of_room(game):
+    out = _view_of_orig(game)
+    if getattr(game, "net", None) is not None and game.net.is_host:
+        me_room = getattr(game.pl, "room_id", None)
+        out = [c for c in out if getattr(c, "room_id", me_room) == me_room]
+    return out
+clone.view_of = _view_of_room
+
+
 # ======================================================================
 #  Отрисовка сетевой игры
 # ======================================================================
 def draw_players(g, v):
-    """Все игроки: свой — поверх остальных; над союзниками — имя; павшие — полупрозрачные, с полоской воскрешения."""
+    """Игроки КОМНАТЫ героя: свой — поверх остальных; над союзниками — имя; замороженные
+    (возрождение у чекпоинта) — с бирюзовым кристаллом checkpoint.draw_crystal.
+    Игроки в других комнатах не рисуются (у каждого своя карта)."""
     net, me = g.net, g.pl
     tick = int(pg.time.get_ticks() / 60) % 2
-    order = [p for p in net.player_list() if p is not me] + ([me] if me in net.player_list() else [])
+    my_room = getattr(me, "room_id", None)
+    same = [p for p in net.player_list() if p is not me and getattr(p, "room_id", None) == my_room]
+    order = same + ([me] if me in net.player_list() else [])
     for p in order:
-        if p.hp <= 0: draw_downed(g, v, p); continue
         if p.inv <= 0 or tick: p.draw(v)
+        if getattr(p, "frozen", 0.0) > 0: checkpoint.draw_crystal(v, p, pg.time.get_ticks())
         if p is not me:
             col = net.color_of(p.pid); t = g.small.render(p.name, True, col)
             r = p.rect; x, y = r.centerx - t.get_width() // 2, r.top - 30
@@ -1145,35 +1306,17 @@ def draw_players(g, v):
             pg.draw.rect(v, (220, 60, 60), (r.centerx - 16, y + 14, int(32 * max(0, p.hp) / max(1, p.maxhp)), 3))
 
 
-def draw_downed(g, v, p):
-    r = p.rect
-    with use_char(p.char_id):
-        pc = CFG["player"]
-        dw, dh = pc.get("draws", {}).get("hurt", pc.get("draw", [p.w, p.H0]))
-        dw, dh = max(1, int(dw * p.model_scale)), max(1, int(dh * p.model_scale))
-        img = sprite(mob_frame(f"player:{p.char_id}", pc, ["hurt"], 0.0, None, folder=pc.get("folder", "player")), dw, dh, p.face < 0)
-    if img:
-        img = pg.transform.rotate(img, 90 if p.face < 0 else -90); img.set_alpha(140)   # лежит
-        v.blit(img, img.get_rect(midbottom=(r.centerx, r.bottom)))
-    else:
-        pg.draw.rect(v, (120, 110, 130), (r.centerx - r.h // 2, r.bottom - r.w // 2, r.h, r.w // 2), border_radius=4)
-    col = g.net.color_of(p.pid)
-    t = g.small.render(f"{p.name}: встаньте рядом, чтобы поднять", True, col)
-    v.blit(t, (r.centerx - t.get_width() // 2, r.bottom - 44))
-    k = max(0.0, min(1.0, p.revive / REVIVE_TIME))
-    pg.draw.rect(v, (30, 30, 40), (r.centerx - 30, r.bottom - 28, 60, 6))
-    pg.draw.rect(v, (120, 235, 140), (r.centerx - 30, r.bottom - 28, int(60 * k), 6))
-
-
 def draw_overlay(g):
-    """Поверх HUD: союзники (слева сверху), плашка уровня, сообщения о смерти и конце круга."""
+    """Поверх HUD: союзники (слева сверху), плашка уровня, сообщение о конце круга.
+    Веток «ВСЕ ПОГИБЛИ» и «ТЫ ПАЛ» больше нет: смерть возрождает у чекпоинта."""
     net, scr, me = g.net, g.scr, g.pl
     y = 34
     for p in net.player_list():
         if p is me: continue
         col = net.color_of(p.pid)
-        name = ("✝ " if p.hp <= 0 else "") + p.name
-        g.txt(name, 12, y, col if p.hp > 0 else (200, 110, 110), g.small)
+        frozen = getattr(p, "frozen", 0.0) > 0
+        name = ("❄ " if frozen else "") + p.name   # ❄ — заморожен (возрождение у чекпоинта)
+        g.txt(name, 12, y, col, g.small)
         pg.draw.rect(scr, (40, 20, 24), (12, y + 15, 90, 5))
         pg.draw.rect(scr, (220, 60, 60), (12, y + 15, int(90 * max(0, p.hp) / max(1, p.maxhp)), 5))
         y += 26
@@ -1185,12 +1328,9 @@ def draw_overlay(g):
         scr.blit(bg, bg.get_rect(center=(W // 2, 64))); scr.blit(t, t.get_rect(center=(W // 2, 64)))
     def center(text, y, col, font):
         t = font.render(text, True, col); scr.blit(font.render(text, True, (0, 0, 0)), t.get_rect(center=(W // 2 + 2, y + 2))); scr.blit(t, t.get_rect(center=(W // 2, y)))
-    if net.game_over:
+    if net.game_over:   # «over» в снимке теперь всегда False — ветка оставлена как страховка
         center("ВСЕ ПОГИБЛИ", 190, (255, 90, 90), g.big)
         center("R — новый забег для всех" if net.is_host else "Ждём, пока хост начнёт новый забег", 236, (255, 200, 190), g.font)
-    elif me.hp <= 0:
-        center("ТЫ ПАЛ", 190, (255, 110, 110), g.big)
-        center("Союзник поднимет тебя, если постоит рядом. Зачистка карты тоже поднимает.", 236, (255, 210, 200), g.font)
     elif g.done:
         center("ВСЕ КАРТЫ ПРОЙДЕНЫ", 190, (120, 255, 150), g.big)
         center("Enter — ещё круг для всех" if net.is_host else "Ждём, пока хост начнёт следующий круг", 236, (200, 255, 210), g.font)

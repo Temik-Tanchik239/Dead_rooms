@@ -52,6 +52,16 @@ STAT_GROUPS = [
         F("invisible.transparency", "Прозрачность, %", "num", "из data/invisibility.json", "0 — виден как обычно, 100 — не виден совсем. Пусто — берётся mob_transparency из data/invisibility.json."),
         F("invisible.break_on_attack", "Проявляется при атаке", "bool", "да", "Первая же атака моба снимает невидимость (засада). Выключите — моб останется невидимым и во время атак."),
     ]),
+    ("Механики", [
+        F("guard.cooldown", "Фронтальный щит: перезарядка, с", "num", "", "Пусто — щита нет. Если удар пришёл со стороны, куда моб смотрит, — он блокируется целиком (бей со спины), после блока щит перезаряжается."),
+        F("regen.delay", "Регенерация: пауза, с", "num", "", "Пусто — моб не лечится. Если столько секунд моба не били, он начинает восстанавливаться."),
+        F("regen.rate", "Регенерация: скорость, hp/с", "num", "", "Сколько здоровья в секунду восстанавливает."),
+        F("on_death.explode.damage", "Смерть: взрыв — урон", "num", "", "Пусто — без взрыва. Иначе при смерти моб взрывается и наносит этот урон всем игрокам в радиусе."),
+        F("on_death.explode.radius", "Смерть: взрыв — радиус, px", "num", "90", "Радиус взрыва."),
+        F("on_death.split.mob", "Смерть: разделение — моб", "text", "", "Пусто — без разделения. Иначе при смерти на месте моба появляются эти мобы (id из списка мобов)."),
+        F("on_death.split.count", "Смерть: разделение — сколько", "int", "2", "Сколько мобов рождается при смерти."),
+        F("on_death.split.hp_k", "Смерть: разделение — здоровье, ×", "num", "0.7", "Здоровье рождённых мобов — доля от обычного (0.7 = 70%)."),
+    ]),
     ("Свет вокруг моба", [
         F("light.radius", "Радиус, px", "num", "", "Радиус свечения. Пусто — моб не светится."),
         F("light.intensity", "Яркость 0..1", "num", "", "Сила свечения."),
@@ -90,6 +100,28 @@ MOVES = {
         F("points", "Точки path (dx dy в строке)", "points", "", "Для формы path: смещения от точки появления."),
     ]),
     "stand": ("Стоять на месте", "Стоит на месте (летун висит) и поворачивается к игроку.", []),
+    "sentry": ("Охранять пост", "Стоит у точки появления; увидел игрока — преследует в пределах поводка (leash). Вывелся за поводок или потерял цель — возвращается на пост.", [
+        F("leash", "Поводок, px", "num", "260", "Насколько далеко от поста может увязаться за игроком; дальше — возвращается и агр сбрасывается."),
+        F("height", "Высота над постом (летуны)", "num", "-20", "Минус = парить выше точки появления при возврате."),
+        F("jump", "Скорость прыжка", "num", "0", "Прыжок через препятствия по пути домой (0 — авто)."),
+    ]),
+    "flee": ("Убегать от игрока", "Трус: как только игрок ближе far — убегает от него, всегда глядя на игрока (удобно для стрелков в спину и воров).", [
+        F("far", "Дистанция убегания, px", "num", "260", "Ближе этого расстояния моб пятится; дальше — стоит и смотрит."),
+        F("panic", "Паника, px", "num", "130", "Игрок ещё ближе — моб бежит изо всех сил (на максимальной speed)."),
+        F("height", "Высота над игроком (летуны)", "num", "-40", "Минус = держаться выше игрока."),
+        F("patrol", "Бродить без агра", "bool", "да", "Ходить туда-сюда, пока не заметил игрока."),
+    ]),
+    "blink": ("Телепорт к игроку", "Стоит (летун — парит) и раз в every секунд мигает в свободную точку рядом с игроком — уклоняется и меняет дистанцию.", [
+        F("every", "Каждые, с", "num", "3", "Раз в сколько секунд телепортируется (пока видит игрока)."),
+        F("gap", "Расстояние, px", "num", "110", "На каком расстоянии от игрока появится (случайная сторона)."),
+        F("offset_y", "Смещение по Y", "num", "-30", "Минус = выше игрока (летуны)."),
+    ]),
+    "burrow": ("Нырок под землю", "Цикл: несколько секунд на поверхности — несколько секунд под землёй. Под землёй моб неуязвим, не бьёт контактом и не атакует; выныривает прыжком в сторону игрока.", [
+        F("above", "На поверхности, с", "num", "2.4", "Сколько секунд моб на поверхности до следующего нырка."),
+        F("under", "Под землёй, с", "num", "1.6", "Сколько секунд моб сидит под землёй."),
+        F("pop", "Прыжок при выныривании", "num", "-420", "Скорость вверх (минус) при выходе из-под земли."),
+        F("emerge", "Вынырнуть ближе, px", "num", "60", "Если игрок подошёл вплотную — выныривает раньше времени."),
+    ]),
 }
 
 ATTACK_COMMON = [
@@ -134,6 +166,36 @@ ATTACK_TYPES = {
         F("gravity", "Гравитация прыжка", "num", "1800", "Сила тяжести во время прыжка."),
         F("track", "Цель следует за игроком", "bool", "да", "Пока замах, точка приземления следует за игроком."),
     ]),
+    "dash": ("Рывок", "Рывок по горизонтали через комнату: сносит игроков, об стену/край заканчивается. Земной не срывается с края.", [
+        F("speed", "Скорость рывка, px/с", "num", "620", "Как быстро летит вперёд."),
+        F("dist", "Длина рывка, px", "num", "380", "Наибольшее расстояние рывка."),
+        F("stop_on_wall", "Об стену заканчивать", "bool", "да", "Выключите — рывок продолжается до полной длины (сквозь край)."),
+    ]),
+    "beam": ("Луч", "Моб наводит горизонтальную линию до стены; на замахе линия видна, затем вся наносит урон. Уклониться — уйти с линии по высоте.", [
+        F("width", "Толщина луча, px", "num", "14", "Толщина линии урона."),
+    ]),
+    "bomb": ("Бомба (лужа)", "Бросок в точку игрока: взрыв при падении и лужа, которая наносит урон пока игрок в ней стоит.", [
+        F("radius", "Радиус взрыва, px", "num", "60", "Радиус разового урона в точке падения."),
+        F("zone_radius", "Радиус лужи, px", "num", "46", "0 — без лужи."),
+        F("zone_dps", "Урон лужи, hp/с", "num", "10", "Урон в секунду, пока игрок стоит в луже."),
+        F("zone_life", "Лужа живёт, с", "num", "4", "Сколько секунд лежит на полу."),
+        F("zone", "Вид лужи", "choice", "acid", "acid — кислота, fire — огонь, ice — лёд.", ("acid", "fire", "ice")),
+        F("track", "Цель следует за игроком", "bool", "да", "Пока замах, точка падения следует за игроком."),
+    ]),
+    "heal": ("Лечение союзников", "Восстанавливает здоровье раненым мобам в радиусе; применяет, только если есть кому лечить.", [
+        F("radius", "Радиус лечения, px", "num", "240", "Кого достаёт лечение."),
+        F("amount", "Лечение за раз", "num", "12", "Сколько здоровья восстанавливает каждому."),
+    ]),
+    "summon": ("Призыв мобов", "Рождает мелких мобов вокруг себя; призванные сразу агрятся. Всего не больше cap живых призванных.", [
+        F("mob", "Кого призывать", "text", "", "ID моба из списка мобов (например, spiderling)."),
+        F("count", "Сколько за раз", "int", "2", "Сколько рождается за одну атаку."),
+        F("cap", "Всего живых, шт", "int", "8", "Не больше призванных от этого моба одновременно (по счёту за всю жизнь)."),
+        F("hard_cap", "Мобов в комнате, шт", "int", "26", "Не призывает, если в комнате уже столько мобов."),
+    ]),
+    "kamikaze": ("Камикадзе", "Летит на игрока и взрывается при столкновении (сам при этом погибает).", [
+        F("speed", "Скорость, px/с", "num", "500", "Как быстро несётся на игрока."),
+        F("radius", "Радиус взрыва, px", "num", "80", "Радиус урона при столкновении."),
+    ]),
 }
 # значения по умолчанию для полей, которые зависят от вида атаки (показываются серым)
 ATTACK_DEFAULTS = {
@@ -141,6 +203,11 @@ ATTACK_DEFAULTS = {
     "circle": {"range": "radius × 0.9", "range_y": "999"},
     "shoot": {"range": "420", "range_y": "260", "active": "0.05"},
     "leap": {"range": "300", "range_y": "220", "min_range": "60"},
+    "dash": {"range": "420", "range_y": "70", "knockback": "260"},
+    "beam": {"range": "470", "range_y": "60", "active": "0.3"},
+    "bomb": {"range": "380", "range_y": "260", "active": "0.05", "damage": "взрыв"},
+    "heal": {"range": "999", "range_y": "999"},
+    "summon": {"range": "300", "range_y": "999"},
 }
 ATTACK_TEMPLATES = {
     "melee": {"type": "melee", "windup": 0.35, "active": 0.12, "recovery": 0.35, "cooldown": 1.2, "damage": 10, "reach": [40, 28]},
@@ -148,6 +215,15 @@ ATTACK_TEMPLATES = {
     "shoot": {"type": "shoot", "projectile": "bolt", "windup": 0.5, "cooldown": 2.0, "damage": 8, "range": 360},
     "leap": {"type": "leap", "range": 300, "min_range": 90, "windup": 0.45, "air_time": 0.6, "land_offset": 40, "radius": 55,
              "damage": 12, "recovery": 0.25, "cooldown": 2.8},
+    "dash": {"type": "dash", "range": 420, "range_y": 60, "windup": 0.55, "active": 0.9, "recovery": 0.6, "cooldown": 2.6,
+             "damage": 16, "speed": 620, "dist": 380, "knockback": 340},
+    "beam": {"type": "beam", "range": 470, "range_y": 60, "windup": 0.9, "active": 0.3, "recovery": 0.5, "cooldown": 3.6, "damage": 14, "width": 14},
+    "bomb": {"type": "bomb", "range": 360, "range_y": 260, "windup": 0.6, "active": 0.05, "recovery": 0.4, "cooldown": 3.2,
+             "damage": 8, "radius": 56, "zone_radius": 46, "zone_dps": 9, "zone_life": 3.5},
+    "heal": {"type": "heal", "windup": 0.7, "active": 0.05, "recovery": 0.5, "cooldown": 4.0, "damage": 0,
+             "radius": 260, "amount": 12},
+    "summon": {"type": "summon", "range": 300, "range_y": 999, "windup": 0.8, "active": 0.05, "recovery": 0.5, "cooldown": 5.0,
+               "damage": 0, "mob": "", "count": 2, "cap": 8, "interrupt": False},
 }
 ACTIVE_ANIM = {"leap": "jump"}          # как называется анимация фазы «удар»: Attack.anim() в attacks.py (по умолчанию attack)
 PHASES = ("windup", "active", "recovery")
@@ -474,7 +550,7 @@ def import_skin(src, mob_id, assets=None):
 
 # ---------------------------------------------------------------- проверки и ссылки
 def references(mob_id, data_dir=None):
-    """Где моба упоминают карты: ['maps.json: символ «r»', 'spikes: mob_pool', ...]."""
+    """Где моба упоминают карты: ['maps.json: символ «r»', 'spikes: mob_pool', 'hall: поле mobs']."""
     data_dir = Path(data_dir or DATA_DIR); out = []
     files = [data_dir / "maps.json"] + sorted((data_dir / "maps").glob("*.json"))
     for f in files:
@@ -484,6 +560,25 @@ def references(mob_id, data_dir=None):
             if isinstance(e, dict) and e.get("mob") == mob_id: out.append(f"{f.stem}: символ «{ch}» (легенда)")
         pool = d.get("mob_pool")
         if (isinstance(pool, dict) and mob_id in pool) or (isinstance(pool, list) and mob_id in pool): out.append(f"{f.stem}: mob_pool")
+        if isinstance(d.get("mobs"), list) and any(isinstance(e, dict) and e.get("mob") == mob_id for e in d["mobs"]):
+            out.append(f"{f.stem}: расстановка (поле mobs)")
+    return out
+
+
+def item_ids(data_dir=None):
+    """Все id предметов для лута: «random» + оружие (data/weapons.json) + предметы (assets/inventory.json -> items).
+    Только json — ни pygame, ни pygame-зависимых модулей: можно звать из редактора и тестов."""
+    data_dir = Path(data_dir) if data_dir else DATA_DIR
+    out, seen = ["random"], {"random"}
+    for path, key in ((data_dir / "weapons.json", None), (data_dir.parent / "assets" / "inventory.json", "items")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            ids = list(data) if key is None else list((data.get(key) or {}))
+        except Exception:
+            continue
+        for i in ids:
+            if isinstance(i, str) and i and i not in seen:
+                seen.add(i); out.append(i)
     return out
 
 
@@ -500,13 +595,33 @@ def validate(mobs, assets=None, projectiles=()):
         if m.get("move", {}).get("type", "chase") not in MOVES: add(f"неизвестный вид движения: {m['move'].get('type')}")
         ids = [a.get("id") for a in m.get("attacks", []) if a.get("id")]
         for d in {i for i in ids if ids.count(i) > 1}: add(f"два раза атака с id «{d}»")
+        for e in (m.get("loot") or []):   # лут (loot.py): записи {item, chance}
+            if not isinstance(e, dict):
+                add("лут: запись должна быть объектом {item, chance}"); continue
+            if e.get("item") not in item_ids(): add(f"лут: нет предмета «{e.get('item')}»")
+            ch = e.get("chance", 1)
+            if not isinstance(ch, (int, float)) or not 0 <= ch <= 1: add("лут: шанс должен быть числом 0..1")
+        cd = m.get("coins")   # монеты (loot.py): {chance, min, max}
+        if cd is not None:
+            if not isinstance(cd, dict): add("coins: должен быть объектом {chance, min, max}")
+            else:
+                ch = cd.get("chance", 0)
+                if not isinstance(ch, (int, float)) or not 0 <= ch <= 1: add("coins: chance — число 0..1")
+                for k in ("min", "max"):
+                    if k in cd and (not isinstance(cd[k], int) or cd[k] < 1): add(f"coins: {k} — целое от 1")
         for i, a in enumerate(m.get("attacks", [])):
             t = attack_title(i, a)
             if a.get("type") not in ATTACK_TYPES: add(f"атака {t}: неизвестный вид «{a.get('type')}»"); continue
             if a.get("next") and a["next"] not in ids: add(f"атака {t}: «следующая» ссылается на несуществующий id «{a['next']}»")
             pr = a.get("projectile")
             if a.get("type") == "shoot" and isinstance(pr, str) and projectiles and pr not in projectiles: add(f"атака {t}: нет снаряда «{pr}»")
+            if a.get("type") == "summon" and a.get("mob") not in mobs: add(f"атака {t}: нет моба для призыва «{a.get('mob') or '???'}»")
             for ph, name in (a.get("anims") or {}).items():
                 if isinstance(name, str) and name and anim_source(mid, m, name, assets)[1] == "none":
                     add(f"атака {t}: у анимации «{name}» нет кадров (фаза {ph})")
+        od = m.get("on_death") or {}
+        sp = od.get("split")
+        if isinstance(sp, dict) and sp.get("mob") not in mobs: add("смерть: разделение — нет моба «%s»" % (sp.get("mob") or "???"))
+        ex = od.get("explode")
+        if ex is not None and not isinstance(ex, dict): add("смерть: взрыв — должен быть объектом {damage, radius}")
     return out

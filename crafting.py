@@ -76,8 +76,7 @@ class ResourceDrop:
         d = def_of(s.rid)
         col = tuple(int(c) for c in d.get("color", [200, 200, 200]))
         glow = tuple(int(c) for c in d.get("glow", [255, 255, 255]))
-        bob = math.sin(pg.time.get_ticks() / 300) * 3
-        x, y = s.x, s.y - 12 + bob
+        x, y = s.x, s.y   # ресурс лежит НА земле (без парения; нижняя точка — на y)
         if vision:
             rad = 16 + int(math.sin(pg.time.get_ticks() / 90) * 3)
             surf = pg.Surface((rad * 2 + 8, rad * 2 + 8), pg.SRCALPHA)
@@ -85,7 +84,7 @@ class ResourceDrop:
             v.blit(surf, (x - rad - 4, y - rad - 4))
         img = _tex(d.get("image"), 30)
         if img:   # нарисованная в редакторе текстура (вкладка «Текстуры», assets/resources/<id>.png)
-            v.blit(img, img.get_rect(center=(int(x), int(y))))
+            v.blit(img, img.get_rect(midbottom=(int(x), int(y))))
             return
         pg.draw.polygon(v, col, [(x, y - 7), (x + 7, y), (x, y + 7), (x - 7, y)])
         pg.draw.polygon(v, tuple(int(c * .6) for c in col), [(x, y - 4), (x + 4, y), (x, y + 4), (x - 4, y)])
@@ -122,7 +121,7 @@ def scatter(room, override=None):
     out = []
     for c, r in cands[:n]:
         rid = random.choices(ids, weights=[wts[i] for i in ids])[0]
-        out.append(ResourceDrop(c * T + T / 2, (r + 1) * T - 10, rid))
+        out.append(ResourceDrop(c * T + T / 2, (r + 1) * T, rid))
     return out
 
 # ---------------- очки (зрение) ----------------
@@ -509,9 +508,9 @@ def cancel(g):
     if getattr(g, "placing", None): cancel_place(g)
     elif getattr(g, "crafting", None): _cancel_craft(g)
 
-_VISION_IMG = None   # статичная виньетка (не мерцает, в отличие от случайных точек каждый кадр)
-def draw_vision_filter(scr):
-    """Жёлтый фильтр очков инженера поверх кадра (аппроксимация референса с жёлтым свечением)."""
+_VISION_IMG = None   # процедурная виньетка (фолбэк) — рисуется, только если в assets/filters/vision/ нет своих кадров
+def _vision_procedural(scr, t, k):
+    """Процедурный жёлтый фильтр очков: база «дышит» по яркости, лёгкое мерцание, как у включённых очков; k — накат."""
     global _VISION_IMG
     if _VISION_IMG is None or _VISION_IMG.get_size() != (W, VIEW_H):
         vg = pg.Surface((W, VIEW_H), pg.SRCALPHA)
@@ -526,7 +525,15 @@ def draw_vision_filter(scr):
                                (rng.randint(0, W), rng.randint(0, 26)), (rng.randint(0, W), rng.randint(VIEW_H - 27, VIEW_H - 1))])
             pg.draw.circle(vg, dark, edge, rng.randint(60, 220))
         _VISION_IMG = vg
-    scr.blit(_VISION_IMG, (0, 0))
+    pulse = 0.78 + 0.22 * math.sin(t * 3.3)   # мягкое дыхание + лёгкое дрожание яркости
+    img = _VISION_IMG.copy(); img.set_alpha(int(255 * pulse * k))
+    scr.blit(img, (0, 0))
+
+def draw_vision_filter(scr, t=None):
+    """Фильтр «зрения» очков инженера поверх кадра. Свои кадры — assets/filters/vision/
+    (1.png, 2.png… + filter.json с fps; один filter.png — статичная картинка), иначе процедурная анимация."""
+    import filters
+    filters.draw(scr, "vision", fallback=_vision_procedural, t=t)
 
 def _recip_icon(v, rid, rc, x, y, selected=False):
     col = tuple(int(c) for c in rc.get("color", [255, 220, 120]))

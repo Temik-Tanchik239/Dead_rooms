@@ -13,7 +13,9 @@
   "pos": [612.5, 138.0],                — позиция героя в пикселях комнаты (x — левый край, y — верх)
   "char": "knight",                     — id героя, за которого играли
   "heroes": {"knight": {...}},          — снапшот КАЖДОГО героя забега (snapshot_player; swap.py может
-                                           держать g.heroes — dict cid->снапшот, сохраняется как есть)
+                                           держать g.heroes — dict cid->снапшот, сохраняется как есть;
+                                           у героя "cp": ["env_7_0", 12, 20] — точка возрождения
+                                           (checkpoint.py: id карты + клетка) или null)
   "came_from": {"env_8_0": "env_7_0"},  — Campaign.came_from (откуда пришли на каждую карту)
   "maps": {                             — состояние каждой посещённой карты (camp.maps)
     "env_8_0": {
@@ -21,8 +23,8 @@
       "locked": true,                   — заперты ли двери (в сейв пишется только при живых мобах)
       "boss_spawned": false,
       "mobs":  [["rotling", 320.5, 1370.0, 1.0, 41.0, -1], ...],  — [kind, x, y, scale, hp, dir]
-      "drops": [["W", 100.0, 200.0, "rusty_sword"], ["R", 64.0, 1500.0, "wood"], ...],
-               "W" — предмет (оружие/артефакт из инвентаря), "R" — ресурс инженера
+      "drops": [["W", 100.0, 200.0, "rusty_sword"], ["R", 64.0, 1500.0, "wood"], ["C", 120.0, 210.0, 5], ...],
+               "W" — предмет (оружие/артефакт из инвентаря), "R" — ресурс инженера, "C" — кучка монет (loot.py)
       "ct":    {"0": [18.0, 0, 0]},     — ящики: containers.state() {uid: [прочность, открыт, сдвиг]}
       "mc":    {"3": [1, 0.0]}          — механизмы: mechs.state() {id: [вкл, верх платформы]}
     }, ...
@@ -39,10 +41,16 @@
   • игра барда «прямо сейчас» (bd_play/bd_tick/bd_notice/bd_lock) — нота перестаёт звучать;
   • сетевые поля (pid/name/revive/downed/tp/hitc/kb) — сохранение только в одиночной игре.
 
+СЛОТЫ СЕЙВОВ: обычные сейвы — save_<N>.json (свободный номер подбирает _free_id), плюс один слот
+автосохранения чекпоинта — saves/autosave.json (autosave() перезаписывает его целиком); в списке
+list_saves он виден с id "autosave".
+
 ЧТО СОХРАНЯЕТСЯ (всё постоянное):
   hp/maxhp/mana, level/xp/xp_next, skills/item_skills/skill_index/skill_cooldowns, slots/bag/equip,
+  cast_power (сила каста по заклинаниям — планшет мага, spell_tablet.py),
   resources (склад инженера), last_weapon, goggles, hold_pool/hold_rest (запасы «потоков»),
-  выбранный бард-нот bd_note, усилители pl.amps, арбалеты: xb_ammo/xb_cd.
+  выбранный бард-нот bd_note, усилители pl.amps, арбалеты: xb_ammo/xb_cd,
+  cp (точка возрождения героя [id карты, клетка x, y] — checkpoint.py; None, если её нет).
 """
 import json
 import sys
@@ -50,7 +58,7 @@ from datetime import datetime
 from pathlib import Path
 
 from core import BASE, CFG, CHAR, FX, T, apply_character, char_ids
-from maps import Campaign, Drop
+from maps import Campaign, Drop, ground_y
 from mob import Mob, normalize
 from anim import clear_cache as anim_clear_cache
 import inventory
@@ -58,6 +66,7 @@ import crafting
 import containers
 import mechs
 import crossbow
+import loot
 
 VERSION = 1
 
@@ -105,8 +114,9 @@ def _num_of(save_id):
         return 0
 
 
-def _meta(doc, path):
-    """Человеческое описание сейва для меню (тот же вид, что и в list_saves)."""
+def _meta(doc, path, mtime=0.0):
+    """Человеческое описание сейва для меню (тот же вид, что и в list_saves).
+    mtime — время изменения файла (используется list_saves как тай-брейк сортировки)."""
     created = str(doc.get("created") or "")
     try:
         time = datetime.fromisoformat(created).strftime("%Y-%m-%d %H:%M")
@@ -126,7 +136,7 @@ def _meta(doc, path):
                 level[str(cid)] = 1
     return {"id": path.stem, "name": str(doc.get("name") or "Забег"), "time": time,
             "loop": int(doc.get("loop", 0)), "char": char, "chars": chars,
-            "level": level, "file": str(path)}
+            "level": level, "file": str(path), "mtime": float(mtime)}
 
 
 def _free_id():
@@ -141,6 +151,20 @@ def _free_id():
 def _live_mobs(mobs):
     """Живые обычные мобы (без манекенов F6) — только они держат двери и зачистку."""
     return [m for m in mobs if getattr(m, "hp", 0) > 0 and not getattr(m, "is_dummy", False)]
+
+
+def _cp_snapshot(cp):
+    """Точка возрождения героя (checkpoint.py) -> ["<id карты>", x, y] (целые) или None.
+    Невалидная (не кортеж/список из 3, нет id, координаты не числа) — None."""
+    if not isinstance(cp, (list, tuple)) or len(cp) != 3:
+        return None
+    mid, x, y = cp
+    if not isinstance(mid, str) or not mid:
+        return None
+    try:
+        return [str(mid), int(x), int(y)]
+    except (TypeError, ValueError):
+        return None
 
 
 # ---------------- снапшоты частей мира ----------------
@@ -164,9 +188,12 @@ def _mobs_snapshot(mobs):
 
 
 def _drops_snapshot(drops):
-    """Предметы и ресурсы на полу -> [["W", x, y, wid] | ["R", x, y, rid], ...]."""
+    """Предметы, ресурсы и монеты на полу -> [["W", x, y, wid] | ["R", x, y, rid] | ["C", x, y, n], ...]."""
     out = []
     for dr in drops or []:
+        if isinstance(dr, loot.Coin):   # кучка монет (loot.py)
+            out.append(["C", round(float(dr.x), 1), round(float(dr.y), 1), int(dr.n)])
+            continue
         rid = getattr(dr, "rid", None)
         if rid is not None:   # ресурс инженера (crafting.ResourceDrop)
             if crafting.is_resource(rid):
@@ -208,6 +235,10 @@ def _restore_drops(rows):
         if tag == "R":
             if crafting.is_resource(ident):
                 out.append(crafting.ResourceDrop(x, y, str(ident)))
+        elif tag == "C":   # кучка монет (loot.py)
+            try:
+                if int(ident) > 0: out.append(loot.Coin(x, y, ident))
+            except (TypeError, ValueError): pass
         elif inventory.is_item(ident):   # "W": оружие или предмет инвентаря
             out.append(Drop(x, y, str(ident)))
     return out
@@ -242,6 +273,8 @@ def _restore_map(camp, mid, msnap):
     r.cleared = bool(msnap.get("cleared"))
     r.boss_spawned = bool(msnap.get("boss_spawned"))
     r.drops = _restore_drops(msnap.get("drops"))
+    for d in r.drops:   # предметы лежат НА земле: в старых сейвах y мог висеть над полом
+        d.y = ground_y(r, d.x, d.y)
     rows = msnap.get("mobs") or []
     if r.cleared:            # зачищена: мобов нет, спавнить нечего
         r.spawned = True
@@ -291,6 +324,9 @@ def snapshot_player(pl):
         "skills": [str(s) for s in getattr(pl, "skills", [])],
         "item_skills": [str(s) for s in getattr(pl, "item_skills", [])],
         "skill_index": int(getattr(pl, "skill_index", 0)),
+        # Сила каста по заклинаниям (0..1) — планшет мага (spell_tablet.py); нули не храним
+        "cast_power": {str(k): round(float(v), 2) for k, v in getattr(pl, "cast_power", {}).items()
+                       if isinstance(v, (int, float)) and float(v) > 0.0},
         "skill_cooldowns": {str(k): round(float(v), 2)
                             for k, v in getattr(pl, "skill_cooldowns", {}).items() if v and float(v) > 0},
         "slots": slots,
@@ -311,6 +347,10 @@ def snapshot_player(pl):
         # арбалеты (Тень): выбранный снаряд и перезарядка каждого
         "xb_ammo": [int(v) for v in getattr(pl, "xb_ammo", [])],
         "xb_cd": [round(max(0.0, float(v)), 2) for v in getattr(pl, "xb_cd", [])],
+        # чекпоинт (checkpoint.py): точка возрождения героя ["<id карты>", клетка x, y] или None
+        "cp": _cp_snapshot(getattr(pl, "cp", None)),
+        # монеты (loot.py): счётчик героя, накопленный с мобов
+        "coins": int(getattr(pl, "coins", 0)),
     }
 
 
@@ -351,6 +391,11 @@ def restore_player(pl, snap):
         if k in pl.skill_cooldowns:
             try: pl.skill_cooldowns[k] = max(0.0, float(v))
             except (TypeError, ValueError): pass
+    # сила каста по заклинаниям (0..1) — планшет мага (spell_tablet.py)
+    pl.cast_power = {}
+    for k, v in (snap.get("cast_power") or {}).items():
+        try: pl.cast_power[str(k)] = max(0.0, min(1.0, float(v)))
+        except (TypeError, ValueError): pass
     # «потоки»: запасы и паузы восстановления
     pl.hold_pool = {}
     for k, v in (snap.get("hold_pool") or {}).items():
@@ -380,6 +425,21 @@ def restore_player(pl, snap):
         except (IndexError, TypeError, ValueError): pl.xb_ammo[i] = 0
         try: pl.xb_cd[i] = max(0.0, float(cds[i]))
         except (IndexError, TypeError, ValueError): pl.xb_cd[i] = 0.0
+    # чекпоинт (checkpoint.py): точка возрождения героя. Валидная (id карты есть в CFG["map_defs"],
+    # координаты — числа) — восстановить; иначе сброс (старый сейв без поля тоже даёт None, не падает).
+    cp = snap.get("cp")
+    if (isinstance(cp, (list, tuple)) and len(cp) == 3
+            and isinstance(cp[0], str) and cp[0] in CFG.get("map_defs", {})):
+        try:
+            pl.cp = (str(cp[0]), int(cp[1]), int(cp[2]))
+        except (TypeError, ValueError):
+            pl.cp = None
+    else:
+        pl.cp = None
+    # монеты (loot.py): счётчик героя; в старом сейве поля нет — остаётся текущее значение (0 у свежего героя)
+    try: pl.coins = max(0, int(snap.get("coins", getattr(pl, "coins", 0))))
+    except (TypeError, ValueError): pass
+    inventory.sync_stack(pl)   # ячейка «монеты» в рюкзаке: есть при монетах > 0 (в старых сейвах её нет)
     # пересчёт бонусов экипировки (maxhp/maxmana от аксессуаров) и снап навыков предметов
     if hasattr(pl, "skills"):
         inventory.on_equipment_changed(None, pl)
@@ -392,8 +452,10 @@ def restore_player(pl, snap):
 
 # ---------------- сохранение / загрузка ----------------
 
-def save(g, label=None):
-    """Полный снапшот забега g -> saves/save_<N>.json. Возвращает meta (как в list_saves)."""
+def save(g, label=None, save_id=None):
+    """Полный снапшот забега g -> saves/save_<N>.json (или saves/<save_id>.json, если задан
+    save_id: имя нормализуется как в _read — без .json/путей, существующий файл перезаписывается).
+    Возвращает meta (как в list_saves)."""
     if getattr(g, "net", None) is not None:
         raise RuntimeError("в сетевой игре сохранение недоступно")
     pl = getattr(g, "pl", None)
@@ -414,13 +476,23 @@ def save(g, label=None):
         "came_from": {str(k): str(v) for k, v in getattr(camp, "came_from", {}).items()},
         "maps": {str(mid): _map_snapshot(m) for mid, m in camp.maps.items()},
     }
-    path = SAVES_DIR / f"{_free_id()}.json"
+    if save_id is not None:
+        path = _resolve_path(save_id)   # нормализация имени + защита от путей вне saves/; перезапись
+    else:
+        path = SAVES_DIR / f"{_free_id()}.json"
     try:
         path.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
     except OSError as e:
         raise RuntimeError(f"не удалось записать {path.name}: {e}") from None
     print(f"[сохранения] забег сохранён: {path.name} — {doc['name']}")
     return _meta(doc, path)
+
+
+def autosave(g):
+    """Автосохранение чекпоинта: один слот saves/autosave.json, перезаписывается каждый раз
+    (id "autosave", в списке сейвов виден с именем «Чекпоинт · дата время»). В сетевой игре —
+    RuntimeError (бросает save(), он проверяет g.net)."""
+    return save(g, label=f"Чекпоинт · {datetime.now():%d.%m.%Y %H:%M}", save_id="autosave")
 
 
 def restore(g, save_id):
@@ -510,15 +582,23 @@ def restore(g, save_id):
 
 
 def list_saves():
-    """Все сейвы, новые первыми: [{id, name, time, loop, char, chars, level, file}, ...]."""
+    """Все сейвы, новые первыми: [{id, name, time, loop, char, chars, level, file}, ...].
+    Слот автосохранения (autosave.json, id "autosave") тоже входит; сортировка — по времени
+    создания, так что чекпоинт встаёт на своё место независимо от имени файла."""
     out = []
-    for p in SAVES_DIR.glob("save_*.json"):
+    paths = list(SAVES_DIR.glob("save_*.json"))
+    auto = SAVES_DIR / "autosave.json"   # автосохранение чекпоинта — вне шаблона save_*, добавляем отдельно
+    if auto.is_file():
+        paths.append(auto)
+    for p in paths:
         try:
             doc = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, ValueError) as e:
             print(f"[сохранения] файл {p.name} не читается: {e}")
             continue
         if isinstance(doc, dict):
-            out.append(_meta(doc, p))
-    out.sort(key=lambda m: (m["time"], _num_of(m["id"])), reverse=True)
+            try: mtime = p.stat().st_mtime   # точное время файла: сейвы одной минуты не путаются местами
+            except OSError: mtime = 0.0
+            out.append(_meta(doc, p, mtime))
+    out.sort(key=lambda m: (m["time"], m["mtime"], _num_of(m["id"])), reverse=True)
     return out

@@ -31,6 +31,7 @@
 "h0" (рука) или "ehead" (слот экипировки по id); их применяет хост (Game.apply_action), рюкзак и экипировка едут в снимке игрока
 (ключи "bg" и "eq").
 """
+import math
 import re
 import pygame as pg
 from core import CFG, ASSETS, W, VIEW_H, deep_merge, use_char
@@ -184,6 +185,35 @@ def init(pl):
 def is_item(wid):
     """Известен ли такой предмет: оружие из weapons.json или предмет из assets/inventory.json -> items."""
     return isinstance(wid, str) and (wid in CFG["weapons"] or wid in CFG.get("weapons_base", {}) or wid in (cfg().get("items") or {}))
+
+
+# ---------------- штабелируемые «кошельковые» предметы (монеты) ----------------
+# Монета — обычный предмет инвентаря: в рюкзаке занимает ОДНУ ячейку «coin», а количество живёт
+# в поле героя из items["coin"]."count" (pl.coins — тот же счётчик, что в HUD/сейве/сети).
+
+def wallet_field(wid):
+    """Поле-кошелёк штабелируемого предмета (items[wid]."count"): у монет «coins», иначе None."""
+    f = (cfg().get("items") or {}).get(wid, {}).get("count") if isinstance(wid, str) else None
+    return str(f) if f else None
+
+def ensure_stack(pl, wid="coin"):
+    """Гарантировать ячейку штабелируемого предмета в рюкзаке (счётчик — в поле героя). False — рюкзак полон."""
+    if wid not in (cfg().get("items") or {}): return True   # предмета нет — ячейка не нужна
+    b = bag(pl)
+    if wid in b: return True
+    if None in b: b[b.index(None)] = wid; return True
+    return False   # рюкзак полон: монеты копятся в счётчике, ячейка появится позже (sync_stack)
+
+def sync_stack(pl, wid="coin"):
+    """Ячейка штабелируемого предмета следует за счётчиком: есть при n>0, убирается при 0
+    (после подбора/выброса/загрузки старого сейва)."""
+    f = wallet_field(wid)
+    if not f: return
+    b = bag(pl)
+    if int(getattr(pl, f, 0) or 0) <= 0:
+        if wid in b: b[b.index(wid)] = None
+    else:
+        ensure_stack(pl, wid)
 
 # ---------------- ресурсы (склад инженера: древесина, металл, кристалл, огонь) ----------------
 # Ресурсы не лежат в рюкзаке поштучно — они копятся на отдельном «складе» pl.resources = {id: количество}
@@ -470,10 +500,20 @@ def drop(g, pl, cell):
     wid = get(pl, cell)
     if wid is None: return
     from maps import Drop
+    f = wallet_field(wid)
+    if f:   # монеты и прочие штабелируемые: выбрасывается ВСЯ стопка одной кучкой, счётчик обнуляется
+        import loot
+        n = int(getattr(pl, f, 0) or 0)
+        put(pl, cell, None)
+        if n > 0:
+            setattr(pl, f, 0)
+            g.room.drops.append(loot.Coin(pl.cx + pl.face * 22, pl.y + pl.h, n))
+            _say(g, pl, "dropped", name=item_info(wid)["name"])
+        return
     put(pl, cell, None)
     if cell[0] == "h": _hands_changed(pl)
     if cell[0] == "e": on_equipment_changed(g, pl)
-    g.room.drops.append(Drop(pl.cx + pl.face * 22, pl.y + pl.h - 14, wid))
+    g.room.drops.append(Drop(pl.cx + pl.face * 22, pl.y + pl.h, wid))   # предмет падает на землю (низ — на полу)
     _say(g, pl, "dropped", name=item_info(wid)["name"])
 
 def pickup(g, pl, dr):
@@ -487,6 +527,13 @@ def pickup(g, pl, dr):
         _say(g, pl, "picked_resource", name=item_info(dr.wid)["name"])
         return True
     is_weapon = dr.wid in CFG["weapons"]; opened = [n for n, ok in enumerate(open_hands(pl)) if ok]
+    f = wallet_field(dr.wid)
+    if f:   # штабелируемый «кошельковый» предмет (монеты): +1 в счётчик героя, ячейка — одна на стопку
+        setattr(pl, f, int(getattr(pl, f, 0) or 0) + 1)
+        ensure_stack(pl, dr.wid)
+        if dr in g.room.drops: g.room.drops.remove(dr)
+        _say(g, pl, "picked_bag", name=item_info(dr.wid)["name"])
+        return True
     if is_weapon and c.get("pickup_mode", "bag") != "bag" and opened: return False   # старый режим: обмен с рукой
     b = bag(pl); name = item_info(dr.wid)["name"]
     if is_weapon and any(pl.slots[n] is None for n in opened if n < len(pl.slots)):   # есть свободная открытая рука — оружие сразу в руку
@@ -564,6 +611,34 @@ def floor_icon(v, wid, x, y, box=32):
     if img: v.blit(img, img.get_rect(center=(int(x), int(y)))); return True
     return False
 
+def draw_floor(v, wid, x, y, t_ms=None):
+    """Предмет, лежащий НА земле: нижняя точка картинки на (x, y). «Анимация лежания» задаётся у
+    предмета полем floor (items[wid].floor в assets/inventory.json или floor у оружия в weapons.json):
+      {"anim": "spin", "period": 0.9, "amp": 2.5} — крутится на ребре (сжатие по X) и приподнимается —
+          в стиле старых игр (монета в Марио); period — сек на оборот, amp — высота подпрыга, px;
+      {"anim": "bob", "period": 1.2, "amp": 3} — лежит и слегка подпрыгивает.
+    Без floor предмет просто лежит. False — картинки нет (вызывающий рисует запасной вариант)."""
+    spec = ((cfg().get("items") or {}).get(wid) or {}).get("floor")
+    if spec is None: spec = (CFG["weapons"].get(wid) or {}).get("floor")
+    spec = spec if isinstance(spec, dict) else {}
+    anim = str(spec.get("anim") or "")
+    t = (pg.time.get_ticks() if t_ms is None else int(t_ms)) / 1000.0
+    period = max(0.2, float(spec.get("period", 0.9))); amp = max(0.0, float(spec.get("amp", 2)))
+    ph = (t / period) * 2 * math.pi
+    hop = amp * max(0.0, math.sin(ph)) if anim else 0.0
+    if wid in CFG["weapons"]:
+        path, dw, dh, _ = weapon.info(wid); k = 36 / max(dw, dh)
+        img = sprite(path, max(1, round(dw * k)), max(1, round(dh * k)))
+    else:
+        img = _icon(wid, 32)
+    if not img: return False
+    w0, h0 = img.get_size()
+    if anim == "spin":   # крутится на ребре: ширина дышит |cos|, низ остаётся на земле
+        w = max(2, round(w0 * abs(math.cos(ph))))
+        if w != w0: img = pg.transform.smoothscale(img, (w, h0))
+    v.blit(img, img.get_rect(midbottom=(int(x), int(y - hop))))
+    return True
+
 # ---------------- раскладка и рисование ----------------
 def _col(v, default):
     try: return tuple(max(0, min(255, int(x))) for x in v[:3])
@@ -634,11 +709,15 @@ def _fit(text, font, width):
     while text and font.size(text + "…")[0] > width: text = text[:-1]
     return text + "…"
 
-def _draw_item(scr, wid, rect, size, small, show_name):
+def _draw_item(scr, wid, rect, size, small, show_name, pl=None):
     c = cfg(); inf = item_info(wid); cy = rect.centery - (6 if show_name else 0)
     img = _icon(wid, int(size))
     if img: scr.blit(img, img.get_rect(center=(rect.centerx, cy)))
     else: pg.draw.polygon(scr, inf["color"], [(rect.centerx, cy - 10), (rect.centerx + 10, cy), (rect.centerx, cy + 10), (rect.centerx - 10, cy)])
+    f = wallet_field(wid)   # штабелируемые предметы (монеты): количество поверх ячейки
+    if f and pl is not None:
+        t = small.render("×" + str(max(0, int(getattr(pl, f, 0) or 0))), True, _col(c.get("count_color"), (255, 214, 120)))
+        scr.blit(t, (rect.right - t.get_width() - 3, rect.bottom - t.get_height() - 2))
     if show_name:
         t = small.render(_fit(inf["name"], small, rect.w - 6), True, _col(c.get("name_color"), (225, 225, 240)))
         scr.blit(t, (rect.centerx - t.get_width() // 2, rect.bottom - t.get_height() - 3))
@@ -705,16 +784,16 @@ def draw(g):
         under = cell_at(pl, mouse); src, hwid = held(g); show_names = bool(c.get("show_names", True))
         verdict = None   # во время переноса: можно ли положить сюда (цвет рамки под курсором)
         if src and under and under != src: verdict = _col(c.get("valid_border") if check_move(pl, src, under)[0] else c.get("invalid_border"), (230, 90, 90))
-        def cell_view(cell, rect, slot_img, size):
+        def cell_view(cell, rect, slot_img, size, pl=None):
             wid = get(pl, cell)
             if wid is not None and not is_item(wid): wid = None
             carried = cell == src
             _draw_slot(scr, rect, slot_img, verdict if (cell == under and verdict) else None, cell == under, item_info(wid)["color"] if wid and not carried else None)
-            if wid and not carried: _draw_item(scr, wid, rect, size, small, show_names)
-        for n, r in enumerate(L["bag"]): cell_view(("b", n), r, c.get("slot_image"), c.get("icon_size", 52))
+            if wid and not carried: _draw_item(scr, wid, rect, size, small, show_names, pl)
+        for n, r in enumerate(L["bag"]): cell_view(("b", n), r, c.get("slot_image"), c.get("icon_size", 52), pl)
         names = c.get("hand_names", ["ЛКМ", "ПКМ"])
         for n, r in enumerate(L["hand"]):
-            cell_view(("h", n), r, c.get("hand_slot_image") or c.get("slot_image"), c.get("hand_icon_size", 70))
+            cell_view(("h", n), r, c.get("hand_slot_image") or c.get("slot_image"), c.get("hand_icon_size", 70), pl)
             k = font.render(str(names[n]) if n < len(names) else str(n + 1), True, _col(c.get("hand_key_color"), (255, 230, 150))); scr.blit(k, (r.x + 6, r.y + 4))
             if not opened[n]:   # рука занята способностью героя: затемнить и подписать
                 veil = pg.Surface(r.size, pg.SRCALPHA); pg.draw.rect(veil, (8, 8, 16, 165), veil.get_rect(), border_radius=int(c.get("slot_corner_radius", 6))); scr.blit(veil, r)

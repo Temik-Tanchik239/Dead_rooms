@@ -1,358 +1,1026 @@
 {
- "bolt": {
-  "speed": 260,
-  "size": 5,
-  "skin": "projectiles/bolt_1.png",
-  "color": [
-   200,
-   120,
-   255
-  ],
-  "life": 2.5,
-  "knockback": 120,
-  "draw": [
-   48,
-   48
-  ]
- },
- "arrow": {
-  "speed": 620,
-  "size": 4,
-  "color": [
-   240,
-   220,
-   150
-  ],
-  "life": 1.2,
-  "knockback": 140,
-  "skin": "projectiles/arrow.png",
-  "draw": [
-   32,
-   8
-  ]
- },
- "flask_fire": {
-  "speed": 320,
-  "vy": -260,
-  "gravity": 1100,
-  "aoe": 90,
-  "size": 7,
-  "color": [
-   255,
-   140,
-   40
-  ],
-  "life": 2,
-  "knockback": 260,
-  "skin": "projectiles/flask_fire.png",
-  "draw": [
-   26,
-   21
-  ]
- },
- "homing_orb": {
-  "speed": 170,
-  "size": 6,
-  "color": [
-   120,
-   255,
-   200
-  ],
-  "life": 4,
-  "homing": {
-   "rate": 2.2,
-   "delay": 0.25
+  "bolt": {
+    "speed": 260,
+    "size": 5,
+    "skin": "projectiles/bolt_1.png",
+    "color": [
+      200,
+      120,
+      255
+    ],
+    "life": 2.5,
+    "knockback": 120,
+    "draw": [
+      48,
+      48
+    ]
   },
-  "skin": "projectiles/homing_orb.png",
-  "draw": [
-   30,
-   25
-  ]
- },
- "wave_bolt": {
-  "speed": 210,
-  "size": 5,
-  "color": [
-   255,
-   200,
-   120
-  ],
-  "life": 3,
-  "wave": {
-   "amp": 18,
-   "freq": 2.5
+  "arrow": {
+    "speed": 620,
+    "size": 4,
+    "color": [
+      240,
+      220,
+      150
+    ],
+    "life": 1.2,
+    "knockback": 140,
+    "skin": "projectiles/arrow.png",
+    "draw": [
+      32,
+      8
+    ]
   },
-  "skin": "projectiles/wave_bolt.png",
-  "draw": [
-   34,
-   20
-  ]
- },
- "ember": {
-  "speed": 80,
-  "accel": 520,
-  "max_speed": 430,
-  "size": 6,
-  "color": [
-   255,
-   110,
-   60
-  ],
-  "life": 2.5,
-  "skin": "projectiles/ember.png",
-  "draw": [
-   38,
-   18
-  ]
- },
- "bouncy_bomb": {
-  "speed": 280,
-  "vy": -220,
-  "gravity": 900,
-  "bounces": 3,
-  "bounce_damp": 0.7,
-  "aoe": 70,
-  "size": 7,
-  "color": [
-   200,
-   200,
-   90
-  ],
-  "life": 3,
-  "skin": "projectiles/bouncy_bomb.png",
-  "draw": [
-   22,
-   24
-  ],
-  "rotate": false
- },
- "splitter": {
-  "speed": 200,
-  "size": 7,
-  "color": [
-   255,
-   90,
-   160
-  ],
-  "life": 0.9,
-  "split": {
-   "into": "shard",
-   "count": 6,
-   "ring": true
+  "flask_fire": {
+    "speed": 320,
+    "vy": -260,
+    "gravity": 1100,
+    "aoe": 90,
+    "size": 7,
+    "color": [
+      255,
+      140,
+      40
+    ],
+    "life": 2,
+    "knockback": 260,
+    "skin": "projectiles/flask_fire.png",
+    "draw": [
+      26,
+      21
+    ]
   },
-  "skin": "projectiles/splitter.png",
-  "draw": [
-   26,
-   26
-  ]
- },
- "shard": {
-  "speed": 240,
-  "size": 3,
-  "color": [
-   255,
-   160,
-   200
-  ],
-  "life": 1.2,
-  "knockback": 60,
-  "skin": "projectiles/shard.png",
-  "draw": [
-   20,
-   10
-  ]
- },
- "spear": {
-  "speed": 520,
-  "size": 4,
-  "color": [
-   220,
-   220,
-   255
-  ],
-  "life": 1.0,
-  "pierce": 3,
-  "knockback": 200,
-  "skin": "projectiles/spear.png",
-  "draw": [
-   58,
-   8
-  ]
- },
- "fire_bolt": {
-  "speed": 440,
-  "size": 6,
-  "color": [
-   255,
-   140,
-   50
-  ],
-  "life": 1.6,
-  "aoe": 48,
-  "knockback": 180,
-  "draw": [
-   30,
-   20
-  ]
- },
- "ice_bolt": {
-  "speed": 420,
-  "size": 6,
-  "color": [
-   150,
-   225,
-   255
-  ],
-  "life": 1.6,
-  "knockback": 120,
-  "effect": {
-   "freeze": 2.0
+  "homing_orb": {
+    "speed": 170,
+    "size": 6,
+    "color": [
+      120,
+      255,
+      200
+    ],
+    "life": 4,
+    "homing": {
+      "rate": 2.2,
+      "delay": 0.25
+    },
+    "skin": "projectiles/homing_orb.png",
+    "draw": [
+      30,
+      25
+    ]
   },
-  "draw": [
-   28,
-   16
-  ]
- },
- "arcane_bolt": {
-  "speed": 360,
-  "size": 6,
-  "color": [
-   190,
-   130,
-   255
-  ],
-  "life": 2.5,
-  "pierce": 2,
-  "knockback": 100,
-  "homing": {
-   "rate": 2.0,
-   "delay": 0.2
+  "wave_bolt": {
+    "speed": 210,
+    "size": 5,
+    "color": [
+      255,
+      200,
+      120
+    ],
+    "life": 3,
+    "wave": {
+      "amp": 18,
+      "freq": 2.5
+    },
+    "skin": "projectiles/wave_bolt.png",
+    "draw": [
+      34,
+      20
+    ]
   },
-  "draw": [
-   28,
-   24
-  ]
- },
- "lightning_bolt": {
-  "speed": 780,
-  "size": 7,
-  "color": [
-   150,
-   205,
-   255
-  ],
-  "life": 2.5,
-  "knockback": 120,
-  "homing": {
-   "rate": 16,
-   "range": 640
+  "ember": {
+    "speed": 80,
+    "accel": 520,
+    "max_speed": 430,
+    "size": 6,
+    "color": [
+      255,
+      110,
+      60
+    ],
+    "life": 2.5,
+    "skin": "projectiles/ember.png",
+    "draw": [
+      38,
+      18
+    ]
   },
-  "chain": 5,
-  "chain_range": 280,
-  "draw": [
-   40,
-   16
-  ]
- },
- "xbow_arrow": {
-  "speed": 720,
-  "size": 4,
-  "color": [
-   240,
-   225,
-   160
-  ],
-  "life": 1.1,
-  "knockback": 140,
-  "skin": "projectiles/xbow_arrow.png",
-  "draw": [
-   40,
-   9
-  ],
-  "hit_stop": 0
- },
- "xbow_fire": {
-  "speed": 600,
-  "size": 5,
-  "color": [
-   255,
-   140,
-   50
-  ],
-  "life": 1.2,
-  "aoe": 30,
-  "knockback": 120,
-  "effect": {
-   "burn": {
-    "time": 3,
-    "dps": 7
-   }
+  "bouncy_bomb": {
+    "speed": 280,
+    "vy": -220,
+    "gravity": 900,
+    "bounces": 3,
+    "bounce_damp": 0.7,
+    "aoe": 70,
+    "size": 7,
+    "color": [
+      200,
+      200,
+      90
+    ],
+    "life": 3,
+    "skin": "projectiles/bouncy_bomb.png",
+    "draw": [
+      22,
+      24
+    ],
+    "rotate": false
   },
-  "frames": "projectiles/xbow_fire",
-  "fps": 14,
-  "draw": [
-   40,
-   11
-  ],
-  "hit_stop": 0,
-  "shake": 0
- },
- "xbow_heavy": {
-  "speed": 860,
-  "size": 5,
-  "color": [
-   170,
-   195,
-   235
-  ],
-  "life": 1.0,
-  "pierce": 2,
-  "knockback": 340,
-  "skin": "projectiles/xbow_heavy.png",
-  "draw": [
-   52,
-   11
-  ],
-  "hit_stop": 0
- },
- "pick": {
-  "speed": 720,
-  "vy": -60,
-  "gravity": 420,
-  "size": 5,
-  "color": [
-   255,
-   210,
-   120
-  ],
-  "life": 1.2,
-  "aoe": 105,
-  "knockback": 0,
-  "shake": 0,
-  "hit_stop": 0,
-  "effect": {
-   "stun": 2.5
+  "splitter": {
+    "speed": 200,
+    "size": 7,
+    "color": [
+      255,
+      90,
+      160
+    ],
+    "life": 0.9,
+    "split": {
+      "into": "shard",
+      "count": 6,
+      "ring": true
+    },
+    "skin": "projectiles/splitter.png",
+    "draw": [
+      26,
+      26
+    ]
   },
-  "skin": "projectiles/pick.png",
-  "draw": [
-   22,
-   24
-  ],
-  "rotate": false
- },
- "turret_bolt": {
-  "speed": 380,
-  "size": 4,
-  "color": [
-   150,
-   210,
-   255
-  ],
-  "life": 1.6,
-  "knockback": 60,
-  "draw": [
-   24,
-   24
-  ]
- }
+  "shard": {
+    "speed": 240,
+    "size": 3,
+    "color": [
+      255,
+      160,
+      200
+    ],
+    "life": 1.2,
+    "knockback": 60,
+    "skin": "projectiles/shard.png",
+    "draw": [
+      20,
+      10
+    ]
+  },
+  "spear": {
+    "speed": 520,
+    "size": 4,
+    "color": [
+      220,
+      220,
+      255
+    ],
+    "life": 1.0,
+    "pierce": 3,
+    "knockback": 200,
+    "skin": "projectiles/spear.png",
+    "draw": [
+      58,
+      8
+    ]
+  },
+  "fire_bolt": {
+    "speed": 440,
+    "size": 6,
+    "color": [
+      255,
+      140,
+      50
+    ],
+    "life": 1.6,
+    "aoe": 48,
+    "knockback": 180,
+    "draw": [
+      30,
+      20
+    ]
+  },
+  "ice_bolt": {
+    "speed": 420,
+    "size": 6,
+    "color": [
+      150,
+      225,
+      255
+    ],
+    "life": 1.6,
+    "knockback": 120,
+    "effect": {
+      "freeze": 2.0
+    },
+    "draw": [
+      28,
+      16
+    ]
+  },
+  "arcane_bolt": {
+    "speed": 360,
+    "size": 6,
+    "color": [
+      190,
+      130,
+      255
+    ],
+    "life": 2.5,
+    "pierce": 2,
+    "knockback": 100,
+    "homing": {
+      "rate": 2.0,
+      "delay": 0.2
+    },
+    "draw": [
+      28,
+      24
+    ]
+  },
+  "lightning_bolt": {
+    "speed": 780,
+    "size": 7,
+    "color": [
+      150,
+      205,
+      255
+    ],
+    "life": 2.5,
+    "knockback": 120,
+    "homing": {
+      "rate": 16,
+      "range": 640
+    },
+    "chain": 5,
+    "chain_range": 280,
+    "draw": [
+      40,
+      16
+    ]
+  },
+  "xbow_arrow": {
+    "speed": 720,
+    "size": 4,
+    "color": [
+      240,
+      225,
+      160
+    ],
+    "life": 1.1,
+    "knockback": 140,
+    "skin": "projectiles/xbow_arrow.png",
+    "draw": [
+      40,
+      9
+    ],
+    "hit_stop": 0
+  },
+  "xbow_fire": {
+    "speed": 600,
+    "size": 5,
+    "color": [
+      255,
+      140,
+      50
+    ],
+    "life": 1.2,
+    "aoe": 30,
+    "knockback": 120,
+    "effect": {
+      "burn": {
+        "time": 3,
+        "dps": 7
+      }
+    },
+    "frames": "projectiles/xbow_fire",
+    "fps": 14,
+    "draw": [
+      40,
+      11
+    ],
+    "hit_stop": 0,
+    "shake": 0
+  },
+  "xbow_heavy": {
+    "speed": 860,
+    "size": 5,
+    "color": [
+      170,
+      195,
+      235
+    ],
+    "life": 1.0,
+    "pierce": 2,
+    "knockback": 340,
+    "skin": "projectiles/xbow_heavy.png",
+    "draw": [
+      52,
+      11
+    ],
+    "hit_stop": 0
+  },
+  "pick": {
+    "speed": 720,
+    "vy": -60,
+    "gravity": 420,
+    "size": 5,
+    "color": [
+      255,
+      210,
+      120
+    ],
+    "life": 1.2,
+    "aoe": 105,
+    "knockback": 0,
+    "shake": 0,
+    "hit_stop": 0,
+    "effect": {
+      "stun": 2.5
+    },
+    "skin": "projectiles/pick.png",
+    "draw": [
+      22,
+      24
+    ],
+    "rotate": false
+  },
+  "turret_bolt": {
+    "speed": 380,
+    "size": 4,
+    "color": [
+      150,
+      210,
+      255
+    ],
+    "life": 1.6,
+    "knockback": 60,
+    "draw": [
+      24,
+      24
+    ]
+  },
+  "pellet": {
+    "speed": 560,
+    "size": 4,
+    "color": [
+      255,
+      214,
+      120
+    ],
+    "life": 0.5,
+    "knockback": 90
+  },
+  "arcane_boomerang": {
+    "speed": 430,
+    "size": 8,
+    "color": [
+      190,
+      130,
+      255
+    ],
+    "life": 2.2,
+    "knockback": 140,
+    "pierce": 999,
+    "ghost": true,
+    "boomerang": {
+      "return": 0.42,
+      "return_speed": 560
+    },
+    "rotate": true,
+    "skin": "projectiles/arcane_boomerang.png",
+    "draw": [
+      30,
+      30
+    ]
+  },
+  "blackhole_core": {
+    "speed": 0,
+    "size": 10,
+    "color": [
+      110,
+      70,
+      190
+    ],
+    "life": 2.8,
+    "ghost": true,
+    "vortex": {
+      "radius": 160,
+      "force": 280,
+      "damage": 4,
+      "interval": 0.5
+    },
+    "rotate": true,
+    "draw": [
+      46,
+      46
+    ],
+    "no_touch": true
+  },
+  "mana_mine": {
+    "speed": 250,
+    "vy": -240,
+    "gravity": 1050,
+    "bounces": 99,
+    "bounce_damp": 0.45,
+    "size": 7,
+    "color": [
+      150,
+      200,
+      255
+    ],
+    "life": 14,
+    "aoe": 84,
+    "knockback": 260,
+    "shake": 0.25,
+    "mine": {
+      "radius": 48,
+      "arm": 0.7
+    },
+    "effect": {
+      "stun": 0.8
+    },
+    "skin": "projectiles/mana_mine.png",
+    "draw": [
+      26,
+      28
+    ]
+  },
+  "frost_zone": {
+    "speed": 0,
+    "size": 9,
+    "color": [
+      140,
+      220,
+      255
+    ],
+    "life": 4.0,
+    "ghost": true,
+    "zone": {
+      "radius": 82,
+      "interval": 0.6
+    },
+    "effect": {
+      "freeze": 0.7
+    },
+    "knockback": 0,
+    "draw": [
+      38,
+      38
+    ],
+    "no_touch": true
+  },
+  "storm_core": {
+    "speed": 0,
+    "size": 8,
+    "color": [
+      255,
+      150,
+      60
+    ],
+    "life": 2.6,
+    "ghost": true,
+    "storm": {
+      "strikes": 7,
+      "interval": 0.32,
+      "radius": 130,
+      "aoe": 48
+    },
+    "effect": {
+      "burn": {
+        "time": 2,
+        "dps": 6
+      }
+    },
+    "draw": [
+      36,
+      36
+    ],
+    "no_touch": true
+  },
+  "rain_marker": {
+    "speed": 0,
+    "size": 6,
+    "color": [
+      150,
+      120,
+      220
+    ],
+    "life": 1.3,
+    "ghost": true,
+    "rain": {
+      "into": "shadow_dagger",
+      "count": 10,
+      "interval": 0.11,
+      "spread": 150,
+      "height": 180
+    },
+    "draw": [
+      24,
+      24
+    ],
+    "no_touch": true
+  },
+  "shadow_dagger": {
+    "speed": 330,
+    "size": 5,
+    "color": [
+      190,
+      150,
+      255
+    ],
+    "life": 2.0,
+    "knockback": 90,
+    "gravity": 240,
+    "skin": "projectiles/shadow_dagger.png",
+    "draw": [
+      26,
+      10
+    ]
+  },
+  "orbit_blade": {
+    "speed": 0,
+    "size": 7,
+    "color": [
+      120,
+      255,
+      210
+    ],
+    "life": 4.5,
+    "ghost": true,
+    "pierce": 999,
+    "orbit": {
+      "radius": 48,
+      "speed": 3.4,
+      "rehit": 0.55
+    },
+    "knockback": 60,
+    "skin": "projectiles/orbit_blade.png",
+    "draw": [
+      24,
+      24
+    ]
+  },
+  "prism_orb": {
+    "speed": 300,
+    "size": 8,
+    "color": [
+      240,
+      160,
+      255
+    ],
+    "life": 1.4,
+    "knockback": 120,
+    "split": {
+      "into": "prism_shard",
+      "count": 8,
+      "ring": true,
+      "damage": 10
+    },
+    "skin": "projectiles/prism_orb.png",
+    "draw": [
+      30,
+      30
+    ]
+  },
+  "prism_shard": {
+    "speed": 320,
+    "size": 4,
+    "color": [
+      255,
+      190,
+      255
+    ],
+    "life": 1.0,
+    "knockback": 60,
+    "draw": [
+      18,
+      8
+    ]
+  },
+  "steel_boomerang": {
+    "speed": 430,
+    "size": 8,
+    "color": [
+      205,
+      218,
+      238
+    ],
+    "life": 2.2,
+    "knockback": 150,
+    "pierce": 999,
+    "ghost": true,
+    "boomerang": {
+      "return": 0.42,
+      "return_speed": 560
+    },
+    "rotate": true,
+    "skin": "projectiles/steel_boomerang.png",
+    "draw": [
+      30,
+      30
+    ]
+  },
+  "iron_mine": {
+    "speed": 250,
+    "vy": -240,
+    "gravity": 1050,
+    "bounces": 99,
+    "bounce_damp": 0.45,
+    "size": 7,
+    "color": [
+      165,
+      185,
+      215
+    ],
+    "life": 14,
+    "aoe": 80,
+    "knockback": 250,
+    "shake": 0.25,
+    "mine": {
+      "radius": 48,
+      "arm": 0.7
+    },
+    "effect": {
+      "stun": 0.6
+    },
+    "skin": "projectiles/iron_mine.png",
+    "draw": [
+      26,
+      28
+    ]
+  },
+  "holy_zone": {
+    "speed": 0,
+    "size": 9,
+    "color": [
+      255,
+      224,
+      130
+    ],
+    "life": 4.0,
+    "ghost": true,
+    "zone": {
+      "radius": 88,
+      "interval": 0.5
+    },
+    "knockback": 0,
+    "draw": [
+      38,
+      38
+    ],
+    "no_touch": true,
+    "skin": "projectiles/holy_zone.png"
+  },
+  "sound_wave": {
+    "speed": 250,
+    "size": 5,
+    "color": [
+      255,
+      205,
+      120
+    ],
+    "life": 2.4,
+    "knockback": 90,
+    "wave": {
+      "amp": 22,
+      "freq": 3.0
+    },
+    "skin": "projectiles/sound_wave.png",
+    "draw": [
+      30,
+      20
+    ]
+  },
+  "sonic_boomerang": {
+    "speed": 430,
+    "size": 8,
+    "color": [
+      120,
+      230,
+      255
+    ],
+    "life": 2.2,
+    "knockback": 130,
+    "pierce": 999,
+    "ghost": true,
+    "boomerang": {
+      "return": 0.42,
+      "return_speed": 560
+    },
+    "rotate": true,
+    "skin": "projectiles/sonic_boomerang.png",
+    "draw": [
+      30,
+      30
+    ]
+  },
+  "string_blade": {
+    "speed": 0,
+    "size": 7,
+    "color": [
+      255,
+      214,
+      130
+    ],
+    "life": 4.5,
+    "ghost": true,
+    "pierce": 999,
+    "orbit": {
+      "radius": 52,
+      "speed": 3.2,
+      "rehit": 0.6
+    },
+    "knockback": 50,
+    "skin": "projectiles/string_blade.png",
+    "draw": [
+      24,
+      24
+    ]
+  },
+  "rocket": {
+    "speed": 90,
+    "accel": 540,
+    "max_speed": 460,
+    "size": 7,
+    "color": [
+      255,
+      120,
+      60
+    ],
+    "life": 2.5,
+    "aoe": 70,
+    "knockback": 220,
+    "shake": 0.15,
+    "skin": "projectiles/rocket.png",
+    "draw": [
+      34,
+      16
+    ]
+  },
+  "shock_grenade": {
+    "speed": 280,
+    "vy": -220,
+    "gravity": 900,
+    "bounces": 3,
+    "bounce_damp": 0.7,
+    "size": 7,
+    "color": [
+      255,
+      232,
+      90
+    ],
+    "life": 3,
+    "aoe": 75,
+    "knockback": 180,
+    "shake": 0.2,
+    "effect": {
+      "stun": 0.8
+    },
+    "skin": "projectiles/shock_grenade.png",
+    "draw": [
+      24,
+      24
+    ]
+  },
+  "magnet_core": {
+    "speed": 0,
+    "size": 10,
+    "color": [
+      120,
+      220,
+      255
+    ],
+    "life": 2.8,
+    "ghost": true,
+    "vortex": {
+      "radius": 140,
+      "force": 220,
+      "damage": 3,
+      "interval": 0.6
+    },
+    "rotate": true,
+    "draw": [
+      42,
+      42
+    ],
+    "no_touch": true
+  },
+  "oil_zone": {
+    "speed": 0,
+    "size": 9,
+    "color": [
+      130,
+      110,
+      190
+    ],
+    "life": 4.5,
+    "ghost": true,
+    "zone": {
+      "radius": 82,
+      "interval": 0.8
+    },
+    "effect": {
+      "freeze": 0.45
+    },
+    "knockback": 0,
+    "draw": [
+      38,
+      38
+    ],
+    "no_touch": true
+  },
+  "crystal_boomerang": {
+    "speed": 430,
+    "size": 8,
+    "color": [
+      180,
+      230,
+      255
+    ],
+    "life": 2.2,
+    "knockback": 140,
+    "pierce": 999,
+    "ghost": true,
+    "boomerang": {
+      "return": 0.42,
+      "return_speed": 560
+    },
+    "rotate": true,
+    "skin": "projectiles/crystal_boomerang.png",
+    "draw": [
+      30,
+      30
+    ]
+  },
+  "starfall_marker": {
+    "speed": 0,
+    "size": 6,
+    "color": [
+      255,
+      240,
+      180
+    ],
+    "life": 1.6,
+    "ghost": true,
+    "rain": {
+      "into": "prism_shard",
+      "count": 12,
+      "interval": 0.12,
+      "spread": 150,
+      "height": 190
+    },
+    "draw": [
+      24,
+      24
+    ],
+    "no_touch": true
+  },
+  "tempest_core": {
+    "speed": 0,
+    "size": 8,
+    "color": [
+      150,
+      190,
+      255
+    ],
+    "life": 3.0,
+    "ghost": true,
+    "storm": {
+      "strikes": 9,
+      "interval": 0.3,
+      "radius": 140,
+      "aoe": 46
+    },
+    "effect": {
+      "burn": {
+        "time": 2,
+        "dps": 6
+      }
+    },
+    "draw": [
+      36,
+      36
+    ],
+    "no_touch": true
+  },
+  "grav_core": {
+    "speed": 0,
+    "size": 10,
+    "color": [
+      150,
+      90,
+      220
+    ],
+    "life": 2.8,
+    "ghost": true,
+    "vortex": {
+      "radius": 150,
+      "force": 320,
+      "damage": 4,
+      "interval": 0.45
+    },
+    "rotate": true,
+    "draw": [
+      46,
+      46
+    ],
+    "no_touch": true
+  },
+  "poison_trap": {
+    "speed": 250,
+    "vy": -240,
+    "gravity": 1050,
+    "bounces": 99,
+    "bounce_damp": 0.45,
+    "size": 7,
+    "color": [
+      140,
+      220,
+      110
+    ],
+    "life": 14,
+    "aoe": 70,
+    "knockback": 120,
+    "shake": 0.2,
+    "mine": {
+      "radius": 46,
+      "arm": 0.7
+    },
+    "effect": {
+      "burn": {
+        "time": 3,
+        "dps": 8
+      }
+    },
+    "skin": "projectiles/poison_trap.png",
+    "draw": [
+      26,
+      28
+    ]
+  },
+  "dark_core": {
+    "speed": 0,
+    "size": 10,
+    "color": [
+      110,
+      80,
+      190
+    ],
+    "life": 2.8,
+    "ghost": true,
+    "vortex": {
+      "radius": 130,
+      "force": 240,
+      "damage": 4,
+      "interval": 0.55
+    },
+    "rotate": true,
+    "draw": [
+      42,
+      42
+    ],
+    "no_touch": true
+  },
+  "shadow_rain_marker": {
+    "speed": 0,
+    "size": 6,
+    "color": [
+      130,
+      120,
+      160
+    ],
+    "life": 1.6,
+    "ghost": true,
+    "rain": {
+      "into": "shadow_dagger",
+      "count": 10,
+      "interval": 0.14,
+      "spread": 150,
+      "height": 180
+    },
+    "draw": [
+      24,
+      24
+    ],
+    "no_touch": true
+  },
+  "night_blade": {
+    "speed": 0,
+    "size": 7,
+    "color": [
+      150,
+      170,
+      230
+    ],
+    "life": 4.5,
+    "ghost": true,
+    "pierce": 999,
+    "orbit": {
+      "radius": 54,
+      "speed": 3.4,
+      "rehit": 0.6
+    },
+    "knockback": 50,
+    "skin": "projectiles/night_blade.png",
+    "draw": [
+      24,
+      24
+    ]
+  }
 }

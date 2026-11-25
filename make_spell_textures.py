@@ -318,12 +318,190 @@ def cast_telekinesis_hold(frame, n=6):
     return scaled(g, 2)
 
 
+# ------------------------------------------------------------------ новые паттерны атак (10 навыков мага)
+
+def icon_arcane_boomerang():
+    g = new(32, 32); d = ImageDraw.Draw(g)
+    d.arc((6, 4, 28, 26), 300, 120, fill=(170, 110, 245, 255), width=2)   # след возврата
+    bx, by = 23, 9
+    d.line([(bx, by), (11, 21)], fill=(190, 130, 255, 255), width=3)
+    d.line([(11, 21), (19, 24)], fill=(150, 90, 230, 255), width=3)
+    circle(d, (bx, by), 3.4, (225, 190, 255, 255)); circle(d, (bx, by), 2.0, (255, 245, 255, 255))
+    circle(d, (11, 21), 2.6, (170, 110, 245, 255))
+    sparkle(d, 8, 8, (240, 215, 255, 255), True); sparkle(d, 26, 25, (210, 160, 255, 255))
+    return finish_icon((190, 130, 255), g)
+
+
+def icon_arcane_swarm():
+    g = new(32, 32); d = ImageDraw.Draw(g)
+    for c, r in (((22, 10), 5.4), ((10, 16), 4.4), ((18, 24), 3.6)):
+        comet(d, c, (-1, 0), 7, r, [((70, 170, 140, 255), 1.0), ((120, 255, 200, 255), .7)], random.Random(7 + int(c[1])), 1.0)
+        circle(d, c, r, (70, 170, 140, 255)); circle(d, c, r - 1.6, (120, 255, 200, 255)); circle(d, (c[0] - 1, c[1] - 1), r - 3.2, (235, 255, 245, 255))
+    sparkle(d, 26, 22, (200, 255, 230, 255))
+    return finish_icon((120, 255, 200), g)
+
+
+def icon_black_hole():
+    g = new(32, 32); d = ImageDraw.Draw(g); C = (16, 15)
+    for k in range(3):
+        rr = 12 - k * 3.6
+        d.arc((C[0] - rr, C[1] - rr, C[0] + rr, C[1] + rr), 20 + k * 80, 250 + k * 80, fill=rgba((160, 95, 250), 255 - k * 60), width=2)
+    for k in range(4):
+        a = math.radians(k * 90 + 25)
+        circle(d, (C[0] + math.cos(a) * 9, C[1] + math.sin(a) * 9), 1.4, (215, 175, 255, 255))
+    circle(d, C, 5.2, (40, 20, 80, 255)); circle(d, C, 4.0, (16, 8, 40, 255))
+    sparkle(d, 5, 6, (220, 190, 255, 255), True); sparkle(d, 27, 24, (200, 160, 255, 255))
+    return finish_icon((150, 90, 240), g)
+
+
+def icon_arcane_mine():
+    g = new(32, 32); d = ImageDraw.Draw(g); C = (16, 17)
+    for a in range(0, 360, 45):
+        d.line([C, (C[0] + math.cos(math.radians(a)) * 9.5, C[1] + math.sin(math.radians(a)) * 9.5)], fill=(120, 165, 225, 255), width=2)
+    circle(d, C, 6.6, (70, 110, 180, 255)); circle(d, C, 5.4, (110, 160, 235, 255)); circle(d, (14.5, 15), 2.6, (190, 225, 255, 255))
+    circle(d, C, 1.7, (255, 90, 70, 255)); d.point((15, 16), fill=(255, 220, 200, 255))   # красный датчик
+    d.line([(8, 27), (24, 27)], fill=(90, 130, 190, 255), width=2)   # земля
+    return finish_icon((150, 200, 255), g)
+
+
+def icon_frost_field():
+    g = new(32, 32); d = ImageDraw.Draw(g); C = (16, 15)
+    for k in range(6):
+        a = math.radians(k * 60 - 90); ca, sa = math.cos(a), math.sin(a)
+        d.line([C, (C[0] + ca * 10.5, C[1] + sa * 10.5)], fill=(215, 245, 255, 255), width=2)
+        for t in (.55, .8):
+            bx, by = C[0] + ca * 10.5 * t, C[1] + sa * 10.5 * t
+            for s in (-1, 1):
+                b = a + s * math.radians(55)
+                d.line([(bx, by), (bx + math.cos(b) * 3.4, by + math.sin(b) * 3.4)], fill=(160, 225, 250, 255), width=1)
+    circle(d, C, 2.4, (255, 255, 255, 255))
+    d.arc((6, 20, 26, 34), 180, 360, fill=(140, 220, 255, 255), width=2)   # купол поля
+    sparkle(d, 6, 7, (220, 245, 255, 255)); sparkle(d, 26, 8, (190, 235, 255, 255), True)
+    return finish_icon((140, 220, 255), g)
+
+
+def icon_fire_storm():
+    g = new(32, 32); d = ImageDraw.Draw(g)
+    for c, r in (((11, 8), 5.2), ((19, 6), 4.6), ((25, 10), 3.6)):
+        circle(d, c, r, (120, 95, 130, 255)); circle(d, c, r - 1.4, (165, 145, 175, 255))   # грозовое облако
+    d.polygon([(14, 11), (10, 20), (13.6, 19.6), (11.6, 27), (19, 17), (15, 17.4), (17.6, 11)], fill=(255, 160, 50, 255))
+    d.polygon([(14.6, 12), (12.2, 18.4), (14.6, 18.2), (13.2, 24), (17.6, 17), (15, 17.2), (16.8, 12.4)], fill=(255, 220, 120, 255))
+    circle(d, (24, 20), 2.6, (200, 70, 30, 255)); circle(d, (24, 20), 1.6, (255, 140, 50, 255))   # очаг пламени
+    sparkle(d, 7, 21, (255, 180, 90, 255), True)
+    return finish_icon((255, 150, 60), g)
+
+
+def icon_dagger_rain():
+    g = new(32, 32); d = ImageDraw.Draw(g)
+    for x, y, L in ((10, 6, 13), (19, 10, 15), (24, 3, 10)):
+        a = math.radians(115); dx, dy = math.cos(a), math.sin(a)
+        d.line([(x, y), (x + dx * L, y + dy * L)], fill=(190, 150, 255, 255), width=2)
+        tx, ty = x + dx * (L + 3), y + dy * (L + 3)
+        d.polygon([(tx - dy * 2, ty + dx * 2), (tx + dy * 2, ty - dx * 2), (tx + dx * 4, ty + dy * 4)], fill=(225, 200, 255, 255))
+    d.line([(4, 27), (28, 27)], fill=(110, 80, 170, 255), width=2)
+    sparkle(d, 6, 12, (230, 210, 255, 255)); sparkle(d, 15, 20, (200, 170, 250, 255), True)
+    return finish_icon((170, 120, 230), g)
+
+
+def icon_arcane_beam():
+    g = new(32, 32); d = ImageDraw.Draw(g)
+    d.line([(4, 16), (29, 16)], fill=(120, 60, 210, 255), width=4)
+    d.line([(4, 16), (29, 16)], fill=(190, 130, 255, 255), width=2)
+    d.line([(5, 16), (24, 16)], fill=(250, 240, 255, 255), width=1)
+    for t, r in ((.12, 4.6), (.38, 3.4), (.66, 2.6), (.9, 1.8)):
+        x = 4 + 25 * t
+        d.line([(x, 16 - r), (x, 16 + r)], fill=(230, 195, 255, 200), width=1)   # пульсации вдоль луча
+    circle(d, (6, 16), 4.6, (190, 130, 255, 255)); circle(d, (6, 16), 2.6, (255, 245, 255, 255))
+    sparkle(d, 27, 7, (240, 215, 255, 255)); sparkle(d, 26, 25, (240, 215, 255, 255))
+    return finish_icon((190, 130, 255), g)
+
+
+def icon_orbit_blades():
+    g = new(32, 32); d = ImageDraw.Draw(g); C = (16, 16)
+    d.ellipse((C[0] - 10, C[1] - 10, C[0] + 10, C[1] + 10), outline=(80, 190, 165, 160), width=1)
+    for k in range(3):
+        a = math.radians(k * 120 - 90); x, y = C[0] + math.cos(a) * 10, C[1] + math.sin(a) * 10
+        ta = a + math.radians(90); tx, ty = math.cos(ta), math.sin(ta)
+        d.line([(x - tx * 4.5, y - ty * 4.5), (x + tx * 4.5, y + ty * 4.5)], fill=(120, 255, 210, 255), width=2)
+        d.line([(x + tx * 4.5, y + ty * 4.5), (x + tx * 1.5 - math.cos(a) * 3, y + ty * 1.5 - math.sin(a) * 3)], fill=(200, 255, 240, 255), width=1)
+    circle(d, C, 4.0, (90, 200, 175, 255)); circle(d, C, 2.4, (225, 255, 245, 255))
+    sparkle(d, 5, 6, (210, 255, 240, 255)); sparkle(d, 26, 24, (210, 255, 240, 255))
+    return finish_icon((120, 255, 210), g)
+
+
+def icon_prism_orb():
+    g = new(32, 32); d = ImageDraw.Draw(g); C = (16, 15)
+    for k in range(6):
+        a = math.radians(k * 60); dx, dy = math.cos(a), math.sin(a)
+        d.line([(C[0] + dx * 7.5, C[1] + dy * 7.5), (C[0] + dx * 12.5, C[1] + dy * 12.5)], fill=(240, 160, 255, 235), width=2)   # осколки по кругу
+        d.point((round(C[0] + dx * 14), round(C[1] + dy * 14)), fill=(255, 235, 255, 255))
+    for r, col in ((6.4, (140, 60, 180)), (5.4, (200, 100, 235)), (3.8, (245, 175, 255)), (2.0, (255, 240, 255))): circle(d, C, r, rgba(col))
+    d.point((15, 14), fill=(255, 255, 255, 255))
+    sparkle(d, 6, 7, (250, 215, 255, 255), True); sparkle(d, 26, 23, (250, 215, 255, 255))
+    return finish_icon((240, 160, 255), g)
+
+
+def boomerang_sprite(frame):
+    a0 = frame * 90; g = new(30, 30); d = ImageDraw.Draw(g); C = (15, 15)
+    d.arc((C[0] - 9, C[1] - 9, C[0] + 9, C[1] + 9), a0 + 30, a0 + 130, fill=(150, 90, 230, 255), width=3)
+    for a in (a0, a0 + 45):
+        x, y = C[0] + math.cos(math.radians(a)) * 10, C[1] + math.sin(math.radians(a)) * 10
+        circle(d, (x, y), 3.4, (190, 130, 255, 255)); circle(d, (x, y), 2.0, (245, 225, 255, 255))
+    return scaled(with_outline(g), 4)
+
+
+def mine_sprite(frame):
+    g = new(26, 28); d = ImageDraw.Draw(g); C = (13, 15)
+    for a in range(0, 360, 45):
+        d.line([C, (C[0] + math.cos(math.radians(a)) * 8.5, C[1] + math.sin(math.radians(a)) * 8.5)], fill=(100, 140, 200, 255), width=2)
+    circle(d, C, 6.2, (70, 110, 180, 255)); circle(d, C, 5.0, (110, 160, 235, 255)); circle(d, (11.5, 13.5), 2.2, (190, 225, 255, 255))
+    if frame % 2: circle(d, C, 1.8, (255, 90, 70, 255))   # датчик мигает
+    else: circle(d, C, 1.8, (120, 60, 60, 255))
+    return scaled(with_outline(g), 4)
+
+
+def dagger_sprite(frame):
+    g = new(26, 12); d = ImageDraw.Draw(g)
+    d.line([(3, 6), (17, 6)], fill=(120, 80, 190, 255), width=3)
+    d.polygon([(17, 2.5), (17, 9.5), (24, 6)], fill=(225, 200, 255, 255))
+    d.line([(4, 6), (15, 6)], fill=(200, 170, 250, 255), width=1)
+    d.line([(1, 3), (1, 9)], fill=(160, 120, 230, 255), width=2)   # гарда
+    return scaled(with_outline(g), 4)
+
+
+def blade_sprite(frame):
+    g = new(24, 24); d = ImageDraw.Draw(g); C = (12, 12); a = frame * 90
+    d.ellipse((C[0] - 5, C[1] - 5, C[0] + 5, C[1] + 5), outline=(70, 170, 145, 200), width=1)
+    for k in range(2):
+        b = a + k * 180; tx, ty = math.cos(math.radians(b)), math.sin(math.radians(b))
+        d.line([(C[0] - tx * 9, C[1] - ty * 9), (C[0] + tx * 9, C[1] + ty * 9)], fill=(120, 255, 210, 255), width=2)
+        d.point((round(C[0] + tx * 9), round(C[1] + ty * 9)), fill=(235, 255, 248, 255))
+    circle(d, C, 3.0, (90, 200, 175, 255)); circle(d, C, 1.6, (225, 255, 245, 255))
+    return scaled(with_outline(g), 4)
+
+
+def prism_sprite(frame):
+    g = new(30, 30); d = ImageDraw.Draw(g); C = (15, 15)
+    for k in range(6):
+        a = math.radians(k * 60 + frame * 22); dx, dy = math.cos(a), math.sin(a)
+        d.line([(C[0] + dx * 7, C[1] + dy * 7), (C[0] + dx * 13, C[1] + dy * 13)], fill=(240, 160, 255, 230), width=2)
+    for r, col in ((6.0, (140, 60, 180)), (5.0, (200, 100, 235)), (3.4, (245, 175, 255)), (1.8, (255, 240, 255))): circle(d, C, r, rgba(col))
+    d.point((14, 14), fill=(255, 255, 255, 255))
+    return scaled(with_outline(g), 4)
+
+
 # ------------------------------------------------------------------ запись файлов
 ICONS = {"fireball": icon_fireball, "ice_shard": icon_ice_shard, "arcane_orb": icon_arcane_orb, "frost_nova": icon_frost_nova,
          "chain_lightning": icon_chain_lightning, "thunderstrike": icon_thunderstrike, "meteor": icon_meteor,
          "telekinesis": icon_telekinesis, "telekinesis_cone": icon_telekinesis_cone, "telekinesis_hold": icon_telekinesis_hold,
-         "inferno": icon_inferno, "invisibility_cloak": icon_invisibility_cloak}
-PROJECTILES = {"fireball": fire_bolt, "ice_shard": ice_bolt, "arcane_orb": arcane_bolt}
+         "inferno": icon_inferno, "invisibility_cloak": icon_invisibility_cloak,
+         "arcane_boomerang": icon_arcane_boomerang, "arcane_swarm": icon_arcane_swarm, "black_hole": icon_black_hole,
+         "arcane_mine": icon_arcane_mine, "frost_field": icon_frost_field, "fire_storm": icon_fire_storm,
+         "dagger_rain": icon_dagger_rain, "arcane_beam": icon_arcane_beam, "orbit_blades": icon_orbit_blades,
+         "prism_orb": icon_prism_orb}
+PROJECTILES = {"fireball": fire_bolt, "ice_shard": ice_bolt, "arcane_orb": arcane_bolt,
+               "arcane_boomerang": boomerang_sprite, "mana_mine": mine_sprite, "shadow_dagger": dagger_sprite,
+               "orbit_blade": blade_sprite, "prism_orb": prism_sprite}
 CASTS = {"telekinesis": cast_telekinesis, "telekinesis_cone": cast_telekinesis_cone, "telekinesis_hold": cast_telekinesis_hold}
 
 

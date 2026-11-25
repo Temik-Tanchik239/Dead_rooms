@@ -1,0 +1,93 @@
+[
+  {
+    "hook": "weapon_hit",
+    "id": "*",
+    "effect": "spark",
+    "count": 8,
+    "motion": "spray"
+  },
+  {
+    "hook": "weapon_swing",
+    "id": "*",
+    "effect": "spark",
+    "count": 7,
+    "motion": "burst"
+  },
+  {
+    "hook": "mob_hit",
+    "id": "*",
+    "effect": "blood",
+    "count": 6,
+    "motion": "burst"
+  },
+  {
+    "hook": "player_hurt",
+    "id": "*",
+    "effect": "blood",
+    "count": 8,
+    "motion": "burst"
+  },
+  {
+    "hook": "mob_death",
+    "id": "*",
+    "effect": "smoke",
+    "count": 10,
+    "motion": "rise"
+  },
+  {
+    "hook": "skill_cast",
+    "id": "*",
+    "effect": "magic",
+    "count": 6,
+    "motion": "twinkle"
+  },
+  {
+    "hook": "walk",
+    "id": "*",
+    "effect": "dust",
+    "count": 5,
+    "motion": "puff"
+  },
+  {
+    "hook": "container_break",
+    "id": "*",
+    "effect": "dust",
+    "count": 10,
+    "motion": "burst"
+  },
+  {
+    "hook": "container_open",
+    "id": "*",
+    "effect": "gold",
+    "count": 6,
+    "motion": "twinkle"
+  },
+  {
+    "hook": "walk",
+    "id": "*",
+    "effect": "dust",
+    "count": 3,
+    "motion": "puff"
+  },
+  {
+    "hook": "jump",
+    "id": "*",
+    "effect": "dust",
+    "count": 3,
+    "motion": "puff"
+  },
+  {
+    "hook": "land",
+    "id": "*",
+    "effect": "dust",
+    "count": 4,
+    "motion": "puff"
+  },
+  {
+    "hook": "skill_cast",
+    "id": "heal",
+    "effect": "spark",
+    "count": 8,
+    "motion": "spiral"
+  }
+]

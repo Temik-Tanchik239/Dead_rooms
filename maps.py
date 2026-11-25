@@ -17,6 +17,7 @@ data/maps/<id>.json — одна карта: сетка произвольног
   sprite  — картинка клетки из assets (иначе стандартная отрисовка типа), draw [w, h], offset [x, y], color [r, g, b]
   damage  — урон шипов
   light   — блок света: "torch" | "lantern" | "crystal" | "orb" или свой словарь (подробно — lighting.py)
+  checkpoint — true: чекпоинт (символ O): автосохранение забега, восстановление HP/маны, точка возрождения
 decor (список в файле карты, не легенда) — мелкие детали с пиксельной точностью, чисто картинки без физики:
   {"sprite": "environment/wall_1.png", "x": 330, "y": 478, "w": 12, "h": 12, "flip": true, "z": "back"}
   x, y — левый верхний угол в пикселях карты (клетка = 32 px); w, h — размер (по умолчанию 32); flip — отразить;
@@ -25,14 +26,15 @@ decor (список в файле карты, не легенда) — мелк�
   Ставятся в редакторе карт (панель «Мелкие детали», decor_panel.py).
 Ящики и сундуки — не символы легенды, а список "containers" в файле карты (ставятся в редакторе, см. containers.py).
 """
-import math, random
+import random
 import pygame as pg
-from core import CFG, T, COLS, ROWS, MW
+from core import CFG, T, COLS, ROWS, MW, floor_below
 from anim import sprite, image
-import weapon
 import lighting
 import containers
 import mechs
+import checkpoint
+import npc
 from mob import Mob, spawn_boss
 import crafting
 
@@ -131,23 +133,32 @@ def opt(md, key, default=None):
     """Настройка карты, если нет — из общих настроек maps.json."""
     return md.get(key, CFG["maps"].get(key, default))
 
+def ground_y(m, x, y):
+    """Поверхность пола под точкой (x, y) карты m — предметы лежат НА земле (не висят в воздухе).
+    Пола нет — сама точка y."""
+    try:
+        fy = floor_below(m.g, x, y - 1)
+        if fy is not None: return float(fy)
+    except Exception:
+        pass
+    return float(y)
+
 class Drop:
-    """Оружие на полу."""
+    """Предмет на полу: лежит НА земле (нижняя точка картинки на y); «анимация лежания» — поле floor
+    у предмета (inventory.draw_floor: spin — крутится на ребре, bob — подпрыгивает)."""
     def __init__(s, x, y, wid): s.x, s.y, s.wid = x, y, wid
     def draw(s, v):
-        bob = math.sin(pg.time.get_ticks() / 300) * 3
-        if s.wid in CFG["weapons"]: ok = weapon.icon(v, s.wid, s.x, s.y - 12 + bob, 36, 30)
-        else:   # предмет не-оружие (assets/inventory.json -> items)
-            import inventory; ok = inventory.floor_icon(v, s.wid, s.x, s.y - 12 + bob, 32)
-        if not ok:
-            pg.draw.polygon(v, (255, 220, 90), [(s.x, s.y - 8), (s.x + 8, s.y), (s.x, s.y + 8), (s.x - 8, s.y)])
+        import inventory
+        if not inventory.draw_floor(v, s.wid, s.x, s.y):   # предмет лежит на земле (floor-анимация — у предмета)
+            pg.draw.polygon(v, (255, 220, 90), [(s.x, s.y - 16), (s.x + 8, s.y - 8), (s.x, s.y), (s.x - 8, s.y - 8)])
 
 def random_weapon():
-    """Случайное оружие из тех, что разрешены текущему персонажу (allowed_weapons в data/characters.json)."""
+    """Случайное оружие из тех, что разрешены текущему персонажу (allowed_weapons в data/characters.json).
+    Оружие с полем "loot": false (второй режим меча рыцаря) само по себе не выпадает."""
     allowed = CFG.get("character", {}).get("allowed_weapons")
     if allowed == []: return None   # пустой список — герою без оружия (маг/инженер) ничего не выпадает
-    pool = [w for w in CFG["weapons"] if not allowed or w in allowed]
-    return random.choice(pool or list(CFG["weapons"]))
+    pool = [w for w in CFG["weapons"] if (not allowed or w in allowed) and CFG["weapons"][w].get("loot", True)]
+    return random.choice(pool or [w for w in CFG["weapons"] if CFG["weapons"][w].get("loot", True)] or list(CFG["weapons"]))
 
 class GameMap:
     def __init__(s, mid, scale=1.0):
@@ -162,23 +173,26 @@ class GameMap:
         s.info = [[lg.get(ch, {"type": "empty"}) for ch in row] for row in s.chars]
         s.visited = s.cleared = s.spawned = s.locked = False
         s.mobs, s.corpses, s.drops = [], [], []
+        s.zones = []   # лужи от бомб мобов (zones.py) — живут до выхода из комнаты
         s.turrets = []   # постройки инженера (крафт, см. crafting.py) — живут в комнате до выхода
         s.boss_spawned = False
         for c, r, e in s.cells():
             if "item" in e:
                 wid = random_weapon() if e["item"] == "random" else e["item"]
-                if wid in CFG["weapons"]: s.drops.append(Drop(c * T + T / 2, (r + 1) * T - 14, wid))
+                if wid in CFG["weapons"]: s.drops.append(Drop(c * T + T / 2, (r + 1) * T, wid))   # на землю клетки
             if "resource" in e:   # ресурс инженера, поставленный в редакторе карт (вкладка «Ресурсы»)
                 rrid = e["resource"]
                 if rrid == "random" or rrid not in crafting.resources():
                     rrid = random.choice(list(crafting.resources()) or ["wood"])
-                s.drops.append(crafting.ResourceDrop(c * T + T / 2, (r + 1) * T - 10, rrid))
+                s.drops.append(crafting.ResourceDrop(c * T + T / 2, (r + 1) * T, rrid))
         s.exits = s.find_exits()
         s.lights = lighting.find_lights(s)   # блоки света: факелы, фонари, кристаллы, сферы
         s.containers = containers.create(s)   # ящики и сундуки карты (их клетки в физической сетке — стена, см. build)
         s.mechs = mechs.create(s)   # механизмы карты (рычаги, кнопки, двери, лифты, порталы, платформы)
+        s.checkpoints = checkpoint.collect(s)   # кристаллы-чекпоинты (символ O): лечение, автосейв, точка возрождения
         s.build()
         s.drops += crafting.scatter(s, override=md.get("resources"))   # ресурсы инженера (data/crafting.json, у карты может быть свой разброс)
+        s.npcs = npc.create(s)   # мирные NPC и торговцы карты (не в mobs: по ним нельзя попасть, мобы их не трогают); после build() — нужен физический грид s.g
 
     def cells(s):
         # Рисуем только реальные клетки этой карты, а не общую буферную сетку.
@@ -384,6 +398,11 @@ class GameMap:
             if kind not in CFG["mobs"]: continue
             d = CFG["mobs"][kind]
             s.mobs.append(Mob(kind, c * T + (T - d["w"]) / 2, r * T + T - d["h"], s.scale))
+        for e in (s.d.get("mobs") or []):   # расстановка мобов вкладкой «Мобы» редактора (mob_panel.py): поле "mobs"
+            kind = e.get("mob"); c, r = e.get("x"), e.get("y")
+            if kind not in CFG["mobs"] or not isinstance(c, int) or not isinstance(r, int): continue
+            d = CFG["mobs"][kind]
+            s.mobs.append(Mob(kind, c * T + (T - d["w"]) / 2, r * T + T - d["h"], s.scale))
         if not s.mobs: s.cleared = True
 
     def base_cell(s, c, r):
@@ -498,6 +517,13 @@ def check():
             if not isinstance(d, dict) or not d.get("sprite") or not all(isinstance(d.get(k), (int, float)) for k in ("x", "y")):
                 out.append(f"{mid}: decor №{i + 1} — нужны sprite, x и y"); continue
             if not image(d["sprite"]): out.append(f"{mid}: decor №{i + 1} — нет картинки assets/{d['sprite']}")
+        for i, d in enumerate(md.get("npcs") or []):   # NPC: типы из data/npcs.json -> npcs
+            if not isinstance(d, dict) or "type" not in d or "x" not in d or "y" not in d:
+                out.append(f"{mid}: npc №{i + 1} — нужны type, x и y"); continue
+            if d["type"] not in npc.defs(): out.append(f"{mid}: npc №{i + 1} — нет NPC {d['type']} (см. data/npcs.json)")
+        for i, d in enumerate(md.get("mobs") or []):   # мобы из расстановки вкладкой «Мобы» (mob_panel.py): поле "mobs"
+            if not isinstance(d, dict) or d.get("mob") not in CFG["mobs"]:
+                out.append(f"{mid}: моб №{i + 1} в поле mobs — нет моба {d.get('mob') if isinstance(d, dict) else d}")
     for mid in defs:   # переходы: ведут ли выходы куда надо и есть ли выход обратно
         for ch, ex in used_exits(mid):
             if not valid_exit(ex, defs): continue

@@ -6,15 +6,24 @@
 Базовые поля: speed, vy (добавка к вертикальной скорости), gravity, life, size, color, knockback, damage (если урон не задан
 атакой), aoe (радиус взрыва), pierce (сквозь сколько целей пролетает), bounces + bounce_damp (отскоки от стен),
 skin (или sprite) / frames + fps (картинка или серия PNG, носом вправо; без skin ищется assets/projectiles/<имя типа>.png), draw [w, h], rotate (поворачивать по полёту).
-Поведения: homing, accel, wave, split — описаны ниже.
+Поведения: homing, accel, wave, split — описаны ниже; призрачные/стационарные пули и касты «в точку курсора» — тоже.
+
+Поле "ghost": true — пуля игнорирует стены (проходит сквозь них): для бумеранга, зон, воронки, клинков на орбите.
+Поле "no_touch": true — пуля не наносит контактного урона и не исчезает при касании (весь урон делает её поведение):
+для маркеров-зон, воронки, шторма и дождя.
 
 Новое поведение = функция с декоратором @behavior("ключ") (каждый кадр) или @on_death("ключ") (при исчезновении).
-Срабатывает у любой пули, в описании которой есть этот ключ; значение ключа приходит в функцию как p."""
+Срабатывает у любой пули, в описании которой есть этот ключ; значение ключа приходит в функцию как p.
+
+Готовые паттерны атак (в основном навеяны другими играми): boomerang (Zelda/Hades), orbit (Vampire Survivors),
+vortex (Dota 2, чёрная дыра), mine (Terraria), zone (морозное поле), storm (Thundergod's Wrath), rain (дождь снарядов)."""
 import math
+import random
 import pygame as pg
 from core import CFG, T, solid, sign, circle_hits_rect
 from anim import sprite, frames
 import status
+import effects   # частицы исчезновения пуль (projectile_hit)
 from invisibility import is_invisible
 
 BEHAVIORS, DEATH = {}, {}
@@ -34,13 +43,16 @@ def resolve(spec):
         d = resolve(spec["type"]); d.update({k: v for k, v in spec.items() if k != "type"}); return d
     return dict(spec)
 
-def volley(projs, spec, x, y, angle, dmg, friendly, count=1, spread=0):
-    """Залп из count пуль веером вокруг angle (радианы); spread — градусы между соседними пулями."""
+def volley(projs, spec, x, y, angle, dmg, friendly, count=1, spread=0, owner=None):
+    """Залп из count пуль веером вокруг angle (радианы); spread — градусы между соседними пулями.
+    owner — стрелявший (герой/моб): бумеранг возвращается к нему, клинки на орбите кружат вокруг него."""
     d = resolve(spec)
     for i in range(count):
         a = angle + math.radians((i - (count - 1) / 2) * spread)
-        projs.append(Proj(x, y, math.cos(a) * d.get("speed", 300), math.sin(a) * d.get("speed", 300) + d.get("vy", 0),
-                          d, d.get("damage", 10) if dmg is None else dmg, friendly))
+        b = Proj(x, y, math.cos(a) * d.get("speed", 300), math.sin(a) * d.get("speed", 300) + d.get("vy", 0),
+                 d, d.get("damage", 10) if dmg is None else dmg, friendly)
+        if owner is not None: b.owner = owner
+        projs.append(b)
 
 class Proj:
     def __init__(s, x, y, vx, vy, d, dmg, friendly):
@@ -95,6 +107,7 @@ class Proj:
     def die(s, w):
         if s.dead: return
         s.dead = True
+        effects.emit(w.fx, "projectile_hit", s.x, s.y, dir=sign(s.vx) or 1, target_id=s.d.get("_id"))   # частицы гибели пули
         if s.aoe:
             sh = s.d.get("shake", .15)   # тряска экрана от взрыва (сек), 0 — без тряски
             if sh: w.fx.shake = float(sh)
@@ -110,17 +123,18 @@ class Proj:
         if s.dead: return
         s.vy += s.g * dt; damp = s.d.get("bounce_damp", .8)
         s.x += s.vx * dt
-        if solid(w.g, int(s.x // T), int(s.y // T)):
+        if not s.d.get("ghost") and solid(w.g, int(s.x // T), int(s.y // T)):   # ghost игнорирует стены
             s.wall_hit(w); s.x -= s.vx * dt
             if s.bounces <= 0: return s.die(w)
             s.vx *= -damp; s.bounces -= 1
         s.y += s.vy * dt
-        if solid(w.g, int(s.x // T), int(s.y // T)):
+        if not s.d.get("ghost") and solid(w.g, int(s.x // T), int(s.y // T)):
             s.wall_hit(w); s.y -= s.vy * dt
             if s.bounces <= 0: return s.die(w)
             s.vy *= -damp; s.bounces -= 1
         s.life -= dt
         if s.life <= 0: return s.die(w)
+        if s.d.get("no_touch"): return   # маркер (зона/воронка/шторм/дождь) не бьёт контактом — весь урон в его поведении
         box = pg.Rect(int(s.x - s.r), int(s.y - s.r), 2 * s.r, 2 * s.r)
         for m in s.hit_targets(w):
             if id(m) in s.hit or not (m.collides_rect(box) if hasattr(m, "collides_rect") else box.colliderect(m.rect)): continue
@@ -184,6 +198,132 @@ def _wave(s, p, dt, w):
     off = a * (math.sin(om * s.t) - math.sin(om * (s.t - dt)))
     nx, ny = -math.sin(s.angle), math.cos(s.angle)
     s.x += nx * off; s.y += ny * off
+
+@behavior("boomerang")
+def _boomerang(s, p, dt, w):
+    """"boomerang": {"return": 0.42, "return_speed": 560} — бумеранг (Zelda/Hades): заданное время летит вперёд,
+    затем летит обратно к стрелявшему (на обратном пути бьёт тех же заново), вернувшись — исчезает.
+    Обычно с "pierce": 999 и "ghost": true (возвращается сквозь стены, как в Zelda)."""
+    p = p if isinstance(p, dict) else {"return": p}
+    ret = float(p.get("return", 0.45))
+    if s.t < ret: return
+    if not getattr(s, "_bo_back", False):
+        s._bo_back = True; s.hit.clear()   # на обратном пути задетых бьём заново
+    owner = getattr(s, "owner", None) or getattr(w, "pl", None)
+    if owner is None: return
+    dx, dy = owner.cx - s.x, owner.cy - s.y
+    if math.hypot(dx, dy) < 16: return s.die(w)   # вернулся к хозяину — исчезает
+    s.set_dir(math.atan2(dy, dx), float(p.get("return_speed", s.speed + 120)))
+
+@behavior("orbit")
+def _orbit(s, p, dt, w):
+    """"orbit": {"radius": 46, "speed": 3.2, "rehit": 0.55} — снаряд кружит вокруг стрелявшего (Vampire
+    Survivors/Terraria): radius — радиус орбиты (px), speed — обороты/с, rehit — через сколько секунд
+    можно снова задеть того же врага. Обычно с "pierce": 999, "ghost": true и залпом count>1/spread>0."""
+    p = p if isinstance(p, dict) else {"radius": p}
+    owner = getattr(s, "owner", None) or getattr(w, "pl", None)
+    if owner is None: return
+    rehit = float(p.get("rehit", 0.6))
+    if rehit > 0 and s.t - getattr(s, "_orb_clear", 0.0) >= rehit:
+        s._orb_clear = s.t; s.hit.clear()
+    ph = getattr(s, "_orb_phase", None)
+    if ph is None: s._orb_phase = ph = s.angle   # начальная фаза — направление залпа
+    rad = float(p.get("radius", 46)); om = float(p.get("speed", 3.2))
+    ang = ph + s.t * om
+    s.x, s.y = owner.cx + math.cos(ang) * rad, owner.cy + math.sin(ang) * rad
+    s.vx, s.vy = -math.sin(ang), math.cos(ang)   # скорость-призрак: только для поворота спрайта по касательной
+
+@behavior("vortex")
+def _vortex(s, p, dt, w):
+    """"vortex": {"radius": 160, "force": 280, "damage": 4, "interval": 0.5} — воронка/чёрная дыра (Dota 2):
+    стягивает врагов к центру пули (сильнее ближе к центру); каждые interval секунд наносит урон пули
+    (s.dmg) и её статус ("effect") всем в радиусе. Боссы (cc_immune) притяжению не поддаются, но урон получают."""
+    p = p if isinstance(p, dict) else {"force": p}
+    rad = float(p.get("radius", 150)); force = float(p.get("force", 240))
+    every = float(p.get("interval", 0.5))
+    tick = s.t - getattr(s, "_vz_t", -every) >= every
+    if tick:
+        s._vz_t = s.t
+        fx = getattr(w, "fx", None)
+        if fx is not None: fx.flash(s.x, s.y, rad * 0.55, list(s.color))
+    for m in s.targets(w):
+        if getattr(m, "hp", 1) <= 0: continue
+        dx, dy = s.x - m.cx, s.y - m.cy
+        dist = math.hypot(dx, dy)
+        if dist > rad or dist < 1: continue
+        if not status.cc_immune(m):
+            k = force * min(1.0, 0.35 + 0.65 * (1.0 - dist / rad))   # чем ближе к центру, тем сильнее тянет
+            m.vx = dx / dist * k
+            if getattr(m, "flies", False): m.vy = dy / dist * k
+            elif dy < -6: m.vy = min(getattr(m, "vy", 0.0), -30)     # наземных слегка отрывает от земли
+        if tick and (p.get("damage", 0) or s.dmg): s.damage(m, w, 0)
+
+@behavior("mine")
+def _mine(s, p, dt, w):
+    """"mine": {"radius": 48, "arm": 0.7} — мина (Terraria): после arm секунд, когда пуля легла на пол,
+    ждёт врага; когда тот подходит в radius — взрывается (aoe и статус пули, см. die())."""
+    p = p if isinstance(p, dict) else {"radius": p}
+    if s.t < float(p.get("arm", 0.6)): return
+    if not getattr(s, "_mine_arm", False):
+        s._mine_arm = True
+        fx = getattr(w, "fx", None)
+        if fx is not None: fx.ring(s.x, s.y, float(p.get("radius", 46)) * 0.5)   # мина взведена
+    rad = float(p.get("radius", 46))
+    for m in s.targets(w):
+        if getattr(m, "hp", 1) > 0 and (m.collides_circle(s.x, s.y, rad) if hasattr(m, "collides_circle") else circle_hits_rect(s.x, s.y, rad, m.rect)):
+            return s.die(w)   # взрыв — урон по aoe уже в die()
+
+@behavior("zone")
+def _zone(s, p, dt, w):
+    """"zone": {"radius": 82, "interval": 0.6} — постоянная зона (морозное поле, Lich): каждые interval
+    секунд наносит урон пули (s.dmg) и её статус ("effect") всем в радиусе. Пулю спавнят в точке курсора
+    (у навыка "at_cursor": true) со скоростью 0 и "ghost": true."""
+    p = p if isinstance(p, dict) else {"radius": p}
+    every = float(p.get("interval", 0.6))
+    if s.t - getattr(s, "_zn_t", -every) < every: return
+    s._zn_t = s.t
+    rad = float(p.get("radius", 70))
+    fx = getattr(w, "fx", None)
+    if fx is not None: fx.flash(s.x, s.y, rad, list(s.color))
+    for m in s.hit_targets(w):
+        if getattr(m, "hp", 1) > 0 and (m.collides_circle(s.x, s.y, rad) if hasattr(m, "collides_circle") else circle_hits_rect(s.x, s.y, rad, m.rect)):
+            s.damage(m, w, 0)
+
+@behavior("storm")
+def _storm(s, p, dt, w):
+    """"storm": {"strikes": 7, "interval": 0.32, "radius": 130, "aoe": 48} — шторм ударов молнии (Thundergod's
+    Wrath): каждые interval секунд в случайную точку в radius вокруг пули бьёт разряд и взрывается на aoe;
+    удар наносит урон пули (s.dmg) и её статус ("effect"). Пулю спавнят в точке курсора со скоростью 0."""
+    p = p if isinstance(p, dict) else {"strikes": p}
+    every = float(p.get("interval", 0.32)); n = int(p.get("strikes", 6))
+    rn = getattr(s, "_st_n", 0)
+    if rn >= n or s.t - getattr(s, "_st_t", -every) < every: return
+    s._st_t = s.t; s._st_n = rn + 1
+    rad = float(p.get("radius", 120))
+    ang = random.random() * math.tau; dist = random.random() * rad
+    x, y = s.x + math.cos(ang) * dist, s.y + math.sin(ang) * dist * 0.5   # шторм чуть сплюснут по вертикали
+    fx = getattr(w, "fx", None)
+    if fx is not None:
+        fx.bolt(x, y, list(s.color)); fx.flash(x, y, p.get("aoe", 46), list(s.color))
+    aoe = float(p.get("aoe", 46))
+    for m in s.hit_targets(w):
+        if getattr(m, "hp", 1) > 0 and (m.collides_circle(x, y, aoe) if hasattr(m, "collides_circle") else circle_hits_rect(x, y, aoe, m.rect)):
+            s.damage(m, w, sign(m.cx - x) or 1)
+
+@behavior("rain")
+def _rain(s, p, dt, w):
+    """"rain": {"into": "shadow_dagger", "count": 10, "interval": 0.11, "spread": 150, "height": 180} —
+    дождь снарядов (Hades): каждые interval секунд сверху (на height выше точки) падает снаряд типа "into"
+    в случайной точке в радиусе spread. Пулю-маркер спавнят в точке курсора со скоростью 0."""
+    p = p if isinstance(p, dict) else {"count": p}
+    every = float(p.get("interval", 0.12)); n = int(p.get("count", 8))
+    rn = getattr(s, "_rn_n", 0)
+    if rn >= n or s.t - getattr(s, "_rn_t", -every) < every: return
+    s._rn_t = s.t; s._rn_n = rn + 1
+    rad = float(p.get("spread", 140)); h = float(p.get("height", 170))
+    child = resolve(p.get("into", "bolt")); child.pop("split", None); child.pop("rain", None)   # капли дождя не делятся и не продолжают дождь
+    x = s.x + random.uniform(-rad, rad)
+    volley(w.projs, child, x, s.y - h, math.pi / 2, p.get("damage", s.dmg), s.friendly, 1, 0, owner=getattr(s, "owner", None))
 
 @on_death("split")
 def _split(s, p, w):

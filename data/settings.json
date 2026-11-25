@@ -1,6 +1,7 @@
 {
   "fullscreen": true,
   "mouse_aim": true,
+  "checkpoint_freeze_seconds": 10,
   "menu_layout": {
     "new": [
       684,
@@ -52,6 +53,16 @@
       64,
       448,
       52
+    ],
+    "book": [
+      10,
+      150,
+      56
+    ],
+    "tablet": [
+      8,
+      110,
+      210
     ]
   },
   "last_character": "knight",
@@ -63,7 +74,15 @@
     "pickup": "E",
     "skill": "Q",
     "skill_next": "C",
-    "skill_prev": "V"
+    "skill_prev": "V",
+    "ammo1_prev": "1",
+    "ammo1_next": "2",
+    "ammo2_prev": "3",
+    "ammo2_next": "4",
+    "inventory": "TAB",
+    "craft": "F",
+    "goggles": "G",
+    "weapon_mode": "B"
   },
   "menu_layout_pause": {
     "continue": [
@@ -96,5 +115,6 @@
       300,
       44
     ]
-  }
+  },
+  "tablet_open": true
 }

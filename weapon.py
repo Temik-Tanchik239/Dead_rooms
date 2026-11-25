@@ -8,9 +8,11 @@ style: "slash" | "thrust". В шаге комбо: style, swing [от, до] (г
 mana_hit — сколько маны возвращает попадание ближним ударом. Не хватает маны — удар не начинается.
 Общие настройки (максимум, восстановление, вид полоски) — data/player.json → mana."""
 import math
+import random
 import pygame as pg
-from core import CFG
+from core import CFG, W, VIEW_H
 from anim import sprite
+import filters
 
 def info(wid):
     w = CFG["weapons"][wid]; dw, dh = w.get("draw", [40, 12])
@@ -94,3 +96,37 @@ def mana_hit(wid, step=None):
     w = CFG["weapons"][wid]
     if step is not None and "mana_hit" in step: return step["mana_hit"]
     return w.get("mana_hit", 0)
+
+def gun_mode(pl):
+    """Ружейный режим меча: у оружия в руках поле mode == "gun" (превращённый меч рыцаря).
+    В этом режиме нельзя ставить щит, а на экране красный фильтр (draw_gun_filter)."""
+    Wd = CFG["weapons"]
+    for wid in [getattr(pl, "last_weapon", None)] + list(getattr(pl, "slots", []) or []):
+        if wid and wid in Wd and Wd[wid].get("mode") == "gun": return True
+    return False
+
+_GUN_IMG = None   # процедурная виньетка (фолбэк) — рисуется, только если в assets/filters/gun/ нет своих кадров
+def _gun_procedural(scr, t, k):
+    """Процедурный красный фильтр: красная виньетка «дышит» по яркости; k — плавный накат при появлении."""
+    global _GUN_IMG
+    if _GUN_IMG is None or _GUN_IMG.get_size() != (W, VIEW_H):
+        vg = pg.Surface((W, VIEW_H), pg.SRCALPHA)
+        vg.fill((255, 42, 30, 36))
+        r = int(min(W, VIEW_H) * 0.62)
+        dark = (168, 8, 8, 78)
+        rng = random.Random(11)
+        for _ in range(72):
+            x, y = rng.randint(0, W - 1), rng.randint(0, VIEW_H - 1)
+            if (x - W / 2) ** 2 + (y - VIEW_H / 2) ** 2 < r * r: continue
+            edge = rng.choice([(rng.randint(0, 26), rng.randint(0, VIEW_H)), (rng.randint(W - 27, W - 1), rng.randint(0, VIEW_H)),
+                               (rng.randint(0, W), rng.randint(0, 26)), (rng.randint(0, W), rng.randint(VIEW_H - 27, VIEW_H - 1))])
+            pg.draw.circle(vg, dark, edge, rng.randint(60, 220))
+        _GUN_IMG = vg
+    pulse = 0.72 + 0.28 * math.sin(t * 2.6)   # дыхание
+    img = _GUN_IMG.copy(); img.set_alpha(int(255 * pulse * k))
+    scr.blit(img, (0, 0))
+
+def draw_gun_filter(scr, t=None):
+    """Фильтр ружейного режима меча рыцаря поверх кадра. Свои кадры — assets/filters/gun/
+    (1.png, 2.png… + filter.json с fps; один filter.png — статичная картинка), иначе процедурная анимация."""
+    filters.draw(scr, "gun", fallback=_gun_procedural, t=t)

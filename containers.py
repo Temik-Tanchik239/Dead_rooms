@@ -23,6 +23,7 @@ import random
 import pygame as pg
 from core import CFG, T, floor_below
 from anim import sprite, ASSETS_EXISTS
+import effects   # частицы разрушения/открытия ящиков (container_break/container_open)
 
 DEFAULTS = {"name": "Ящик", "w": 1, "h": 1, "hp": 20, "interact": "break", "skin": "", "skin_open": "", "draw": None, "offset": [0, 0],
             "color": [150, 105, 60], "loot_mode": "independent", "loot": [], "spread": 22, "open_text": "Открыть", "reach": 30,
@@ -191,6 +192,7 @@ def drop_loot(room, ct, fx):
 def break_container(room, ct, fx):
     """Ящик сломан: освобождаем клетки, эффекты, выпадает содержимое (из открытого сундука уже ничего не выпадет)."""
     remove(room, ct)
+    effects.emit(fx, "container_break", ct.cx, ct.cy, target_id=ct.type)   # частицы разрушения ящика
     col = tuple(ct.def_["color"]); fx.flash(ct.cx, ct.cy, max(ct.w, ct.h) * .8, col); fx.ring(ct.cx, ct.cy, max(ct.w, ct.h) * .7); fx.shake = max(fx.shake, .08)
     if not ct.opened: drop_loot(room, ct, fx)
 
@@ -204,7 +206,8 @@ def sweep(room, fx):
 def open_container(room, ct, fx):
     """Открыть сундук на E: содержимое выпадает, сундук остаётся стоять открытым. False — открыть нельзя."""
     if not ct.can_open: return False
-    ct.opened = True; fx.flash(ct.cx, ct.y + 6, 36, (255, 220, 140)); drop_loot(room, ct, fx); return True
+    ct.opened = True; effects.emit(fx, "container_open", ct.cx, ct.cy, target_id=ct.type)   # частицы открытия сундука
+    fx.flash(ct.cx, ct.y + 6, 36, (255, 220, 140)); drop_loot(room, ct, fx); return True
 
 def try_open(room, pl, fx):
     """E рядом с открываемым сундуком. True — что-то открыли."""

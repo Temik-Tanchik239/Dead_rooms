@@ -1,8 +1,8 @@
 {
   "name": "Кристальные гроты",
   "pos": [
-    9,
-    2
+    95,
+    4
   ],
   "background": "backgrounds/crystal.png",
   "bg_mode": "cover",

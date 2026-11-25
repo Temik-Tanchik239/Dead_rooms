@@ -9,6 +9,7 @@ from anim import sprite, mob_frame, anim_length
 from boss_hands import HandSet, head_point, draw_boss
 import status
 import invisibility
+import effects   # частицы-эффекты (mob_hit/mob_attack/walk)
 
 def normalize(d):
     """Старый формат ("ai": walker | flyer | shooter) -> новый ("move" + "attacks")."""
@@ -30,6 +31,7 @@ class Mob(Body):
         s.mv = d.get("move", {"type": "chase"}); s.attacks = d.get("attacks", [])
         s.cds = [random.uniform(.3, 1.2) for _ in s.attacks]; s.gap = 0.0
         s.stun = s.flash = 0; s.t = 0.0; s.aggro = False; s.act = None; s.grav = None
+        s.buried = False; s.guard_cd = 0.0; s.last_hurt = -99.0; s._summoned = 0
         s.loop_t = random.random() * s.mv.get("period", 4); s.wp = 0
         s.anim, s.anim_t, s.anim_p = "idle", 0.0, None
         s.hands = None; s.alone = False; s._parts = None; s._shield_msg = -9.0
@@ -95,7 +97,17 @@ class Mob(Body):
     # ---------- урон ----------
     def hurt(s, dmg, kb, fx):
         if s.d.get("boss_visual") == "morgart": return s.hurt_morgart(dmg, fx)   # голова/руки — раздельно
-        s.hp -= dmg; s.flash = .1; s.aggro = True
+        if getattr(s, "buried", False):   # под землёй не достать (movement.py -> burrow)
+            if s.t - getattr(s, "_buried_msg", -9.0) > .8:
+                s._buried_msg = s.t; fx.text("Не достать!", s.cx, s.y - 10)
+            return
+        gd = s.d.get("guard")   # фронтальный щит: удар с той стороны, куда моб смотрит, блокируется
+        if gd and s.guard_cd <= 0 and kb and sign(kb) == -s.dir:
+            s.guard_cd = float(gd.get("cooldown", 2.5) if isinstance(gd, dict) else 2.5); s.flash = .08
+            fx.text("Заблокировано!", s.cx, s.y - 12); fx.ring(s.cx, s.cy, 34)
+            return
+        s.hp -= dmg; s.flash = .1; s.aggro = True; s.last_hurt = s.t
+        effects.emit(fx, "mob_hit", s.cx, s.cy, dir=sign(kb) or 1, target_id=s.kind)   # частицы попадания по мобу (mob_hit)
         fx.stop = .05; fx.text(str(int(dmg)), s.cx, s.y)
         act = s.act
         if s.d.get("armor") or (act and act.get("free")): return          # бронированный / в прыжке — не сбивается
@@ -106,6 +118,7 @@ class Mob(Body):
     # ---------- атаки ----------
     def start_attack(s, i, w):
         a = s.attacks[i]; h = ATTACKS[a["type"]]
+        effects.emit(w.fx, "mob_attack", s.cx, s.cy, dir=s.dir, target_id=s.kind)   # частицы начала атаки (mob_attack)
         invisibility.on_attack(s, w.fx)   # атака из невидимости сбрасывает эффект
         s.act = {"a": a, "h": h, "i": i, "phase": "windup", "t": 0.0, "hit": False}
         s.cds[i] = a.get("cooldown", 1.5); s.dir = sign(w.pl.cx - s.cx) or s.dir
@@ -123,7 +136,7 @@ class Mob(Body):
             for j, b in enumerate(s.attacks):
                 if nxt and b.get("id") == nxt: s.start_attack(j, w); break
     def choose_attack(s, w):
-        if s.gap > 0 or not s.aggro: return
+        if s.gap > 0 or not s.aggro or getattr(s, "buried", False): return
         for i, a in enumerate(s.attacks):
             if a.get("requires") == "alone" and s.hands_alive(): continue    # атаки «когда осталась только голова»
             if s.cds[i] <= 0 and ATTACKS[a["type"]].can_use(s, a, w): return s.start_attack(i, w)
@@ -132,6 +145,10 @@ class Mob(Body):
     def update(s, dt, w):
         d = s.d; s.t += dt; s.flash -= dt; s.gap -= dt
         s.cds = [c - dt for c in s.cds]
+        s.guard_cd = max(0.0, s.guard_cd - dt)
+        rg = d.get("regen")   # регенерация: если давно не получал урона — восстанавливается
+        if rg and s.t - s.last_hurt > float(rg.get("delay", 4)) and 0 < s.hp < s.maxhp:
+            s.hp = min(s.maxhp, s.hp + float(rg.get("rate", 3)) * dt)
         status.tick(s, dt, w)   # заморозка тает, горение наносит урон
         is_morgart = d.get("boss_visual") == "morgart"
         move = MOVES[s.mv.get("type", "chase")]
@@ -170,6 +187,7 @@ class Mob(Body):
             move(s, s.mv, dt, w); s.choose_attack(w)
         if not s.flies or s.grav: s.vy = min(s.vy + (s.grav or d.get("gravity", 1800)) * dt, 900)
         s.move(w.g, dt)
+        effects.walk_step(s, w.fx, dt, d.get("step_interval", 0.3))   # пыль от шагов моба (hook "walk", id — вид моба)
         s.update_anim(dt)
 
     def on_alone(s, w):
@@ -202,6 +220,10 @@ class Mob(Body):
         d = s.d; hot = s.flash > 0 or (s.act and s.act["phase"] == "windup" and d.get("blink", True) and int(s.act["t"] * 20) % 2)
         dw, dh = d.get("draw", [s.w, s.h]); r = s.rect
         top = r.centery - dh // 2 if s.flies else r.bottom - dh
+        if getattr(s, "buried", False):   # моб под землёй: вместо тела — холмик, зону атаки не рисуем
+            pg.draw.ellipse(v, (96, 74, 52), (r.centerx - dw // 3, r.bottom - 9, dw * 2 // 3, 12))
+            pg.draw.ellipse(v, (60, 44, 30), (r.centerx - dw // 3, r.bottom - 9, dw * 2 // 3, 12), 2)
+            return
         if s.act: s.act["h"].draw(s, s.act["a"], s.act, v)   # зоны атаки рисуются всегда, даже у невидимого моба
         def body():
             if d.get("boss_visual") == "morgart":
@@ -232,6 +254,31 @@ class Mob(Body):
             area = s.head_rect().unionall(s.hands.rects() if s.hands else []).inflate(260, 260)
         else: area = pg.Rect(r.centerx - dw // 2, top, dw, dh).inflate(48, 40)
         invisibility.ghost(v, area, body, a)
+
+def death_effects(m, w):
+    """Механики в момент смерти (вызывается из main.py, когда у моба кончилось hp):
+    on_death.explode — взрыв (урон игрокам в радиусе), on_death.split — разделение на мелких мобов.
+    Возвращает список новых мобов (их добавит в комнату вызывающий код)."""
+    od = m.d.get("on_death") or {}
+    ex = od.get("explode")
+    if isinstance(ex, dict):
+        x, y, r = m.cx, m.cy, float(ex.get("radius", 90))
+        w.fx.ring(x, y, r); w.fx.flash(x, y, r // 2, (255, 180, 120)); w.fx.shake = max(w.fx.shake, .3)
+        for p in players_of(w):
+            if circle_hits_rect(x, y, r, p.rect):
+                p.hit(float(ex.get("damage", 15)) * m.dmg_scale, x, w.fx, float(ex.get("knockback", 300)))
+    out = []
+    sp = od.get("split")
+    if isinstance(sp, dict) and sp.get("mob") in CFG["mobs"]:
+        n = max(1, int(sp.get("count", 2))); d = CFG["mobs"][sp["mob"]]
+        for i in range(n):
+            ang = math.pi * 2 * i / n
+            px = max(T, min(MW - T - d["w"], m.cx + math.cos(ang) * T * 1.2 - d["w"] / 2))
+            py = m.y + m.h - d["h"]
+            kid = Mob(sp["mob"], px, py, float(sp.get("hp_k", .7)))
+            kid.aggro = True
+            out.append(kid)
+    return out
 
 def _draw_front(s, v):
     """Руки, державшие игрока, рисуются поверх него (вызывается после отрисовки игроков)."""

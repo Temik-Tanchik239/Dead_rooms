@@ -38,7 +38,18 @@
         "knockback": 240
       }
     ],
-    "xp": 120
+    "xp": 120,
+    "loot": [
+      {
+        "item": "metal",
+        "chance": 1.0
+      }
+    ],
+    "coins": {
+      "chance": 1.0,
+      "min": 1,
+      "max": 5
+    }
   },
   "bone_caster": {
     "name": "Костяной стрелок",
@@ -357,6 +368,424 @@
       "radius": 80,
       "intensity": 0.4
     },
+    "xp": 120
+  },
+  "ram_skeleton": {
+    "name": "Костяной таран",
+    "hp": 55,
+    "w": 26,
+    "h": 38,
+    "speed": 60,
+    "color": [
+      214,
+      202,
+      168
+    ],
+    "weight": 2,
+    "mass": 5,
+    "contact": 8,
+    "move": {
+      "type": "chase",
+      "speed": 60
+    },
+    "attacks": [
+      {
+        "id": "charge",
+        "type": "dash",
+        "range": 430,
+        "range_y": 46,
+        "windup": 0.55,
+        "active": 0.9,
+        "recovery": 0.6,
+        "cooldown": 2.6,
+        "damage": 16,
+        "speed": 640,
+        "dist": 420,
+        "knockback": 340
+      },
+      {
+        "type": "melee",
+        "windup": 0.3,
+        "active": 0.12,
+        "recovery": 0.35,
+        "cooldown": 1.3,
+        "damage": 10,
+        "reach": [
+          40,
+          30
+        ],
+        "lunge": 120
+      }
+    ],
+    "xp": 120
+  },
+  "crypt_guardian": {
+    "name": "Страж усыпальницы",
+    "hp": 130,
+    "w": 30,
+    "h": 44,
+    "speed": 70,
+    "color": [
+      120,
+      140,
+      190
+    ],
+    "weight": 2,
+    "mass": 7,
+    "contact": 10,
+    "move": {
+      "type": "sentry",
+      "speed": 85,
+      "leash": 300
+    },
+    "guard": {
+      "cooldown": 3.0
+    },
+    "regen": {
+      "delay": 5,
+      "rate": 4
+    },
+    "attacks": [
+      {
+        "type": "circle",
+        "radius": 84,
+        "windup": 0.7,
+        "active": 0.15,
+        "recovery": 0.6,
+        "cooldown": 2.4,
+        "damage": 16,
+        "knockback": 340,
+        "interrupt": false
+      },
+      {
+        "type": "melee",
+        "windup": 0.3,
+        "active": 0.12,
+        "recovery": 0.35,
+        "cooldown": 1.3,
+        "damage": 12,
+        "reach": [
+          42,
+          32
+        ],
+        "lunge": 100
+      }
+    ],
+    "xp": 120
+  },
+  "acid_spider": {
+    "name": "Смоляной паук",
+    "hp": 34,
+    "w": 26,
+    "h": 20,
+    "speed": 130,
+    "color": [
+      96,
+      74,
+      62
+    ],
+    "weight": 2,
+    "mass": 2,
+    "contact": 6,
+    "move": {
+      "type": "chase",
+      "speed": 120
+    },
+    "attacks": [
+      {
+        "id": "spit",
+        "type": "bomb",
+        "range": 340,
+        "range_y": 240,
+        "windup": 0.6,
+        "active": 0.05,
+        "recovery": 0.4,
+        "cooldown": 3.2,
+        "damage": 8,
+        "radius": 56,
+        "zone_radius": 44,
+        "zone_dps": 9,
+        "zone_life": 3.5
+      },
+      {
+        "type": "melee",
+        "windup": 0.25,
+        "active": 0.1,
+        "recovery": 0.3,
+        "cooldown": 1.1,
+        "damage": 9,
+        "reach": [
+          36,
+          24
+        ]
+      }
+    ],
+    "xp": 120
+  },
+  "hive_nest": {
+    "name": "Гнездо могильщиков",
+    "hp": 160,
+    "w": 40,
+    "h": 34,
+    "speed": 0,
+    "color": [
+      134,
+      100,
+      70
+    ],
+    "weight": 1,
+    "mass": 9,
+    "contact": 0,
+    "move": {
+      "type": "stand"
+    },
+    "attacks": [
+      {
+        "type": "summon",
+        "mob": "spiderling",
+        "count": 2,
+        "cap": 6,
+        "range": 300,
+        "range_y": 999,
+        "windup": 0.8,
+        "active": 0.05,
+        "recovery": 0.5,
+        "cooldown": 5.0,
+        "damage": 0,
+        "interrupt": false
+      }
+    ],
+    "on_death": {
+      "split": {
+        "mob": "spiderling",
+        "count": 3,
+        "hp_k": 0.7
+      }
+    },
+    "xp": 150
+  },
+  "spiderling": {
+    "name": "Паучок",
+    "hp": 8,
+    "w": 16,
+    "h": 12,
+    "speed": 170,
+    "color": [
+      150,
+      120,
+      100
+    ],
+    "weight": 0,
+    "mass": 1,
+    "contact": 5,
+    "move": {
+      "type": "chase",
+      "speed": 150,
+      "sight": 420
+    },
+    "attacks": [],
+    "xp": 30
+  },
+  "grave_priest": {
+    "name": "Могильный жрец",
+    "hp": 40,
+    "w": 24,
+    "h": 36,
+    "speed": 70,
+    "color": [
+      190,
+      172,
+      120
+    ],
+    "weight": 1,
+    "mass": 3,
+    "contact": 4,
+    "move": {
+      "type": "keep_distance",
+      "distance": 260,
+      "band": 50
+    },
+    "attacks": [
+      {
+        "id": "mend",
+        "type": "heal",
+        "radius": 260,
+        "amount": 14,
+        "windup": 0.7,
+        "active": 0.05,
+        "recovery": 0.5,
+        "cooldown": 4.0,
+        "damage": 0
+      },
+      {
+        "type": "shoot",
+        "projectile": "bolt",
+        "windup": 0.5,
+        "cooldown": 2.4,
+        "damage": 9,
+        "range": 380
+      }
+    ],
+    "xp": 120
+  },
+  "lava_slug": {
+    "name": "Шлаковый слизень",
+    "hp": 70,
+    "w": 30,
+    "h": 22,
+    "speed": 55,
+    "color": [
+      220,
+      110,
+      60
+    ],
+    "weight": 2,
+    "mass": 6,
+    "contact": 12,
+    "move": {
+      "type": "burrow",
+      "speed": 40,
+      "under": 1.6,
+      "above": 2.6
+    },
+    "attacks": [
+      {
+        "type": "circle",
+        "radius": 70,
+        "windup": 0.6,
+        "active": 0.15,
+        "recovery": 0.6,
+        "cooldown": 2.4,
+        "damage": 14,
+        "knockback": 300
+      }
+    ],
+    "light": {
+      "color": [
+        255,
+        140,
+        60
+      ],
+      "radius": 90,
+      "intensity": 0.6
+    },
+    "xp": 120
+  },
+  "mirror_mage": {
+    "name": "Зеркальный чернокнижник",
+    "hp": 30,
+    "w": 22,
+    "h": 34,
+    "speed": 60,
+    "color": [
+      140,
+      220,
+      220
+    ],
+    "flies": true,
+    "weight": 1,
+    "mass": 2,
+    "contact": 4,
+    "move": {
+      "type": "blink",
+      "every": 3.2,
+      "gap": 130
+    },
+    "attacks": [
+      {
+        "id": "ray",
+        "type": "beam",
+        "range": 470,
+        "range_y": 60,
+        "windup": 0.9,
+        "active": 0.3,
+        "recovery": 0.5,
+        "cooldown": 3.6,
+        "damage": 14,
+        "width": 14
+      },
+      {
+        "type": "shoot",
+        "projectile": "bolt",
+        "aim": "player",
+        "windup": 0.5,
+        "cooldown": 2.2,
+        "damage": 7,
+        "range": 400
+      }
+    ],
+    "light": {
+      "color": [
+        140,
+        220,
+        220
+      ],
+      "radius": 70,
+      "intensity": 0.4
+    },
+    "xp": 120
+  },
+  "bloatling": {
+    "name": "Вздутие",
+    "hp": 44,
+    "w": 34,
+    "h": 34,
+    "speed": 50,
+    "color": [
+      190,
+      120,
+      150
+    ],
+    "weight": 2,
+    "mass": 4,
+    "contact": 8,
+    "move": {
+      "type": "chase",
+      "speed": 50
+    },
+    "attacks": [],
+    "on_death": {
+      "explode": {
+        "damage": 18,
+        "radius": 100,
+        "knockback": 380
+      }
+    },
+    "xp": 120
+  },
+  "thief_imp": {
+    "name": "Вор-бесёнок",
+    "hp": 22,
+    "w": 20,
+    "h": 26,
+    "speed": 190,
+    "color": [
+      220,
+      170,
+      90
+    ],
+    "flies": true,
+    "weight": 1,
+    "mass": 1,
+    "contact": 4,
+    "move": {
+      "type": "flee",
+      "speed": 175,
+      "far": 280,
+      "panic": 120
+    },
+    "attacks": [
+      {
+        "type": "shoot",
+        "projectile": "bolt",
+        "aim": "player",
+        "windup": 0.4,
+        "cooldown": 1.8,
+        "damage": 7,
+        "range": 420,
+        "mobile": true
+      }
+    ],
     "xp": 120
   }
 }

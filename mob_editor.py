@@ -175,6 +175,43 @@ class Form(ttk.Frame):
 
 
 # ================================================================ вкладка «Мобы»
+class LootDialog(tk.Toplevel):
+    """Диалог записи лута: предмет (выпадающий список id: «random», оружие, предметы) и шанс в процентах."""
+    def __init__(self, parent, title, ids, item="random", chance=100.0):
+        super().__init__(parent)
+        self.title(title); self.resizable(False, False); self.transient(parent); self.grab_set()
+        self.result = None
+        frm = ttk.Frame(self, padding=10); frm.pack()
+        ttk.Label(frm, text="Предмет").grid(row=0, column=0, sticky="w")
+        self.item_cb = ttk.Combobox(frm, values=ids, width=28); self.item_cb.set(item or "random")
+        self.item_cb.grid(row=0, column=1, pady=2)
+        ttk.Label(frm, text="Шанс, %").grid(row=1, column=0, sticky="w")
+        self.chance_var = tk.StringVar(value=("%g" % chance).replace("e-0", "e-"))
+        self.chance_var.trace_add("write", self._mark)
+        ttk.Spinbox(frm, from_=0, to=100, increment=5, textvariable=self.chance_var, width=8).grid(row=1, column=1, sticky="w", pady=2)
+        self.err = ttk.Label(frm, text="", foreground="#d32f2f"); self.err.grid(row=2, column=0, columnspan=2)
+        row = ttk.Frame(frm); row.grid(row=3, column=0, columnspan=2, pady=(8, 0))
+        ttk.Button(row, text="ОК", command=self._ok).pack(side="left", padx=(0, 6))
+        ttk.Button(row, text="Отмена", command=self.destroy).pack(side="left")
+        self.bind("<Return>", lambda e: self._ok()); self.bind("<Escape>", lambda e: self.destroy())
+        self.item_cb.focus_set()
+        self.wait_window()
+
+    def _mark(self, *_):
+        try: ok = 0 <= float(self.chance_var.get().replace(",", ".")) <= 100
+        except ValueError: ok = False
+        self.err.configure(text="" if ok else "Шанс — число от 0 до 100")
+
+    def _ok(self):
+        item = self.item_cb.get().strip()
+        try: ch = float(self.chance_var.get().replace(",", ".")) / 100.0
+        except ValueError:
+            self.err.configure(text="Шанс — число от 0 до 100"); return
+        if not item:
+            self.err.configure(text="Выберите предмет"); return
+        self.result = (item, max(0.0, min(1.0, ch))); self.destroy()
+
+
 class MobTab(ttk.Frame):
     PV_SIZE = (344, 300)
 
@@ -189,6 +226,7 @@ class MobTab(ttk.Frame):
         self._entries, self._entry, self._photo = [], None, None
         self._paused, self._t0, self._t_acc, self._speed = False, time.monotonic(), 0.0, 1.0
         self._loading = False; self._an_sel = None; self._an_spec = {}; self._skin_size = {}
+        self._loot_loading = False   # защита от цикла «загрузка формы — коммит монет»
         self._build(); self.reload(first=True); self._tick()
 
     @property
@@ -210,7 +248,7 @@ class MobTab(ttk.Frame):
         self._build_list(left)
         self.nb = ttk.Notebook(center); self.nb.pack(fill="both", expand=True, padx=6)
         self.nb.bind("<<NotebookTabChanged>>", self._tab_changed)
-        self._build_main(); self._build_tex(); self._build_move(); self._build_attacks(); self._build_anims(); self._build_json()
+        self._build_main(); self._build_tex(); self._build_move(); self._build_attacks(); self._build_anims(); self._build_loot(); self._build_particles(); self._build_json()
         self._build_preview(right)
 
     def _form(self, parent, fields, getter, on_change=None, **kw):
@@ -319,6 +357,18 @@ class MobTab(ttk.Frame):
             ttk.Button(col, text=text, command=cmd, width=14).pack(pady=2)
         self.f_anim_def = self._form(right, ANIM_DEFAULT_FIELDS, lambda: self.mob); self.f_anim_def.pack(fill="x", pady=(8, 0))
         self.an_note = tk.StringVar(); ttk.Label(right, textvariable=self.an_note, foreground="#b26a00", wraplength=600).pack(anchor="w", pady=(4, 0))
+
+    def _build_particles(self):
+        """Вкладка «Частицы» (attachments_editor.py): хиты/атаки/смерть/шаги моба — id = выбранный моб."""
+        import attachments_editor
+        tab = self._tab("Частицы")
+        self.part_panel = attachments_editor.AttachmentPanel(
+            tab, ["mob_hit", "mob_attack", "mob_death", "walk"], lambda: self.cur or "",
+            title="Частицы моба (id = выбранный моб слева)", help=self.help.set, width=640)
+        self.part_panel.pack(fill="x", pady=(6, 0))
+        ttk.Label(tab, text="Частицы подстраиваются под выбранного моба: заменил моба в списке слева — панель перечитается. "
+                            "Все привязки (и для всех мобов сразу — id «*») — вкладка «Эффекты» редактора игры.",
+                  wraplength=640, foreground="#666").pack(anchor="w", pady=(6, 0))
 
     def _build_json(self):
         tab = self._tab("JSON")
@@ -435,6 +485,9 @@ class MobTab(ttk.Frame):
         self.f_tex.load(); self.f_anim_def.load(); self._load_move(); self._json_refresh(); self._update_skin_info()
         self._atk_refresh_list(select=0 if self.mob.get("attacks") else None)
         self._an_refresh(select=0); self._refresh_entries(keep=False); self._refresh_list()
+        self._loot_load()
+        pp = getattr(self, "part_panel", None)
+        if pp: pp.refresh()   # панель частиц — под выбранного моба
 
     def _prompt_id(self, title):
         mid = simpledialog.askstring(title, "ID моба (латиница, цифры, _ и -):", parent=self)
@@ -466,6 +519,111 @@ class MobTab(ttk.Frame):
         self.cur = None; self._refresh_list()
         if self.mobs: self.select(list(self.mobs)[min(i, len(self.mobs) - 1)])
         self._update_status()
+
+    # ---------------------------------------------------------------- лут
+    def _build_loot(self):
+        """Вкладка «Лут» (loot.py): таблица предметов с шансами + поля кучки монет."""
+        tab = self._tab("Лут")
+        lf = ttk.LabelFrame(tab, text="Предметы — у каждого свой шанс выпадения (0–100 %)", padding=8)
+        lf.pack(fill="both", expand=True)
+        box = ttk.Frame(lf); box.pack(fill="both", expand=True)
+        cols = ("item", "chance")
+        self.loot_tv = ttk.Treeview(box, columns=cols, show="headings", height=7)
+        self.loot_tv.heading("item", text="Предмет"); self.loot_tv.heading("chance", text="Шанс, %")
+        self.loot_tv.column("item", width=300, anchor="w"); self.loot_tv.column("chance", width=90, anchor="e")
+        sb = ttk.Scrollbar(box, orient="vertical", command=self.loot_tv.yview); self.loot_tv.configure(yscrollcommand=sb.set)
+        self.loot_tv.pack(side="left", fill="both", expand=True); sb.pack(side="left", fill="y")
+        btns = ttk.Frame(lf); btns.pack(side="left", fill="y", padx=(6, 0))
+        for text, cmd in (("Добавить…", self._loot_add), ("Изменить…", self._loot_edit), ("Удалить", self._loot_del)):
+            ttk.Button(btns, text=text, command=cmd).pack(fill="x", pady=(0, 4))
+        cf = ttk.LabelFrame(tab, text="Монеты — кучка: шанс выпадения и размер (мин–макс)", padding=8)
+        cf.pack(fill="x", pady=(8, 0))
+        self.loot_vars = {k: tk.StringVar() for k in ("chance", "min", "max")}
+        labels = {"chance": "Шанс, %", "min": "Мин.", "max": "Макс."}
+        for i, k in enumerate(("chance", "min", "max")):
+            ttk.Label(cf, text=labels[k]).grid(row=0, column=i * 2, sticky="w", padx=(0, 4))
+            self.loot_vars[k].trace_add("write", lambda *_a, key=k: self._loot_coins_commit(key))
+            ttk.Spinbox(cf, from_=0 if k == "chance" else 1, to=999999, textvariable=self.loot_vars[k], width=8).grid(row=0, column=i * 2 + 1, sticky="w", padx=(0, 10))
+        ttk.Label(tab, text="«random» — случайное оружие из разрешённых герою. Пустые поля монет — монет нет.\n"
+                           "Лут сыплется на пол в момент смерти моба; шанс считается отдельно для каждой записи. "
+                           "После сохранения в игре — F5 (перезагрузить данные).",
+                  foreground=GRAY, wraplength=620, justify="left").pack(anchor="w", pady=(8, 0))
+
+    def _loot_load(self):
+        """Заполнить вкладку лута данными текущего моба (без коммитов в моба)."""
+        self._loot_loading = True
+        try:
+            self.loot_tv.delete(*self.loot_tv.get_children())
+            for e in (self.mob.get("loot") or []) if self.mob else []:
+                if not isinstance(e, dict): continue
+                try: ch = float(e.get("chance", 1.0)) * 100
+                except (TypeError, ValueError): ch = 100.0
+                self.loot_tv.insert("", "end", values=(str(e.get("item", "?")), "%g" % ch))
+            cd = (self.mob.get("coins") or {}) if self.mob else {}
+            vals = {"chance": "", "min": "", "max": ""}
+            if isinstance(cd, dict) and cd:
+                try: vals["chance"] = "%g" % (float(cd.get("chance", 0.0)) * 100)
+                except (TypeError, ValueError): vals["chance"] = ""
+                for k in ("min", "max"):
+                    if cd.get(k) is not None: vals[k] = str(cd[k])
+            for k, v in vals.items(): self.loot_vars[k].set(v)
+        finally:
+            self._loot_loading = False
+
+    def _loot_sel(self):
+        sel = self.loot_tv.selection()
+        return self.loot_tv.index(sel[0]) if sel else None
+
+    def _loot_add(self):
+        if self.mob is None: return
+        dlg = LootDialog(self, "Добавить лут", md.item_ids())
+        if not dlg.result: return
+        item, ch = dlg.result
+        self.mob.setdefault("loot", []).append({"item": item, "chance": ch})
+        self._loot_load(); self.touch()
+
+    def _loot_edit(self):
+        if self.mob is None: return
+        i = self._loot_sel()
+        lst = self.mob.get("loot") or []
+        if i is None or not 0 <= i < len(lst): return
+        e = lst[i]
+        try: ch = float(e.get("chance", 1.0)) * 100
+        except (TypeError, ValueError): ch = 100.0
+        dlg = LootDialog(self, "Изменить лут", md.item_ids(), str(e.get("item", "random")), ch)
+        if not dlg.result: return
+        item, ch = dlg.result
+        self.mob.setdefault("loot", [])[i] = {"item": item, "chance": ch}
+        self._loot_load(); self.touch()
+
+    def _loot_del(self):
+        if self.mob is None: return
+        i = self._loot_sel()
+        lst = self.mob.get("loot") or []
+        if i is None or not 0 <= i < len(lst): return
+        lst.pop(i)
+        if not lst: self.mob.pop("loot", None)   # пустой список в мобе не храним
+        self._loot_load(); self.touch()
+
+    def _loot_coins_commit(self, k):
+        """Пишем монеты в моба на лету (если все поля пусты — ключ coins удаляем)."""
+        if self._loot_loading or self.mob is None: return
+        raw = {kk: self.loot_vars[kk].get().strip().replace(",", ".") for kk in self.loot_vars}
+        if not any(raw.values()):
+            self.mob.pop("coins", None); self.touch(); return
+        try: ch = max(0.0, min(1.0, float(raw["chance"] or "0") / 100.0))
+        except ValueError: return
+        d = dict(self.mob.get("coins") or {})
+        d["chance"] = ch
+        if raw["min"]:
+            try: d["min"] = max(1, int(float(raw["min"])))
+            except ValueError: return
+        else: d.pop("min", None)
+        if raw["max"]:
+            try: d["max"] = int(float(raw["max"]))
+            except ValueError: return
+        else: d.pop("max", None)
+        self.mob["coins"] = d; self.touch()
 
     # ---------------------------------------------------------------- текстура
     def _png_size(self, rel):

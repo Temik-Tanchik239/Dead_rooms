@@ -1,8 +1,8 @@
 {
   "name": "Логово Моргарта",
   "pos": [
-    9,
-    -2
+    150,
+    3
   ],
   "background": "backgrounds/crystal.png",
   "bg_mode": "cover",

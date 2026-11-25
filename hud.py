@@ -3,7 +3,9 @@
 Нет файла иконки — вместо неё рисуется сам скин. Полоски HP и маны. Всё настраивается в data/player.json: hp_bar и mana.bar.
 Вертикальные «книги» у левого края экрана (book_draw): у мага (spellcaster) — колонка заклинаний, у барда (bard) — колонка нот, у арбалетчика
 (crossbows — Тень) — две колонки видов снарядов (левая — левый арбалет/ЛКМ, правая — правый/ПКМ): предыдущий (сверху, мелко) · текущий (крупно) · следующий (снизу, мелко); при смене список плавно
-прокручивается (book_scroll). Положение и размер — ключ раскладки "book" (F2). У арбалетчика слот навыка Q стоит справа от портрета.
+прокручивается (book_scroll). Положение и размер — ключ раскладки "book" (F2). У мага вместо книги — квадратный
+ПЛАНШЕТ заклинаний (spell_tablet.py, ключ раскладки "tablet"): пять ячеек и ползунки силы каста; книга осталась
+инженеру. У арбалетчика слот навыка Q стоит справа от портрета.
 Поля полоски: x, y (от нижнего края окна, минус — вверх), w, h, color, back, border, flash (цвет рамки, когда не хватило маны),
 ticks (деление через каждые N единиц, 0 — без делений), text (числа на полоске),
 fill_skin / back_skin / frame_skin — картинки из assets (необязательно; нет файла — рисуются цветные прямоугольники)."""
@@ -15,6 +17,7 @@ import weapon
 import spells
 import crossbow
 import bard
+import loot
 import inventory
 from core import SETTINGS, W
 
@@ -32,7 +35,8 @@ def layout():
         # Порядок слева направо: оружие ЛКМ, оружие ПКМ, активный навык Q.
         "weapon1": [64, VIEW_H - 56, 48], "weapon2": [120, VIEW_H - 56, 48],
         "skill": [176, VIEW_H - 56, 48],
-        "book": [10, 150, 56],   # вертикальные книги заклинаний (маг) / снарядов (Тень) у левого края: x, y верха блока, размер крупной ячейки (масштабирует всё)
+        "book": [10, 150, 56],   # вертикальные книги заклинаний (инженер) / снарядов (Тень) у левого края: x, y верха блока, размер крупной ячейки (масштабирует всё)
+        "tablet": [8, 110, 210],  # планшет заклинаний мага (spell_tablet.py): x, y верха, сторона квадрата
         "hp": [8, VIEW_H - 28, 48, 10], "mana": [8, VIEW_H - 16, 48, 10],
     }
     for k, v in defaults.items(): cfg.setdefault(k, v.copy())
@@ -63,9 +67,13 @@ def bar(scr, c, value, maxv, y0, flash=False, font=None):
 
 def draw(scr, pl, font):
     P = CFG["player"]; y0 = VIEW_H
-    # Заклинатель (spellcaster в data/characters.json — маг/инженер): портрет + окно из трёх умений вместо иконок оружия.
+    # Заклинатель (spellcaster в data/characters.json — маг/инженер): портрет + окно умений вместо иконок оружия.
     if CFG.get("character", {}).get("spellcaster"):
-        portrait(scr, pl, font); book_draw(scr, pl, font); weapon_slots(scr, pl, font)   # + оружие в свободной ПКМ, если оно есть
+        portrait(scr, pl, font)
+        import spell_tablet
+        if spell_tablet.enabled(): spell_tablet.draw(scr, pl, font)   # маг: планшет из пяти ячеек с ползунками силы каста
+        else: book_draw(scr, pl, font)   # остальные заклинатели (инженер): прежняя колонка prev/cur/next
+        weapon_slots(scr, pl, font)   # + оружие в свободной ПКМ, если оно есть
     elif crossbow.enabled() or bard.enabled():   # арбалетчик (Тень) / бард: портрет + колонки у левого края + навык Q рядом с портретом
         portrait(scr, pl, font); book_draw(scr, pl, font)
         sk = layout().get("skill", [176, VIEW_H - 56, 48]); skill_slot(scr, pl, font, [sk[0] + skill_shift(), sk[1], sk[2]])
@@ -75,6 +83,17 @@ def draw(scr, pl, font):
     bar(scr, {**HP, **P.get("hp_bar", {}), "_layout_key": "hp"}, max(0, pl.hp), pl.maxhp, y0)
     bar(scr, {**MP, **P.get("mana", {}).get("bar", {}), "_layout_key": "mana"}, pl.mana, pl.maxmana, y0, pl.mana_flash > 0, font)
     xp_indicator(scr, pl, font)
+    coins_badge(scr, pl, font)
+
+def coins_badge(scr, pl, font):
+    """Счётчик монет (loot.py): золотая монета + число, правый верхний угол под именем карты/прогрессом."""
+    n = int(getattr(pl, "coins", 0))
+    t = font.render(str(n), True, (255, 214, 120))
+    x, y = W - 12 - t.get_width(), 26
+    pg.draw.circle(scr, (150, 110, 30), (x - 7, y + 7), 7)
+    pg.draw.circle(scr, loot.COIN, (x - 7, y + 7), 6)
+    pg.draw.circle(scr, loot.COIN_L, (x - 9, y + 5), 1)
+    scr.blit(t, (x, y))
 
 def xp_indicator(scr, pl, font):
     """Небольшое кольцо опыта, наполовину наложенное на верхний правый угол иконки персонажа."""
@@ -264,8 +283,11 @@ def skill_shift():
 
 
 def edit_keys():
-    """Какие элементы HUD показывает и двигает редактор (F2), порядок — от верхнего к нижнему при выборе мышью. У мага и арбалетчика вместо иконок оружия — книга."""
+    """Какие элементы HUD показывает и двигает редактор (F2), порядок — от верхнего к нижнему при выборе мышью.
+    У мага вместо книги — планшет заклинаний, у арбалетчика и инженера — книга."""
+    import spell_tablet
     if book_kind() in ("ammo", "note"): return ("book", "skill", "player", "mana", "hp")
+    if spell_tablet.enabled(): return ("tablet", "player", "mana", "hp")
     if book_kind() == "spell": return ("book", "player", "mana", "hp")
     return ("weapon2", "weapon1", "skill", "player", "mana", "hp")
 
@@ -274,6 +296,8 @@ def edit_rect(key, a):
     """Рамка элемента HUD в редакторе (F2): у книги — весь блок колонок с названиями, у баров — ширина x высота, у остальных — квадрат."""
     if key == "book":
         gm = book_geom(); return pg.Rect(gm["x"], gm["y"], gm["w"], gm["h"])
+    if key == "tablet":
+        import spell_tablet; r = spell_tablet.rect(); return pg.Rect(r.x, r.y, r.w, r.h)
     r = pg.Rect(a[0], a[1], a[2], a[3] if key in ("hp", "mana") else a[2])
     if key == "skill": r.x += skill_shift()
     return r
@@ -432,10 +456,14 @@ def skill_slot(scr, pl, font, pos=None):
         scol = tuple(skill.get("color", [150, 130, 220]))
         chan = channel_overlay(scr, pl, sid, r, font, scol) or hold_overlay(scr, pl, sid, r, font, scol)   # удерживаемое/«поток»: индикатор запаса
         left = max(0.0, getattr(pl, "skill_cooldowns", {}).get(sid, 0.0))
+        blocked = sid == "shield" and weapon.gun_mode(pl)   # меч превращён в ружьё — щит нельзя
         if chan: pass
         elif left > 0:
             veil = pg.Surface(r.size, pg.SRCALPHA); pg.draw.rect(veil, (8, 8, 18, 165), veil.get_rect(), border_radius=8); scr.blit(veil, r)
             label(scr, font, str(int(left + .99)), r.centerx - 4, r.centery - 8, (255, 255, 255))
+        elif blocked:
+            veil = pg.Surface(r.size, pg.SRCALPHA); pg.draw.rect(veil, (110, 6, 6, 160), veil.get_rect(), border_radius=8); scr.blit(veil, r)
+            label(scr, font, "X", r.centerx - 4, r.centery - 8, (255, 120, 110))
         else:
             pg.draw.circle(scr, (100, 240, 150), (r.right - 7, r.bottom - 7), 4)
         nm = font.render(skill.get("name", sid), True, (225, 220, 245))

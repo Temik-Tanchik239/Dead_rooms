@@ -1,10 +1,10 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-title DEAD ROOMS - Редактор карт
+title DEAD ROOMS - Редактор игры
 
  echo ========================================
- echo   DEAD ROOMS - запуск редактора карт
+ echo   DEAD ROOMS - запуск редактора игры
  echo ========================================
  echo.
 
